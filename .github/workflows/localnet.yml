@@ -1,0 +1,34 @@
+name: Pinned behavioral oracle
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 5 * * 1'
+jobs:
+  localnet:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked --extra dev --extra lift --extra behavioral
+      - name: Start private go-algorand 5.0.0
+        run: >-
+          docker run --detach --rm --name tealql-localnet
+          --publish 127.0.0.1:41980:8080 --env NETWORK= --env DEV_MODE=1
+          --env TOKEN=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          --mount type=bind,source="$PWD/tests/behavioral_lift/algod-config.json",target=/etc/algorand/config.json,readonly
+          algorand/algod@sha256:aea7c0eda1a70699e1e68cd801972eb48c3937f1777ccfc565df2f2b2a2269a6
+      - name: Wait for the private node
+        run: >-
+          curl --fail --retry 60 --retry-all-errors --retry-delay 2
+          --header 'X-Algo-API-Token: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+          http://127.0.0.1:41980/health
+      - name: Compare completed successful executions and effects
+        env:
+          TEALQL_LOCALNET: '1'
+          ALGOD_ADDRESS: http://127.0.0.1:41980
+          TEAL_ALGOD_LOCAL: http://127.0.0.1:41980
+        run: uv run pytest tests/test_behavioral_localnet.py tests/test_assembler_differential.py -q -ra
+      - name: Stop private node
+        if: always()
+        run: docker stop tealql-localnet

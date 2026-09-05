@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Generic, Optional, TypeVar
+import re
 
 
 T = TypeVar("T")
@@ -14,6 +15,11 @@ class AnalysisDegradation:
     message: str
     file: Optional[str] = None
     line: Optional[int] = None
+    detector: Optional[str] = None
+
+    def to_dict(self) -> dict:
+        return {"kind": self.code, "message": self.message,
+                "file": self.file, "detector": self.detector}
 
 
 @dataclass(frozen=True)
@@ -26,6 +32,10 @@ class AnalysisHealth:
 
     def messages(self) -> tuple[str, ...]:
         return tuple(item.message for item in self.degradations)
+
+    def to_dict(self) -> dict:
+        return {"complete": self.complete,
+                "notifications": [d.to_dict() for d in self.degradations]}
 
 
 @dataclass(frozen=True)
@@ -46,6 +56,13 @@ class AnalysisResult(Generic[T]):
 
 def health_for(prog, *, deep: bool = False) -> AnalysisHealth:
     items: list[AnalysisDegradation] = []
+    from ..language.spec import SPEC_VERSION
+    graph = getattr(getattr(prog, '_graph', None), 'graph', {})
+    for source in getattr(graph.get('sources'), 'files', ()):
+        match = re.search(rb'^\s*#pragma\s+version\s+(\d+)', source.normalized, re.MULTILINE)
+        if match and not 1 <= int(match[1]) <= SPEC_VERSION:
+            items.append(AnalysisDegradation('unsupported-version',
+                f'AVM version {int(match[1])} is outside the pinned range 1–{SPEC_VERSION}', source.name))
     for diagnostic in getattr(prog, "parse_diagnostics", ()) or ():
         items.append(AnalysisDegradation(
             "parse-diagnostic",

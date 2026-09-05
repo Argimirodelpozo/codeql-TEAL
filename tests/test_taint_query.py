@@ -166,14 +166,14 @@ class TestVerify:
         (tmp_path / "p.teal").write_text(_GUARDED)
         vs = verify_sinks(SSAProgram(str(tmp_path / "p.teal")))
         fund = [v for v in vs if v.sink.category.startswith("inner-payment")]
-        assert fund and all(v.verdict == "GUARDED" for v in fund)
+        assert fund and all(v.verdict == "NOT_FLAGGED" for v in fund)
         assert all(not v.confirmed_by and v.covered_by for v in fund)
 
     def test_confirmed_ranks_before_guarded(self, tmp_path):
         from tealql.security.sink_verdict import verify_sinks
         (tmp_path / "p.teal").write_text(_TEAL)
         vs = verify_sinks(SSAProgram(str(tmp_path / "p.teal")))
-        ranks = ["CONFIRMED", "GUARDED", "UNVERIFIED"]
+        ranks = ["CONFIRMED", "NOT_FLAGGED", "UNVERIFIED"]
         idx = [ranks.index(v.verdict) for v in vs]
         assert idx == sorted(idx)
 

@@ -203,14 +203,21 @@ def _main_fails_outright(ir) -> bool:
     return isinstance(entry.terminator, pre_ir.Fail) and not entry.ops
 
 
-def test_straight_line_underflow_from_main_entry_is_a_reject(tmp_path):
+@pytest.mark.parametrize('backend', [False, True], ids=['core', 'backend'])
+def test_straight_line_underflow_from_main_entry_is_a_reject(tmp_path, backend):
     """`cover 3` on one cell, `bury 0`, `int 1; +`: the AVM panics, the lift
     clamped the pops and APPROVED (finding 1.8). Main enters on an empty stack
     — the one exact depth — so the entry is doomed and lowers to `fail`, with
     nothing arity-invalid left for Puya. Controls: a legal `cover 1` approves;
     a proto sub reaching below its own params is LIVE (the caller's residual is
     there) and must stay un-doomed."""
-    from tealql.tealtools.lift.to_puya_ir import render
+    if backend:
+        pytest.importorskip('puya', reason='optional backend lowering')
+        from tealql.tealtools.lift.to_puya_ir import render
+    else:
+        from tealql.tealtools.lift import lift
+        def render(prog):
+            return lift(prog).render()
     for name, body in {
         "cover": "int 1\ncover 3\nreturn\n",
         "bury0": "int 1\nint 1\nbury 0\nreturn\n",
@@ -235,7 +242,8 @@ def test_straight_line_underflow_from_main_entry_is_a_reject(tmp_path):
     assert "fail" not in ir.render()
 
 
-def test_live_cross_family_constant_is_never_coerced(tmp_path):
+@pytest.mark.parametrize('backend', [False, True], ids=['core', 'backend'])
+def test_live_cross_family_constant_is_never_coerced(tmp_path, backend):
     """A LIVE constant of the wrong AVM family is an op the AVM rejects; four
     sites still itob/btoi-coerced it and the recompiled program approved with a
     fabricated value (finding 1.9). Every site now goes through ONE helper:
@@ -243,7 +251,13 @@ def test_live_cross_family_constant_is_never_coerced(tmp_path):
     "abc"` under `+` -> unknown (never 6382179u); `byte "abc"; bnz` -> `fail`.
     Control: the dead placeholders (`int 0` into a bytes web, `0x` into a uint64
     slot) still coerce silently, as the lift's typed-zero seeds require."""
-    from tealql.tealtools.lift.to_puya_ir import render
+    if backend:
+        pytest.importorskip('puya', reason='optional backend lowering')
+        from tealql.tealtools.lift.to_puya_ir import render
+    else:
+        from tealql.tealtools.lift import lift
+        def render(prog):
+            return lift(prog).render()
     from tealql.tealtools.lift.type_recovery import cross_family_const
     from tealql.tealtools.lift import pre_ir
 

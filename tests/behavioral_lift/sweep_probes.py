@@ -58,28 +58,15 @@ def _validate(az, clear, aid, teal, bc, tally: dict) -> None:
         print(f"COMPFAIL {aid} ({nl}L): {str(e)[:60]}", flush=True)
         return
     inputs = [[]] + [[s] for s in C._selectors(lifted)] + [[b"\x01\x02\x03\x04"]]
-    m = d = 0
-    diffs = []
-    for args in inputs:
-        for oc in C._OCS:
-            try:
-                ao, do = C._dryrun(az, bc, clear, args, oc)
-                al, dl = C._dryrun(az, lb, clear, args, oc)
-            except Exception as e:
-                diffs.append(f"dryerr {str(e)[:20]}")
-                continue
-            if ao != al or (ao and do != dl):
-                d += 1
-                diffs.append(f"oc={oc} a={len(args)} o={ao} l={al}")
-            else:
-                m += 1
+    result = C.compare_bytecode(az, bc, lb, clear, inputs,
+                                C.required_effects(teal, lifted))
     signal.alarm(0)
-    if d:
-        tally["diverge"] += 1
-        print(f"DIVERGE {aid} ({nl}L) m={m} d={d} {diffs[:3]}", flush=True)
-    else:
-        tally["faithful"] += 1
-        print(f"FAITHFUL {aid} (v{_pragma_version(teal)}, {nl}L) m={m}", flush=True)
+    status = result["status"]
+    key = {"DIVERGES": "diverge", "FAITHFUL": "faithful", "INCONCLUSIVE": "inconclusive"}[status]
+    tally[key] = tally.get(key, 0) + 1
+    print(f"{status} {aid} (v{_pragma_version(teal)}, {nl}L) "
+          f"completed={result['completed']} errors={result['errors']} "
+          f"diverge={result['diverge']} {result['diffs'][:3]}", flush=True)
 
 
 def _corpus_hashes() -> set:
@@ -196,9 +183,9 @@ def main(argv) -> int:
     distinct = len(_corpus_hashes())
     print(f"\n=== faithful={tally['faithful']} diverge={tally['diverge']} "
           f"liftfail={tally['liftfail']} compfail={tally['compfail']} skip={tally['skip']} "
-          f"dupe={tally.get('dupe', 0)} "
+          f"inconclusive={tally.get('inconclusive', 0)} dupe={tally.get('dupe', 0)} "
           f"| corpus now {kept} probes, {distinct} DISTINCT programs ===", flush=True)
-    return 1 if tally["diverge"] else 0
+    return 1 if tally["diverge"] else 2 if any(tally.get(k, 0) for k in ("inconclusive", "liftfail", "compfail", "skip")) or not tally["faithful"] else 0
 
 
 if __name__ == "__main__":

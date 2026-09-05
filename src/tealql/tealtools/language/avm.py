@@ -21,10 +21,13 @@ from __future__ import annotations
 
 from typing import Optional
 
+from .spec import SPECS, SPEC_VERSION, opcode_spec, result_type, type_kind
+from .effects import STATE_EFFECTS
+
 #: AVM/TEAL langspec version these tables target (v13 = ``sha512``).
 #: Informational — the drift test pins result types and
 #: arities to the installed puya, so a mismatch surfaces there.
-AVM_LANGSPEC_VERSION = 13
+AVM_LANGSPEC_VERSION = SPEC_VERSION
 
 
 # ===========================================================================
@@ -35,84 +38,10 @@ AVM_LANGSPEC_VERSION = 13
 # Constant-arity opcodes: mnemonic -> (n_in, n_out). Mnemonics are source
 # tokens, so symbolic ops are "+", "&&", "b==", etc.
 SIG: dict[str, tuple[int, int]] = {
-    # Arithmetic
-    "+": (2, 1), "-": (2, 1), "*": (2, 1), "/": (2, 1), "%": (2, 1),
-    "addw": (2, 2), "mulw": (2, 2), "divmodw": (4, 4), "exp": (2, 1),
-    "expw": (2, 2), "divw": (3, 1), "sqrt": (1, 1), "shl": (2, 1), "shr": (2, 1),
-    # Byte arithmetic
-    "b+": (2, 1), "b-": (2, 1), "b/": (2, 1), "b*": (2, 1), "b%": (2, 1),
-    "bsqrt": (1, 1),
-    # Byte comparison
-    "b<": (2, 1), "b>": (2, 1), "b<=": (2, 1), "b>=": (2, 1),
-    "b==": (2, 1), "b!=": (2, 1),
-    # Comparison
-    "<": (2, 1), "<=": (2, 1), ">": (2, 1), ">=": (2, 1),
-    "==": (2, 1), "!=": (2, 1), "!": (1, 1),
-    # Logic / bitwise
-    "&&": (2, 1), "||": (2, 1), "&": (2, 1), "|": (2, 1), "^": (2, 1), "~": (1, 1),
-    "b|": (2, 1), "b&": (2, 1), "b^": (2, 1), "b~": (1, 1),
-    # Hashing
-    "sha256": (1, 1), "sha512_256": (1, 1), "keccak256": (1, 1),
-    "sha3_256": (1, 1), "mimc": (1, 1), "sumhash512": (1, 1),
-    "sha512": (1, 1),                    # AVM v13: the FULL 64-byte digest
-
-    # Crypto
-    "ed25519verify": (3, 1), "ed25519verify_bare": (3, 1), "ecdsa_verify": (5, 1),
-    "ecdsa_pk_decompress": (1, 2), "ecdsa_pk_recover": (4, 2), "vrf_verify": (3, 2),
-    "falcon_verify": (3, 1),          # AVM v12: (message, signature, pubkey) -> bool
-    # Elliptic curve
-    "ec_add": (2, 1), "ec_scalar_mul": (2, 1), "ec_pairing_check": (2, 1),
-    "ec_multi_scalar_mul": (2, 1),
-    "ec_subgroup_check": (1, 1), "ec_map_to": (1, 1),
-    # Byte ops
-    "concat": (2, 1), "substring": (1, 1), "substring3": (3, 1),
-    "extract": (1, 1), "extract3": (3, 1), "extract_uint16": (2, 1),
-    "extract_uint32": (2, 1), "extract_uint64": (2, 1), "replace2": (2, 1),
-    "replace3": (3, 1), "len": (1, 1), "bitlen": (1, 1), "getbit": (2, 1),
-    "setbit": (3, 1), "getbyte": (2, 1), "setbyte": (3, 1), "itob": (1, 1),
-    "btoi": (1, 1), "base64_decode": (1, 1), "json_ref": (2, 1),
-    # Constants (fixed-arity members; pushints/pushbytess are dynamic — see op_arity)
-    "int": (0, 1), "intc": (0, 1), "intc_0": (0, 1), "intc_1": (0, 1),
-    "intc_2": (0, 1), "intc_3": (0, 1), "pushint": (0, 1), "intcblock": (0, 0),
-    "bytec": (0, 1), "bytec_0": (0, 1), "bytec_1": (0, 1), "bytec_2": (0, 1),
-    "bytec_3": (0, 1), "pushbytes": (0, 1), "bytecblock": (0, 0), "bzero": (1, 1),
-    # Control flow (callsub/retsub handled by op_arity overrides; match dynamic).
-    # ``return`` consumes the approval value exactly like the AVM. Keeping that
-    # operand explicit makes it a real SSA live-out: DCE, taint, exit
-    # classification and the lifter all read one semantic authority.
-    "return": (1, 0), "err": (0, 0), "assert": (1, 0), "b": (0, 0),
-    "bnz": (1, 0), "bz": (1, 0), "switch": (1, 0),
-    # Stack manipulation (dig/popn/dupn/bury/cover/uncover/frame_* dynamic)
-    "pop": (1, 0), "dup": (1, 2), "dup2": (2, 4), "swap": (2, 2),
-    "select": (3, 1), "proto": (0, 0),
-    # Scratch space
-    "load": (0, 1), "store": (1, 0), "loads": (1, 1), "stores": (2, 0),
-    "gload": (0, 1), "gloads": (1, 1), "gloadss": (2, 1), "gaid": (0, 1),
-    "gaids": (1, 1),
-    # Transaction
-    "txn": (0, 1), "txna": (0, 1), "txnas": (1, 1), "gtxn": (0, 1),
-    "gtxna": (0, 1), "gtxnas": (1, 1), "gtxns": (1, 1), "gtxnsa": (1, 1),
-    "gtxnsas": (2, 1), "gitxn": (0, 1), "gitxna": (0, 1), "gitxnas": (1, 1),
-    # Global / app state
-    "global": (0, 1), "app_opted_in": (2, 1), "app_local_get": (2, 1),
-    "app_local_get_ex": (3, 2), "app_global_get": (1, 1), "app_global_get_ex": (2, 2),
-    "app_local_put": (3, 0), "app_global_put": (2, 0), "app_local_del": (2, 0),
-    "app_global_del": (1, 0), "app_params_get": (1, 2), "asset_holding_get": (2, 2),
-    "asset_params_get": (1, 2), "acct_params_get": (1, 2), "balance": (1, 1),
-    "min_balance": (1, 1), "online_stake": (0, 1), "voter_params_get": (1, 2),
-    # Inner transactions
-    "itxn_begin": (0, 0), "itxn_next": (0, 0), "itxn_submit": (0, 0),
-    "itxn_field": (1, 0), "itxn": (0, 1), "itxna": (0, 1), "itxnas": (1, 1),
-    # Logging
-    "log": (1, 0),
-    # Misc
-    "arg": (0, 1), "arg_0": (0, 1), "arg_1": (0, 1), "arg_2": (0, 1),
-    "arg_3": (0, 1), "args": (1, 1), "block": (1, 1),
-    # Box storage
-    "box_create": (2, 1), "box_extract": (3, 1), "box_replace": (3, 0),
-    "box_del": (1, 1), "box_len": (1, 2), "box_get": (1, 2), "box_put": (2, 0),
-    "box_splice": (4, 0), "box_resize": (2, 0),
+    name: variants[-1].arity for name, variants in SPECS.items()
 }
+# Source pseudo-op and legacy compiler extension; neither is a protocol opcode.
+SIG.update({"int": (0, 1), "sumhash512": (1, 1)})
 
 # Height-dependent ops PySSA phase 1 instantiates with simple counts; the
 # proto-aware forms are rebuilt by later PySSA phases.
@@ -293,17 +222,8 @@ ASSET_TRANSFER_FIELDS: frozenset[str] = frozenset({
 
 #: Opcodes mutating persistent state or emitting a transaction — the sensitive
 #: sink family, which should run only on a guard-dominated path.
-STATE_MUTATING_OPS: frozenset[str] = frozenset({
-    "box_create", "box_put", "box_replace", "box_del", "box_splice",
-    "box_resize",
-    "app_global_put", "app_global_del",
-    "app_local_put", "app_local_del",
-    "itxn_submit",
-})
-
-#: Just the persistent-state WRITE ops (the box / app put/del family, without
-#: ``itxn_submit``).
-STATE_WRITE_OPS: frozenset[str] = STATE_MUTATING_OPS - {"itxn_submit"}
+STATE_WRITE_OPS: frozenset[str] = frozenset(STATE_EFFECTS)
+STATE_MUTATING_OPS: frozenset[str] = STATE_WRITE_OPS | {"itxn_submit"}
 
 # --- user-input / transaction source opcode families ----------------------
 
@@ -502,6 +422,15 @@ _BYTES_OPS = frozenset({"itob", "concat", "substring", "substring3", "extract",
                         "ecdsa_pk_recover", "ecdsa_pk_decompress",
                         "arg", "arg_0", "arg_1", "arg_2", "arg_3", "args",
                         }) | _BYTES_PUSH
+# Mechanical return families supplement semantic refinements from the tables.
+_U64_OPS |= frozenset(n for n in SPECS if result_type(n) in {"uint64", "bool"}
+                     and len(opcode_spec(n).returns) == 1)
+_BYTES_OPS |= frozenset(n for n in SPECS if result_type(n) in {"bytes", "account", "biguint"}
+                       and len(opcode_spec(n).returns) == 1)
+BOOL_RESULT_OPS |= frozenset(n for n in SPECS if result_type(n) == "bool"
+                           and len(opcode_spec(n).returns) == 1)
+_BOOL_OPS |= BOOL_RESULT_OPS
+
 # HAZARD: `setbit` is POLYMORPHIC — its result type equals its VALUE operand
 # (`setbit A B C` -> type of A, uint64 or bytes), so it must stay out of
 # _BYTES_OPS and be typed from that operand. (`getbit` always returns uint64;
@@ -607,6 +536,7 @@ _BLOCK_FIELD_TYPE = {
     "BlkTimestamp": "uint64", "BlkFeesCollected": "uint64", "BlkBonus": "uint64",
     "BlkTxnCounter": "uint64", "BlkProposerPayout": "uint64",
 }
+_BLOCK_FIELD_TYPE.update({f: type_kind(detail[0]) for f, detail in opcode_spec("block").fields.items()})
 _BLOCK_FIELD_TYPE.update({f: "account" for f in ADDRESS_BLOCK_FIELDS})
 
 # ``json_ref``'s single result is keyed by its KIND immediate, not a field —
@@ -715,6 +645,10 @@ PARAMS_FIELD_TYPE = {
     "AssetReserve": "account", "AssetFreeze": "account",
     "AssetClawback": "account", "AssetCreator": "account",
 }
+for _spec_name in ("app_params_get", "asset_params_get", "acct_params_get", "voter_params_get", "asset_holding_get"):
+    for _field, _detail in opcode_spec(_spec_name).fields.items():
+        PARAMS_FIELD_TYPE.setdefault(_field, type_kind(_detail[0]))
+
 
 #: Parameter/holding field ownership, derived from :data:`PARAMS_FIELD_TYPE`.
 #: ``AssetBalance`` and ``AssetFrozen`` are the only holding fields; every
@@ -753,7 +687,7 @@ LOCAL_ACCOUNT_STATE_OPS: frozenset[str] = frozenset({
     "app_opted_in",
 })
 BOX_RESOURCE_OPS: frozenset[str] = frozenset(
-    op for op in SIG if op.startswith("box_")
+    op for op in SIG if op.startswith(("box_", "app_box_"))
 )
 INNER_TXN_BUILD_OPS: frozenset[str] = frozenset({
     "itxn_begin", "itxn_next", "itxn_submit", "itxn_field",
@@ -772,9 +706,9 @@ def _multi_out_type(op, immediates, idx):
     schema, not the op)."""
     if op in _MULTI_ALL_U64:
         return "uint64"
-    if op == "box_len":
+    if op in {"box_len", "app_box_len"}:
         return "bool" if idx == 0 else "uint64"    # did_exist, length
-    if op == "box_get":
+    if op in {"box_get", "app_box_get"}:
         return "bool" if idx == 0 else "bytes"     # did_exist, value
     if op == "vrf_verify":
         return "bool" if idx == 0 else "bytes"     # verified flag, 64-byte output
@@ -986,6 +920,10 @@ _BLOCK_FIELD_BYTELEN: dict = {
     # variable-length string, so deliberately absent.
     "BlkSeed":   32,
     "BlkBranch": 32,
+    "BlkBranch512": 64,
+    "BlkSha256TxnCommitment": 32,
+    "BlkSha512_256TxnCommitment": 32,
+    "BlkSha512TxnCommitment": 64,
 }
 _OP_OUTPUT_BYTELEN: dict = {
     # ecdsa pubkey ops push two 32-byte words (X, Y).
@@ -999,6 +937,7 @@ _OP_OUTPUT_BYTELEN: dict = {
 #: plus ``itob`` — always exactly 8 bytes, and the head of nearly every ARC-4
 #: integer encoding chain, so its width feeds the offset/width reasoning.
 FIXED_BYTES_OUTPUT_LEN: dict[str, int] = {
+    "poseidon2": 32,
     "itob":       8,
     "sha256":     32,
     "sha512_256": 32,
@@ -1100,6 +1039,7 @@ _STACK_SHUFFLE_OPS: frozenset = frozenset({
 # encode detector-specific trust: a source may independently seed an output,
 # and a sink may independently inspect an input.
 VALUE_FLOW_HASH_OPS: frozenset[str] = frozenset({
+    "poseidon2",
     "sha256", "keccak256", "sha512_256", "sha3_256", "sha512",
 })
 
@@ -1140,6 +1080,7 @@ VALUE_FLOW_OPAQUE_READ_OPS: frozenset[str] = frozenset({
     "app_opted_in", "app_params_get", "asset_holding_get", "asset_params_get",
     "acct_params_get", "voter_params_get", "balance", "min_balance",
     "box_get", "box_len", "box_extract", "block",
+    "app_box_get", "app_box_len", "app_box_extract",
 })
 
 VALUE_FLOW_SPECIAL_OPS: frozenset[str] = (

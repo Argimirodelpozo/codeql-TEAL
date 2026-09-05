@@ -33,7 +33,6 @@ because it is clean".
 """
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 
@@ -61,11 +60,8 @@ def app_mode_detectors() -> "list[str]":
 def distinct_probes() -> "list[tuple[str, Path]]":
     """``(content_hash, representative_path)`` for each DISTINCT probe program,
     ordered by hash so the digest is stable regardless of filesystem order."""
-    seen: "dict[str, Path]" = {}
-    for f in sorted(PROBES.glob("*.teal")):
-        h = hashlib.sha256(f.read_bytes()).hexdigest()[:16]
-        seen.setdefault(h, f)
-    return sorted(seen.items())
+    from tests.corpus_manifest import distinct_files
+    return distinct_files(PROBES)
 
 
 #: Placeholder for a finding that anchors to no line (whole-program finding).

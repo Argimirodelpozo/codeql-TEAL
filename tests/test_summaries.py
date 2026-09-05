@@ -1,9 +1,7 @@
-"""Prototype: bottom-up interprocedural procedure summaries.
+"""Shared positional returns, transitive effects, and assertion dependencies.
 
-Pins the two facts the shared fixpoint computes — taint transfer (passthrough
-params + internal sources) and the NEW guard fact (params asserted
-unconditionally) — plus the equivalence of the taint half with the existing
-production summary (``taint._return_summary``) on real contracts.
+Assertion dependencies are not sanitizer proofs. The legacy aggregate view
+remains available for presentation; production call transfer is positional.
 """
 from __future__ import annotations
 
@@ -11,7 +9,6 @@ import glob
 
 import pytest
 
-pytest.importorskip("puya")
 
 from tealql.tealtools.lift.lift import _Lifter                 # noqa: E402
 from tealql.tealtools.lift.summaries import compute_summaries  # noqa: E402
@@ -60,11 +57,11 @@ def test_passthrough_and_guard_facts(tmp_path):
     validate = next(s for sid, s in by_name.items() if "validate" in sid)
     identity = next(s for sid, s in by_name.items() if "identity" in sid)
     # validate(x): asserts x == Sender, returns nothing.
-    assert validate.checked_params == frozenset({0})
+    assert validate.asserted_params == frozenset({0})
     assert validate.passthrough == frozenset()
     # identity(x): returns x, checks nothing.
     assert identity.passthrough == frozenset({0})
-    assert identity.checked_params == frozenset()
+    assert identity.asserted_params == frozenset()
 
 
 def test_internal_source_taints_return_regardless_of_args(tmp_path):
@@ -90,8 +87,8 @@ retsub
 
 def test_guard_only_when_unconditional(tmp_path):
     """An assert on a param behind a branch is NOT (yet) a guard fact — the
-    prototype recognises only entry-block (always-executed) asserts, so it stays
-    sound (never claims a param is validated when a path skips the assert)."""
+    summary records only entry-block (always-executed) asserts, so it stays
+    sound (never claims the assertion was unconditional when a path skips the assert)."""
     teal = """#pragma version 10
 txna ApplicationArgs 0
 callsub maybe_check
@@ -114,7 +111,7 @@ retsub
 """
     summ = _summaries(tmp_path, teal)
     maybe = next(iter(summ.values()))
-    assert 0 not in maybe.checked_params, "branch-guarded param must not read as validated"
+    assert 0 not in maybe.asserted_params, "branch assertion must not read as unconditional"
 
 
 @pytest.mark.parametrize("contract", [

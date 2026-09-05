@@ -55,15 +55,6 @@ class ValueFact:
     type: Optional[TypeFact] = None
 
 
-@dataclass(frozen=True)
-class _RangeRefinement:
-    value: ValueKey
-    relation: str
-    other: IntRange
-    guard_block: tuple
-    guard_line: int
-
-
 def _value_key(value) -> Optional[ValueKey]:
     if isinstance(value, SSAVar):
         return ("var", value.file, value.line, value.index)
@@ -256,46 +247,6 @@ def _alias_map(prog: "SSAProgram") -> dict[ValueKey, AliasTarget]:
     return {key: resolve(value) for key, value in redirects.items()}
 
 
-def _operand_range(value) -> Optional[IntRange]:
-    from ._range_arithmetic import _operand_range as impl
-    return impl(value)
-
-
-def _range_refinements(prog: "SSAProgram") -> tuple[_RangeRefinement, ...]:
-    from ._range_refinement import _CMP, _SWAP
-    from ..ssa import binary_operands
-
-    out: list[_RangeRefinement] = []
-    for guard in prog.assignments:
-        if guard.op != "assert" or not guard.inputs or guard.basic_block is None:
-            continue
-        condition = guard.inputs[0]
-        definition = getattr(condition, "defined_by", None)
-        candidates = []
-        if definition is not None and definition.op in _CMP and len(definition.inputs) == 2:
-            lhs, rhs = binary_operands(definition)
-            lhs_range, rhs_range = _operand_range(lhs), _operand_range(rhs)
-            if _value_key(lhs) is not None and rhs_range is not None:
-                candidates.append((lhs, definition.op, rhs_range))
-            if _value_key(rhs) is not None and lhs_range is not None:
-                candidates.append((rhs, _SWAP[definition.op], lhs_range))
-        elif _value_key(condition) is not None:
-            candidates.append((condition, "!=", IntRange(0, 0)))
-        for value, relation, other in candidates:
-            if relation in {"==", "!="} and getattr(value.type, "kind", None) == "bytes":
-                continue
-            key = _value_key(value)
-            if key is not None:
-                out.append(_RangeRefinement(
-                    key,
-                    relation,
-                    other,
-                    guard.basic_block._key(),
-                    guard.location.line,
-                ))
-    return tuple(out)
-
-
 class ValueFacts:
     """Immutable facts keyed by stable SSA identities."""
 
@@ -304,16 +255,14 @@ class ValueFacts:
         prog: "SSAProgram",
         facts: Mapping[ValueKey, ValueFact],
         aliases: Mapping[ValueKey, AliasTarget],
-        refinements: tuple[_RangeRefinement, ...],
         domains: frozenset[FactDomain],
     ):
         self._prog = prog
         self._facts = MappingProxyType(dict(facts))
         self._aliases = MappingProxyType(dict(aliases))
-        self._refinements = refinements
         self.domains = domains
         self.revision = getattr(prog, "_revision", 0)
-        self._dominance = None
+        self._intervals = None
 
     @classmethod
     def build(
@@ -363,11 +312,7 @@ class ValueFacts:
                     FactDomain.BYTE_LENGTHS, FactDomain.BIGINT_RANGES,
                 } else None),
             )
-        refinements = (
-            _range_refinements(snapshot)
-            if FactDomain.RANGES in domains else ()
-        )
-        return cls(prog, facts, aliases, refinements, domains)
+        return cls(prog, facts, aliases, domains)
 
     @property
     def facts(self) -> Mapping[ValueKey, ValueFact]:
@@ -379,6 +324,8 @@ class ValueFacts:
 
     def resolve(self, value):
         """Resolve a proven identity without modifying a consumer operand."""
+        if getattr(self._prog, "_revision", 0) != self.revision:
+            raise RuntimeError("stale facts: request facts again after changing the program")
         if isinstance(value, Const):
             return value
         key = _value_key(value)
@@ -424,35 +371,13 @@ class ValueFacts:
         value,
         target: "Assignment | tuple[BasicBlock, int]",
     ) -> Optional[IntRange]:
-        """Range valid at one use, including dominating assert refinements."""
-        current = self.int_range(value)
-        key = self._resolved_key(value) or _value_key(value)
-        if key is None:
-            return current
-        if hasattr(target, "basic_block"):
-            block, line = target.basic_block, target.location.line
-        else:
-            block, line = target
-        if block is None:
-            return current
-        if self._dominance is None:
-            from ..cfg.dominance import AssertDominance
-            self._dominance = AssertDominance(self._prog)
-        from ._range_refinement import _apply
-        for refinement in self._refinements:
-            refined_key = self._aliases.get(refinement.value, refinement.value)
-            if refined_key != key:
-                continue
-            guard_block = self._prog.blocks.get(refinement.guard_block)
-            if guard_block is None or not self._dominance.dominates(
-                guard_block, block, refinement.guard_line, line
-            ):
-                continue
-            base = current or IntRange(0, (1 << 64) - 1)
-            lo, hi = _apply(refinement.relation, base, refinement.other)
-            if lo <= hi:
-                current = IntRange(lo, hi)
-        return current
+        """Range at a use, including branch predicates and bounded expression flow."""
+        if FactDomain.RANGES not in self.domains:
+            return None
+        if self._intervals is None:
+            from .intervals import IntervalQuery
+            self._intervals = IntervalQuery(self)
+        return self._intervals.range_at(value, target)
 
 
 class AnalysisContext:

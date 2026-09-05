@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from typing import Iterable, Optional
 
 from ..language.avm import FUND_FIELDS, LSIG_ARG_OPS, TXN_SOURCE_OPS
+from ..language.effects import STATE_EFFECTS
+from ..diagnostics.location import InstructionPoint
 from .taint_graph import Node, TaintGraph
 
 # --- sink taxonomy ----------------------------------------------------------
@@ -47,12 +49,7 @@ _ITXN_FIELD_SINKS: dict[str, tuple[str, str]] = {
 
 #: Sinks identified by OPCODE alone (the danger is the op, not a field).
 _OP_SINKS: dict[str, tuple[str, str]] = {
-    "app_global_put": ("global-state-write", "high"),
-    "app_local_put": ("local-state-write", "high"),
-    "box_put": ("box-write", "high"),
-    "box_create": ("box-write", "high"),
-    "box_replace": ("box-write", "high"),
-    "box_del": ("box-delete", "medium"),
+    **{op: (effect.category, effect.severity) for op, effect in STATE_EFFECTS.items()},
     "log": ("log-emit", "low"),
 }
 
@@ -94,6 +91,10 @@ class SinkHit:
     category: str
     severity: str
     source: Optional[str] = None
+
+    @property
+    def point(self) -> InstructionPoint:
+        return InstructionPoint(self.node.file, self.node.line, self.op, self.field)
 
     @property
     def location(self) -> str:
@@ -141,13 +142,13 @@ class TaintQuery:
 
     def __init__(self, prog, *, file: Optional[str] = None):
         from ..frontend.source_map import source_map_for, reverse_file_source_map
-        self.prog = prog
+        self.prog = prog.for_file(file, strict=False) if file is not None else prog
         self.file = file
-        self.g = TaintGraph.of(prog)
-        self.health = prog.health(deep=True)
+        self.g = TaintGraph.of(self.prog)
+        self.health = self.prog.health(deep=True)
         # Keyed by (teal_file, line) so a directory's programs don't clobber;
         # empty on raw bytecode, where queries work in TEAL lines only.
-        self.srcmap = source_map_for(prog, file=file)
+        self.srcmap = source_map_for(self.prog, file=file)
         self._rev = reverse_file_source_map(self.srcmap)
 
     def _file_name(self) -> str:
@@ -169,11 +170,16 @@ class TaintQuery:
         """The TEAL lines a high-level ``src_file:src_line`` compiled to, or ``[]``."""
         # _rev: (src_file, src_line) -> [(teal_file, teal_line), …]; the source
         # ref matches by exact path or basename.
+        return sorted({ln for _, ln in self.teal_locations_for_source(src_file, src_line)})
+
+    def teal_locations_for_source(self, src_file: str, src_line: int) -> list[tuple[str, int]]:
+        """All matching source-map locations, retaining their program identities."""
+        matches = set()
         for (f, ln), tls in self._rev.items():
             if ln == src_line and (f == src_file or f.endswith("/" + src_file)
                                    or f.split("/")[-1] == src_file):
-                return [tl for _tf, tl in tls]
-        return []
+                matches.update(tls)
+        return sorted(matches)
 
     # -- source / sink location lookup ----------------------------------
 
@@ -210,8 +216,8 @@ class TaintQuery:
         if any(x is not None for x in (line, op, immediates)):
             srcs += self._nodes(line=line, op=op, immediates=immediates, file=file)
         if source_line is not None:
-            for tl in self.teal_lines_for_source(source_file or "", source_line):
-                srcs += self._nodes(line=tl)
+            for tf, tl in self.teal_locations_for_source(source_file or "", source_line):
+                srcs += self._nodes(line=tl, file=tf)
         reach: set = set()
         for src in srcs:
             reach |= self.g.reachable_from(src)
@@ -243,6 +249,11 @@ class TaintQuery:
         HAZARD: precise is still GUARD-BLIND. Only ``sink_verdict.verify_sinks``
         answers whether a reachable sink is actually unguarded."""
         if precise and sources is None:
+            if len(self.prog.source_files) > 1:
+                hits = [hit for name in self.prog.source_files
+                        for hit in TaintQuery(self.prog, file=name).tainted_sinks(precise=True)]
+                return sorted(hits, key=lambda h: (_SEV_ORDER.get(h.severity, 9),
+                                                   h.node.file, h.node.line))
             from ..lift import build_lifter
             lifter = build_lifter(self.prog, file=self.file)
             if lifter is not None:

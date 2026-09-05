@@ -732,7 +732,11 @@ def parse_nodes(
         src = _rewrite_scoped_label_separators(src)
         src = _normalise_numeric_separators(src)
         src = _spell_immediateless_extract(src)
-        root = _parser().parse(src).root_node
+        from .protocol import protocol_nodes
+        grammar_src, protocol_ops, protocol_diagnostics = protocol_nodes(src, file)
+        if diagnostics is not None:
+            diagnostics.extend(protocol_diagnostics)
+        root = _parser().parse(grammar_src).root_node
 
         real: list = []
         for c in root.children:
@@ -755,7 +759,7 @@ def parse_nodes(
                     ))
             elif not _is_trivia(c.type):
                 real.append(c)
-        if not real:
+        if not real and not protocol_ops:
             continue
 
         slines = {file: src.decode("utf-8", "replace").splitlines()}
@@ -768,7 +772,7 @@ def parse_nodes(
             return n
 
         # All opcode nodes are emitted; label nodes are reachability-gated below.
-        op_nodes: list = []
+        op_nodes: list = list(protocol_ops)
         label_nodes: list = []
         i = 0
         while i < len(real):
@@ -1028,8 +1032,10 @@ def parse_nodes(
                     ))
 
         # Source node spans (line 1, col 0) .. end of the last real child.
-        last = real[-1]
-        out.append(_node(1, 0, last.end_point[0] + 1, last.end_point[1], Source))
+        ends = [(n.end_point[0] + 1, n.end_point[1]) for n in real]
+        ends.extend((n.location.end_line, n.location.end_column) for n in protocol_ops)
+        end_line, end_column = max(ends)
+        out.append(_node(1, 0, end_line, end_column, Source))
         out.extend(op_nodes)
         out.extend(n for n in label_nodes if n.location.start_line in reach_lines)
     return out

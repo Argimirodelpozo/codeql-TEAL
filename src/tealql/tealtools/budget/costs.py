@@ -80,35 +80,28 @@ class CostFact:
 class _CostTable:
     fixed: dict[str, int]
     dynamic: frozenset[str]
-    available: bool
 
 
 @lru_cache(maxsize=1)
-def _puya_cost_table() -> _CostTable:
-    try:
-        from puya.ir.avm_ops import AVMOp
-    except Exception:
-        return _CostTable({}, frozenset(), False)
-    fixed: dict[str, int] = {}
-    dynamic: set[str] = set()
-    for member in AVMOp:
-        raw = getattr(member, "cost", None)
-        if isinstance(raw, int):
-            fixed[member.code] = raw
+def _spec_cost_table() -> _CostTable:
+    from ..language.spec import SPECS, opcode_spec
+    fixed, dynamic = {}, set()
+    for name in SPECS:
+        raw = opcode_spec(name).cost
+        if raw.isdecimal():
+            fixed[name] = int(raw)
         else:
-            dynamic.add(member.code)
-    return _CostTable(fixed, frozenset(dynamic), True)
+            dynamic.add(name)
+    return _CostTable(fixed, frozenset(dynamic))
 
 
 def op_cost(op: str, immediates: str = "") -> CostFact:
     """Cost of one opcode execution, without pretending dynamic costs are exact."""
-    table = _puya_cost_table()
+    table = _spec_cost_table()
     fixed = table.fixed.get(op)
     if fixed is not None:
         return CostFact.known(fixed)
     suffix = f" {immediates.strip()}" if immediates and immediates.strip() else ""
-    if not table.available:
-        return CostFact.unknown("Puya cost metadata unavailable")
     # OUR tables answer before Puya's "dynamic" verdict: Puya marks an op
     # dynamic when its enum cannot express a per-immediate or per-length cost,
     # but the AVM spec still fixes the immediate-selected cost (``ecdsa_verify
@@ -173,6 +166,7 @@ _LENGTH_COSTS: dict[str, tuple[int, int, int, int]] = {
     "base64_decode": (1, 1, 16, 0),
     "json_ref": (25, 2, 7, 1),
     "mimc": (10, 550, 32, 0),
+    "poseidon2": (7, 350, 32, 0),
     "sumhash512": (150, 7, 4, 0),
     "sha512": (15, 32, 2, 0),
 }

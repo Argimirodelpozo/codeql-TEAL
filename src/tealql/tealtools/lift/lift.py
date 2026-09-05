@@ -247,6 +247,11 @@ def _restore_pruned_edges(undo) -> None:
 class _Lifter:
     """Stateful builder behind :func:`lift` — one instance per program."""
 
+    def __setattr__(self, name, value):
+        if name in {"subs", "name2sub"} and getattr(self, "_analysis_frozen", False):
+            raise TypeError("cached analysis IR is read-only")
+        object.__setattr__(self, name, value)
+
     def __init__(self, prog: SSAProgram) -> None:
         self.prog = prog
 

@@ -239,6 +239,10 @@ _POS_IN = {
 
 def _expected_type(op, idx, args, imm=None):
     """Expected ``ir_type`` of ``args[idx]`` for ``op``, or ``None``."""
+    if op and (op.startswith("app_box_") or op in {"poseidon2", "app_params_set"}):
+        from ..language.spec import operand_type
+        return operand_type(op, idx)
+
     if op in ("__cond__", "__exit__", "__goto_nth__", "__switch_u__"):
         return "uint64"
     if op == "__switch_b__":

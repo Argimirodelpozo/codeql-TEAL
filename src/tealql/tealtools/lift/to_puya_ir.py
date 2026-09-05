@@ -467,6 +467,15 @@ def _to_puya_full(prog, *, unknown_type=PT.any):
     """The full lower, additionally returning the ``lifter`` (SSAVar -> pre_ir
     Register) and ``t`` translator (id(pre_ir Register) -> M.Register) so a caller
     can bridge an SSA value to its lowered puya register."""
+    from ..language.spec import PUYA_57_UNSUPPORTED, opcode_spec
+    from ..diagnostics.errors import LiftError
+    for assignment in prog.assignments:
+        spec = opcode_spec(assignment.op)
+        fields = str(assignment.immediates).split()
+        if assignment.op in PUYA_57_UNSUPPORTED or (spec is not None and any(
+                spec.fields[field][1] > 12 for field in fields if field in spec.fields)):
+            raise LiftError(f'Puya 5.7 does not support {assignment.op} {assignment.immediates} '
+                            f'at {assignment.location}; source analysis remains available', stage='lower')
     # Pre-lift scratch simplification: forward compile-time-constant scratch loads to
     # their literal. HAZARD: this only rewires the LOAD's consumers and KEEPS the
     # store -- scratch is not a sound local, since a `gload i N` in a SIBLING program

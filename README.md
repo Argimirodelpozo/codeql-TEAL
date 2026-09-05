@@ -96,6 +96,10 @@ grouped by responsibility: `diagnostics` (typed failures and analysis health),
 
 ### CLI
 
+Experimental policy checks are documented in [OBLIGATIONS.md](docs/OBLIGATIONS.md).
+See [AVM_SPEC.md](docs/AVM_SPEC.md) for the pinned language/backend support boundary
+and [TESTING_REVIEW_CHANGES.md](docs/TESTING_REVIEW_CHANGES.md) for corpus and oracle limits.
+
 ```bash
 tealql --help
 
@@ -105,6 +109,7 @@ tealql box-df           <target> --flavour {into|out|correlated}
 tealql detections       <target> {--detector NAME | --all | --list} [--mode app|logicsig]
 tealql detections-scan  <root>   [--options detections.yml]
 tealql group-taint      <member.teal>...   # cross-member taint over an atomic group (in group order)
+tealql obligations     approval.teal --policy policy.json   # experimental conditional proofs (JSON)
 
 # Type-recovery-driven audits (need the lift extra — puyapy; exit 1 on any finding)
 tealql abi-audit        <target>   # caller-supplied arc4.Address paid to a fund/asset sink unguarded

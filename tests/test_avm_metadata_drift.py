@@ -247,7 +247,9 @@ def test_immediate_keyed_result_tables_match_puya():
                            ("json_ref", avm._JSON_REF_RESULT_TYPE)):
         variants = getattr(AVMOp, op_name)._variants
         assert isinstance(variants, DynamicVariants)
-        assert set(table) == set(variants.variant_map), (
+        from tealql.tealtools.language.spec import opcode_spec
+        assert set(table) == set(opcode_spec(op_name).fields)
+        assert set(variants.variant_map) <= set(table), (
             op_name, set(table) ^ set(variants.variant_map))
         for key, var in variants.variant_map.items():
             (ret,) = var.signature.returns  # both ops: single result per kind
@@ -263,7 +265,11 @@ def test_immediate_keyed_result_tables_match_puya():
     for op_name, fields in avm.PARAMS_FIELDS_BY_OP.items():
         assert op_name in avm._EX_FLAG_OPS
         variants = getattr(AVMOp, op_name)._variants
-        assert set(fields) == set(variants.variant_map), (
+        # New protocol fields can precede the pinned optional compiler. Their
+        # complete inventory is checked against the pinned consensus spec.
+        from tealql.tealtools.language.spec import opcode_spec
+        assert set(fields) == set(opcode_spec(op_name).fields)
+        assert set(variants.variant_map) <= set(fields), (
             op_name, set(fields) ^ set(variants.variant_map))
         for key, var in variants.variant_map.items():
             value_ret = var.signature.returns[0]

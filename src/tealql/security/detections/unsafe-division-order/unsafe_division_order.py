@@ -42,8 +42,9 @@ class UnsafeDivisionOrderViolation:
         return (
             f"divide-before-multiply at {self.location}: a `{self.div.op}` result "
             f"is multiplied by `{self.mul.op}` (div at {loc(self.div)}). "
-            f"Integer division truncates first, so precision is lost — reorder to "
-            f"multiply before dividing (`(a * c) / b`)."
+            f"Integer division truncates before scaling. Review the intended rounding; "
+            f"use `(a * c) / b` only after proving the intermediate product fits, "
+            f"or use suitable wide arithmetic. Reordering can otherwise overflow."
         )
 
     def to_dict(self) -> dict:

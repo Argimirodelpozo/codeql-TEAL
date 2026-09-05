@@ -9,20 +9,32 @@ from dataclasses import dataclass
 from typing import Callable, Iterable, Optional, Protocol, runtime_checkable
 
 from ..ssa import SSAProgram
+from ..diagnostics.health import AnalysisDegradation, AnalysisHealth, AnalysisResult, health_for
 
 logger = logging.getLogger("tealql.tealtools")
 
 
+def _input_health(prog, strict):
+    health = health_for(prog)
+    if strict and not health.complete:
+        from ..diagnostics.errors import TealQLError
+        raise TealQLError('incomplete input: ' + '; '.join(health.messages()))
+    return health
+
+
 def _safe(label: str, fn: "Callable[[], object]", default, *, strict: bool):
-    """Run ``fn()`` crash-isolated — one detector that dies on a weird contract must
-    not sink the whole output; logs and returns ``default``, ``strict`` re-raises."""
+    """Isolate execution while retaining failure in the shared result envelope."""
     try:
-        return fn()
+        return AnalysisResult(fn(), AnalysisHealth())
     except Exception as e:
         if strict:
             raise
         logger.error("%s crashed (skipped): %s", label, e)
-        return default
+        kind, _, name = label.partition(" ")
+        return AnalysisResult(default, AnalysisHealth((AnalysisDegradation(
+            f"{kind}-crashed", f"{label} crashed: {type(e).__name__}: {e}",
+            detector=name,
+        ),)))
 
 
 @runtime_checkable
@@ -167,30 +179,42 @@ ALL_REPORTS: list[Report] = [
 ]
 
 
-def run_all_findings(
+def run_all_result(
     prog: SSAProgram, *, extra_detectors: Iterable[Detector] = (),
     strict: bool = False,
-) -> tuple[str, int]:
-    """Like :func:`run_all` but also returns the total finding count, so a caller can
-    set a findings exit code without re-running every detector."""
-    out: list[str] = []
+) -> AnalysisResult[tuple[str, int]]:
+    """Text, finding count, and completeness from one execution."""
+    health = _input_health(prog, strict)
+    notes = list(health.degradations)
+    out: list[str] = [f'[INCOMPLETE] {msg}' for msg in health.messages()]
     n_findings = 0
     for det in [*ALL_DETECTORS, *extra_detectors]:
         out.append(f"=== {det.name} ===")
-        findings = _safe(f"detector {det.name}",
-                         lambda d=det: list(d.run(prog)), [], strict=strict)
+        result = _safe(f"detector {det.name}",
+                         lambda d=det: [f.pretty() for f in d.run(prog)], [], strict=strict)
+        findings = result.value
+        notes.extend(result.degradations)
         if findings:
             n_findings += len(findings)
-            out.extend(f.pretty() for f in findings)
-        else:
+            out.extend(findings)
+        elif result.complete:
             out.append("(no findings)")
+        out.extend(f"[INCOMPLETE] {msg}" for msg in result.health.messages())
         out.append("")
     for rep in ALL_REPORTS:
         out.append(f"=== {rep.name} ===")
-        out.append(_safe(f"report {rep.name}", lambda r=rep: r.run(prog),
-                         "(report crashed — skipped)", strict=strict))
+        result = _safe(f"report {rep.name}", lambda r=rep: r.run(prog),
+                       "", strict=strict)
+        out.append(result.value)
+        notes.extend(result.degradations)
+        out.extend(f"[INCOMPLETE] {msg}" for msg in result.health.messages())
         out.append("")
-    return "\n".join(out).rstrip() + "\n", n_findings
+    return AnalysisResult(("\n".join(out).rstrip() + "\n", n_findings), AnalysisHealth(tuple(notes)))
+
+
+def run_all_findings(prog, *, extra_detectors=(), strict=False) -> tuple[str, int]:
+    """Compatibility view of the text and count; use run_all_result for health."""
+    return run_all_result(prog, extra_detectors=extra_detectors, strict=strict).value
 
 
 def run_all(prog: SSAProgram, *, extra_detectors: Iterable[Detector] = (),
@@ -206,15 +230,24 @@ def run_all_dict(prog: SSAProgram, *, extra_detectors: Iterable[Detector] = (),
     from .._utils.serialize import finding_to_dict
 
     detectors: dict[str, list[dict]] = {}
+    executions: dict[str, dict] = {}
+    input_health = _input_health(prog, strict)
+    notes = list(input_health.degradations)
     for det in [*ALL_DETECTORS, *extra_detectors]:
-        findings = _safe(f"detector {det.name}",
-                         lambda d=det: list(d.run(prog)), [], strict=strict)
-        detectors[det.name] = [finding_to_dict(f) for f in findings]
+        result = _safe(f"detector {det.name}",
+                      lambda d=det: [finding_to_dict(f) for f in d.run(prog)],
+                      [], strict=strict)
+        detectors[det.name] = result.value
+        executions[f"detector/{det.name}"] = AnalysisHealth(input_health.degradations + result.degradations).to_dict()
+        notes.extend(result.degradations)
     # Driven by ALL_REPORTS like the text path — a second hardcoded list here
     # silently drops any newly registered report from --json.
-    reports = {
-        rep.name: _safe(f"report {rep.name}",
-                        lambda r=rep: r.run_dict(prog), {}, strict=strict)
-        for rep in ALL_REPORTS
-    }
-    return {"detectors": detectors, "reports": reports}
+    reports = {}
+    for rep in ALL_REPORTS:
+        result = _safe(f"report {rep.name}", lambda r=rep: r.run_dict(prog),
+                       {}, strict=strict)
+        reports[rep.name] = result.value
+        executions[f"report/{rep.name}"] = AnalysisHealth(input_health.degradations + result.degradations).to_dict()
+        notes.extend(result.degradations)
+    return {"detectors": detectors, "reports": reports, "executions": executions,
+            **AnalysisHealth(tuple(notes)).to_dict()}

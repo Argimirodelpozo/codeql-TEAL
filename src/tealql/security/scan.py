@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -16,6 +17,7 @@ from tealql.tealtools.diagnostics.errors import (
     TargetError, TargetNotFoundError, TealParseError, TealQLError,
 )
 from tealql.tealtools.ssa import SSAProgram
+from tealql.tealtools.diagnostics.health import AnalysisDegradation, AnalysisHealth, AnalysisResult, health_for
 from . import DETECTORS
 from .config import ConfigError, DetectionConfig, glob_match
 
@@ -306,9 +308,10 @@ class ScanFinding:
         """Greppable ``[SEVERITY] <rel_path> [method]: sec-guide/<name>  <message>``."""
         loc = f"{self.rel_path} [{self.method_name}]" if self.method_name else self.rel_path
         return (f"[{self.severity.upper()}] {loc}: "
-                f"sec-guide/{self.detector_name}  {self.violation.pretty()}")  # type: ignore[attr-defined]
+                f"sec-guide/{self.detector_name}  {self.to_finding().message}")
 
-    def to_finding(self):
+    @cached_property
+    def _normalized(self):
         """Normalize to the stable versioned :class:`.findings.Finding` record."""
         from .findings import normalize
         return normalize(
@@ -316,6 +319,9 @@ class ScanFinding:
             rel_path=self.rel_path, severity=self.severity,
             confidence=self.confidence, method=self.method_name,
         )
+
+    def to_finding(self):
+        return self._normalized
 
     def to_dict(self) -> dict:
         """Return the versioned normalized finding record."""
@@ -347,12 +353,22 @@ class ScanNotification:
                 "file": self.rel_path, "detector": self.detector}
 
 
-class ScanResults:
+@dataclass(frozen=True, init=False)
+class ScanResults(AnalysisResult):
     """Structured scan output: findings plus incomplete-analysis notices."""
 
+    notifications: tuple[ScanNotification, ...]
+
     def __init__(self, findings=(), notifications=()):
-        self.findings: tuple[ScanFinding, ...] = tuple(findings)
-        self.notifications: tuple[ScanNotification, ...] = tuple(notifications)
+        notifications = tuple(notifications)
+        super().__init__(tuple(findings), AnalysisHealth(tuple(
+            AnalysisDegradation(n.kind, n.message, n.rel_path, detector=n.detector)
+            for n in notifications)))
+        object.__setattr__(self, 'notifications', notifications)
+
+    @property
+    def findings(self):
+        return self.value
 
     def __iter__(self):
         return iter(self.findings)
@@ -393,14 +409,15 @@ def scan(
     n_files = sum(len(v) for v in by_dir.values())
     logger.info("scan: %d .teal file(s) across %d director(ies) under %s",
                 n_files, len(by_dir), root)
+    findings: list[ScanFinding] = []
+    notes: list[ScanNotification] = []
     if not n_files:
         # "(no findings)" here is true but misleading — nothing was analyzed.
         msg = f"no .teal files found under {root} — nothing was analyzed"
         if strict:
             raise TealQLError(msg)
         logger.warning("%s", msg)
-    findings: list[ScanFinding] = []
-    notes: list[ScanNotification] = []
+        notes.append(ScanNotification('empty-scan', msg))
     for dir_path, teal_files in sorted(by_dir.items()):
         for teal in teal_files:
             rel = teal.relative_to(root)
@@ -433,6 +450,12 @@ def scan(
                     message=f"{len(diags)} TEAL span(s) failed to parse and "
                             f"were EXCLUDED from analysis, so findings for "
                             f"this file may be incomplete (first: {diags[0]})"))
+            for degradation in health_for(prog).degradations:
+                if degradation.code == 'parse-diagnostic':
+                    continue  # Detailed parse handling above preserves TealParseError.
+                if strict:
+                    raise TealQLError(f'incomplete input {rel}: {degradation.message}')
+                notes.append(ScanNotification(degradation.code, degradation.message, str(rel)))
             names = options.detectors_for(str(rel))
             try:
                 mode = options.mode_for(str(rel), prog=prog, file=teal.name)
@@ -443,6 +466,7 @@ def scan(
                 logger.warning(
                     "mode classification failed for %s (scanning unfiltered): %s",
                     rel, e)
+                notes.append(ScanNotification('mode-classification-failed', str(e), str(rel)))
                 mode = None
             logger.info("scanning %s (mode=%s): %d detection(s)",
                         rel, mode or "unfiltered", len(names))
@@ -489,11 +513,22 @@ def scan(
                         kind="detector-degraded", rel_path=str(rel),
                         detector=name, message=degraded))
                 for v in violations:
-                    findings.append(ScanFinding(
-                        rel_path=rel, detector_name=name, violation=v,
-                        severity_override=sev,
-                        method_name=_method_at(method_ranges, v),
-                    ))
+                    try:
+                        finding = ScanFinding(
+                            rel_path=rel, detector_name=name, violation=v,
+                            severity_override=sev,
+                            method_name=_method_at(method_ranges, v),
+                        )
+                        # Normalize once inside the failure boundary. All output
+                        # formats then use the same validated finding snapshot.
+                        json.dumps(finding.to_dict())
+                        finding.format()
+                    except Exception as e:
+                        if strict:
+                            raise TealQLError(f'finding from {name} could not render on {rel}: {e}') from e
+                        notes.append(ScanNotification('finding-render-failed', str(e), str(rel), name))
+                        continue
+                    findings.append(finding)
     findings.sort(key=lambda f: (str(f.rel_path), f.detector_name))
     return ScanResults(findings, notes)
 
@@ -532,6 +567,7 @@ def render_json(findings: ScanResults) -> str:
     return json.dumps({
         "schema_version": SCHEMA_VERSION,
         "tool": "tealql",
+        "complete": findings.complete,
         "findings": [f.to_dict() for f in findings],
         "notifications": [n.to_dict() for n in _notifications_of(findings)],
     }, indent=2)

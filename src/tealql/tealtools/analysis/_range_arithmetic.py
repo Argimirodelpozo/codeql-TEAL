@@ -9,6 +9,7 @@ a value would put states in the range that no live execution can be in."""
 from __future__ import annotations
 
 from typing import Optional
+from math import isqrt
 
 from ..ssa import Const, IntRange, SSAProgram, SSAVar, TealType, const_int
 
@@ -63,35 +64,46 @@ def _arith_result_range(
     if op == "%":
         if rb.hi == 0:
             return None
+        if ra.hi < max(rb.lo, 1):
+            return ra.lo, ra.hi
+        if rb.lo == rb.hi and ra.lo // rb.lo == ra.hi // rb.lo:
+            return ra.lo % rb.lo, ra.hi % rb.lo
         # Result is < divisor and ≤ dividend.
         div_hi_minus_1 = max(rb.hi - 1, 0)
         return (0, min(ra.hi, div_hi_minus_1))
-    if op == "&":
-        # AND only clears bits — result ≤ each operand.
-        return (0, min(ra.hi, rb.hi))
-    if op == "|":
-        # OR only sets bits — floor is the larger floor, ceiling is all bits
-        # set up to the wider operand's bit-length.
-        hi = (1 << max(ra.hi.bit_length(), rb.hi.bit_length())) - 1
-        return (max(ra.lo, rb.lo), hi)
-    if op == "^":
-        # ``a ^ a == 0`` so the floor is 0; same all-bits-set ceiling as OR.
-        hi = (1 << max(ra.hi.bit_length(), rb.hi.bit_length())) - 1
-        return (0, hi)
+    if op in {"&", "|", "^"}:
+        def bits(r):
+            varying = (1 << (r.lo ^ r.hi).bit_length()) - 1
+            return r.lo & ~varying, r.lo | varying
+        amin, amax = bits(ra)
+        bmin, bmax = bits(rb)
+        if op == "&":
+            return amin & bmin, min(amax & bmax, ra.hi, rb.hi)
+        if op == "|":
+            return max(amin | bmin, ra.lo, rb.lo), amax | bmax
+        varying = (amin ^ amax) | (bmin ^ bmax)
+        fixed = (amin ^ bmin) & ~varying
+        return fixed, fixed | varying
     if op == "shl":
-        # ``A * 2^B mod 2^64``: the RESULT wraps but the op FAILS for B > 63,
-        # so discarding those pairs would also be legal; widening to the full
-        # domain is the more conservative choice and sound either way.
-        if rb.hi >= 64:
-            return (0, _UINT64_MAX)
-        hi = ra.hi << rb.hi
-        if hi > _UINT64_MAX:
-            return (0, _UINT64_MAX)
-        return (ra.lo << rb.lo, hi)
+        # ``A * 2^B mod 2^64``; shifts above 63 fail and add no successful
+        # values. Shifted endpoints bound a single wrap band; crossing bands
+        # requires including zero and the highest representable multiple.
+        if rb.lo >= 64:
+            return None
+        ranges = []
+        for shift in range(rb.lo, min(rb.hi, 63) + 1):
+            lo, hi = ra.lo << shift, ra.hi << shift
+            if lo >> 64 == hi >> 64:
+                ranges.append((lo & _UINT64_MAX, hi & _UINT64_MAX))
+            else:
+                ranges.append((0, _UINT64_MAX ^ ((1 << shift) - 1)))
+        return min(r[0] for r in ranges), max(r[1] for r in ranges)
     if op == "shr":
-        # ``A // 2^B``: monotonic (larger shift => smaller result), and the
-        # ``min(.., 64)`` clamps only widen the result, so the bound stays sound.
-        return (ra.lo >> min(rb.hi, 64), ra.hi >> min(rb.lo, 64))
+        # ``A // 2^B`` decreases as B grows. Shifts above 63 fail, so only
+        # successful shift counts contribute to the resulting interval.
+        if rb.lo >= 64:
+            return None
+        return (ra.lo >> min(rb.hi, 63), ra.hi >> rb.lo)
     return None
 
 
@@ -100,6 +112,8 @@ def _unary_result_range(op: str, ra: IntRange) -> Optional[tuple[int, int]]:
     if op == "~":
         # uint64 NOT is ``(2^64-1) - a``, so the bounds SWAP.
         return (_UINT64_MAX - ra.hi, _UINT64_MAX - ra.lo)
+    if op == "sqrt":
+        return isqrt(ra.lo), isqrt(ra.hi)
     return None
 
 
@@ -130,7 +144,7 @@ def propagate_range_arithmetic(prog: SSAProgram) -> int:
         prog.propagate_ranges()
 
     _BINARY_OPS = {"+", "-", "*", "/", "%", "&", "|", "^", "shl", "shr"}
-    _UNARY_OPS = {"~"}
+    _UNARY_OPS = {"~", "sqrt"}
 
     changed_overall = 0
 

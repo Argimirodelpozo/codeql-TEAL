@@ -14,6 +14,8 @@ from ..language.avm import (
 
 
 def propagate_ranges(prog: SSAProgram) -> None:
+    from ._types import propagate_types
+    propagate_types(prog)
     UINT64 = TealType("uint64")
 
     def _seed(o, lo: int, hi: int) -> None:

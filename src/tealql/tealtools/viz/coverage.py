@@ -8,6 +8,13 @@ table fails immediately.
 """
 
 MODULE_VIEW_COVERAGE: dict[str, tuple[str, ...]] = {
+    "analysis._types": ("analysis.facts.ranges",),
+    "analysis.intervals": ("analysis.facts.ranges",),
+    "analysis.box_permissions": ("analysis.box_permissions",),
+    "analysis.resource_requirements": ("analysis.resource_requirements",),
+    "ast.protocol": ("repr.ast",),
+    "diagnostics.evidence": ("analysis.path_predicates",),
+    "lift.taint_flow": ("analysis.taint",),
     "analysis._bigints": ("analysis.facts.bigint-ranges", "pass.ssa.bytemath_ranges"),
     "analysis._byte_lengths": ("analysis.facts.byte-lengths", "pass.ssa.byte_lengths"),
     "analysis._constants": ("analysis.facts.constants", "pass.ssa.constants"),
@@ -98,6 +105,10 @@ MODULE_VIEW_COVERAGE: dict[str, tuple[str, ...]] = {
 
 
 NON_PRODUCT_MODULES: dict[str, str] = {
+    "analysis.relations": "parameterized integer proof kernel consumed by security policy obligations",
+    "language.spec": "pinned versioned metadata; consumed by represented analyses",
+    "language.effects": "shared operand-role metadata; consumed by represented analyses",
+    "diagnostics.location": "structured instruction identity and diagnostic location parsing",
     "dataflow._nx_view": "shared graph query/copy primitives; no independent product",
     "diagnostics.errors": "typed exception definitions; no analysis result",
     "language.avm": "langspec metadata consumed by represented analyses",

@@ -10,16 +10,13 @@ none of the contract simply reports as whole-program.
 """
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field as _field
 from pathlib import Path
 from typing import Any, Optional
+from tealql.tealtools.diagnostics.location import split_location
 
 #: Bump on any breaking change to :meth:`Finding.to_dict`.
 SCHEMA_VERSION = 1
-
-# The tail of a well-formed ``location`` string: ``<file>:<line>``.
-_FILE_LINE_TAIL_RE = re.compile(r"([\w./\-]+):(\d+)$")
 
 
 @dataclass(frozen=True)
@@ -65,9 +62,7 @@ def _extract_line(violation) -> tuple[Optional[str], Optional[int]]:
         return (f if isinstance(f, str) else None), line
     loc = getattr(violation, "location", None)
     if isinstance(loc, str) and loc:
-        m = _FILE_LINE_TAIL_RE.search(loc)
-        if m:
-            return m.group(1), int(m.group(2))
+        return split_location(loc)
     return None, None
 
 
@@ -75,6 +70,11 @@ def violation_line(violation) -> Optional[int]:
     """The 1-based line a violation anchors to, or ``None`` — public so the scanner
     can attribute a finding to an ABI method before the :class:`Finding` exists."""
     return _extract_line(violation)[1]
+
+
+def violation_location(violation) -> tuple[Optional[str], Optional[int]]:
+    """Program and line together; joins must not discard the program identity."""
+    return _extract_line(violation)
 
 
 def _extract_witness(violation) -> Optional[dict]:

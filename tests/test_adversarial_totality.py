@@ -47,6 +47,16 @@ from tealql.tealtools.ssa import SSAProgram
 
 PROBES = Path(__file__).resolve().parent / "mainnet-random-probes"
 
+@pytest.fixture(params=['core', 'backend'])
+def check_compilation(request):
+    """Run core assertions in both variants; only the backend variant compiles."""
+    if request.param == 'core':
+        return lambda path: None
+    pytest.importorskip('puya', reason='optional backend compilation')
+    from tealql.tealtools.lift.backend import lift_to_teal
+    return lift_to_teal
+
+
 _FIXTURES = {
     # A no-proto callee: retsub does not truncate, the callee's stack lands in
     # the continuation verbatim. Must thread (legacy correctness receipt).
@@ -757,7 +767,7 @@ _DIVERGENT_JOIN = (
 )
 
 
-def test_the_lift_merge_keeps_the_deep_paths_cell(tmp_path):
+def test_the_lift_merge_keeps_the_deep_paths_cell(tmp_path, check_compilation):
     """The LIFT's join must merge over the MAX predecessor depth, like
     ``ssa.stacksim.walk_routine`` — SSA and lift now share this decision.
 
@@ -771,7 +781,6 @@ def test_the_lift_merge_keeps_the_deep_paths_cell(tmp_path):
     A cell a predecessor lacks contributes ``Undefined`` on that edge. Honest
     and free at runtime: reaching the consume along the shallow path is an AVM
     stack underflow, so that path is already dead."""
-    from tealql.tealtools.lift.backend import lift_to_teal
 
     teal = tmp_path / "divjoin.teal"
     teal.write_text(_DIVERGENT_JOIN)
@@ -781,7 +790,7 @@ def test_the_lift_merge_keeps_the_deep_paths_cell(tmp_path):
         f"an explicit unknown on that edge rather than drop the slot:\n"
         f"{rendered}")
     assert "φ(" in rendered, f"the surviving cell must be a merge:\n{rendered}"
-    lift_to_teal(str(teal))          # and it must still reach TEAL
+    check_compilation(str(teal))          # and it must still reach TEAL
 
 
 def test_a_typed_phi_with_an_unknown_arm_does_not_kill_the_lift(tmp_path):
@@ -817,7 +826,7 @@ _DIVERGENT_MIXED_JOIN = (
 )
 
 
-def test_a_divergent_mixed_type_join_reaches_teal(tmp_path):
+def test_a_divergent_mixed_type_join_reaches_teal(tmp_path, check_compilation):
     """A join whose paths arrive at different DEPTHS and whose merged slots hold
     different AVM TYPES per path must still reach TEAL.
 
@@ -837,7 +846,6 @@ def test_a_divergent_mixed_type_join_reaches_teal(tmp_path):
     consumer is ``pop``, and ``prune_dead_phis`` deliberately refuses to let a
     discard revive a mixed-AVM-type merge."""
     from tealql.tealtools.lift import pre_ir
-    from tealql.tealtools.lift.backend import lift_to_teal
 
     teal = tmp_path / "divmixed.teal"
     teal.write_text(_DIVERGENT_MIXED_JOIN)
@@ -858,10 +866,10 @@ def test_a_divergent_mixed_type_join_reaches_teal(tmp_path):
                         and node.targets[0].ir_type != "?"):
                     assert node.source.ir_type == node.targets[0].ir_type, (
                         f"untyped undefined under a typed target in:\n{rendered}")
-    lift_to_teal(str(teal))          # the crash under test: must reach TEAL
+    check_compilation(str(teal))          # the crash under test: must reach TEAL
 
 
-def test_a_mixed_type_merge_into_a_scratch_store_sinks_per_edge(tmp_path):
+def test_a_mixed_type_merge_into_a_scratch_store_sinks_per_edge(tmp_path, check_compilation):
     """A join slot holding ``byte "aa"`` on one path and ``int 8`` on the other,
     consumed only by ``store 0``, must become one single-typed store per edge —
     ``sink_mixed_phi_scratch_stores``' designed job — with the ORIGINAL values.
@@ -872,7 +880,6 @@ def test_a_mixed_type_merge_into_a_scratch_store_sinks_per_edge(tmp_path):
     sailed on to materialisation — which then guessed a type PER ARG, giving one
     phi differently-typed arguments, and Puya rejected the lift:
     ``Phi node received arguments with unexpected type(s)``."""
-    from tealql.tealtools.lift.backend import lift_to_teal
 
     teal = tmp_path / "mixstore.teal"
     teal.write_text(
@@ -885,10 +892,10 @@ def test_a_mixed_type_merge_into_a_scratch_store_sinks_per_edge(tmp_path):
         f"each edge must store its ORIGINAL value, uncoerced:\n{rendered}")
     assert "φ(" not in rendered, (
         f"no mixed-type merge may survive the sink:\n{rendered}")
-    lift_to_teal(str(teal))          # and it must still reach TEAL
+    check_compilation(str(teal))          # and it must still reach TEAL
 
 
-def test_an_unsinkable_mixed_type_merge_is_tail_duplicated_exactly(tmp_path):
+def test_an_unsinkable_mixed_type_merge_is_tail_duplicated_exactly(tmp_path, check_compilation):
     """The mixed-type merge feeding a DYNAMIC scratch write (``stores``) is not
     sinkable — the slot index is a runtime value — and no consumer types it, so
     no single typed register can hold it. When the join block is self-contained
@@ -900,7 +907,6 @@ def test_an_unsinkable_mixed_type_merge_is_tail_duplicated_exactly(tmp_path):
     which a sibling transaction observes through ``gload``. No merge register
     exists, so no unknown and no coercion: ``itob``-ing the ``int 8`` to make
     types line up would assert a plausible wrong value on a live path."""
-    from tealql.tealtools.lift.backend import lift_to_teal
 
     teal = tmp_path / "mixstores.teal"
     teal.write_text(
@@ -914,17 +920,16 @@ def test_an_unsinkable_mixed_type_merge_is_tail_duplicated_exactly(tmp_path):
         f"each copy must store its ORIGINAL value, uncoerced:\n{rendered}")
     assert "φ(" not in rendered and "undefined" not in rendered.lower(), (
         f"a duplicated join needs no merge and loses no value:\n{rendered}")
-    lift_to_teal(str(teal))          # and it must still reach TEAL
+    check_compilation(str(teal))          # and it must still reach TEAL
 
 
-def test_a_loop_invariant_mixed_merge_is_versioned_exactly(tmp_path):
+def test_a_loop_invariant_mixed_merge_is_versioned_exactly(tmp_path, check_compilation):
     """A self-loop ``phi(bytes-entry, uint-entry, self)`` is loop-invariant.
 
     Versioning the single-block loop per external entry preserves each original
     family on every iteration, including its any-typed dynamic scratch write.
     No cross-family register or explicit unknown is needed.
     """
-    from tealql.tealtools.lift.backend import lift_to_teal
 
     teal = tmp_path / "mixloop.teal"
     teal.write_text(
@@ -940,10 +945,10 @@ def test_a_loop_invariant_mixed_merge_is_versioned_exactly(tmp_path):
         f"loop versioning must preserve both values without an unknown:\n{rendered}")
     assert ir.pass_stats["tail_dup_joins"] == 1
     assert ir.pass_stats["split_mixed_phis"] == 0
-    lift_to_teal(str(teal))          # and it must still reach TEAL
+    check_compilation(str(teal))          # and it must still reach TEAL
 
 
-def test_a_mixed_register_merge_with_conflicting_typed_uses_splits_per_use(tmp_path):
+def test_a_mixed_register_merge_with_conflicting_typed_uses_splits_per_use(tmp_path, check_compilation):
     """One stack cell holding ``txn Sender`` (bytes) on one path and ``global
     LatestTimestamp`` (uint64) on the other, later consumed by BOTH ``len`` and
     ``+``: no single typed register can carry it, and consumer-driven recovery
@@ -959,7 +964,6 @@ def test_a_mixed_register_merge_with_conflicting_typed_uses_splits_per_use(tmp_p
     merge already stands on."""
     from tealql.tealtools.language.avm import avm
     from tealql.tealtools.lift import pre_ir
-    from tealql.tealtools.lift.backend import lift_to_teal
 
     teal = tmp_path / "regboth.teal"
     teal.write_text(
@@ -989,10 +993,10 @@ def test_a_mixed_register_merge_with_conflicting_typed_uses_splits_per_use(tmp_p
                and a.value.ir_type == "uint64" and not a.value.name.startswith("pc%")
                for a in u_phi.args), (
         f"the uint64 phi lost its live timestamp arm:\n{rendered}")
-    lift_to_teal(str(teal))          # the crash under test: must reach TEAL
+    check_compilation(str(teal))          # the crash under test: must reach TEAL
 
 
-def test_an_any_typed_use_of_a_mixed_register_merge_is_tail_duplicated(tmp_path):
+def test_an_any_typed_use_of_a_mixed_register_merge_is_tail_duplicated(tmp_path, check_compilation):
     """The mixed-REGISTER cell (``txn Sender`` vs ``global LatestTimestamp``)
     consumed only by ``stores``: the self-contained join is deleted by tail
     duplication, and each path's copy stores its OWN register directly — the
@@ -1000,7 +1004,6 @@ def test_an_any_typed_use_of_a_mixed_register_merge_is_tail_duplicated(tmp_path)
     exactly. Cloning is shallow for the externally-defined registers (pre-IR
     registers are identity-keyed; a deep copy would sever every reference) and
     the merge never exists, so nothing is unknown and nothing is retyped."""
-    from tealql.tealtools.lift.backend import lift_to_teal
 
     teal = tmp_path / "regstores.teal"
     teal.write_text(
@@ -1014,7 +1017,7 @@ def test_an_any_typed_use_of_a_mixed_register_merge_is_tail_duplicated(tmp_path)
         f"each copy must consume its path's ORIGINAL register:\n{rendered}")
     assert "φ(" not in rendered and "undefined" not in rendered.lower(), (
         f"a duplicated join needs no merge and loses no value:\n{rendered}")
-    lift_to_teal(str(teal))          # and it must still reach TEAL
+    check_compilation(str(teal))          # and it must still reach TEAL
 
 
 #: A LEGACY (pre-`proto`) subroutine whose retsub paths leave DIFFERENT depths —
@@ -1027,7 +1030,7 @@ _TWO_SITE_DIVERGENT = (
 )
 
 
-def test_a_divergent_legacy_sub_is_spliced_per_call_site(tmp_path):
+def test_a_divergent_legacy_sub_is_spliced_per_call_site(tmp_path, check_compilation):
     """Each call site of a divergent legacy sub gets its OWN copy of the body:
     the `callsub` becomes the jump it really is, the copy's `retsub` a direct
     jump to THAT site's continuation, and the caller's stack flows through
@@ -1042,7 +1045,6 @@ def test_a_divergent_legacy_sub_is_spliced_per_call_site(tmp_path):
     output being a FRESH object (an `@l<site-line>` key suffix — both SSA
     classes hash by value) is what dissolves the documented
     `resim_args`-keyed-by-`id()` identity problem."""
-    from tealql.tealtools.lift.backend import lift_to_teal
 
     teal = tmp_path / "twosite.teal"
     teal.write_text(_TWO_SITE_DIVERGENT)
@@ -1052,7 +1054,7 @@ def test_a_divergent_legacy_sub_is_spliced_per_call_site(tmp_path):
         f"a spliced sub must not survive as a callable:\n{rendered}")
     assert rendered.count("(txn NumLogs)") == 2, (
         f"each site must own a COPY of the body:\n{rendered}")
-    lift_to_teal(str(teal))          # and the copies must lower
+    check_compilation(str(teal))          # and the copies must lower
 
     # The old single-site shape (the one the reverted in-place splice broke)
     # rides the same path: one site, one copy, still lowers.
@@ -1062,16 +1064,15 @@ def test_a_divergent_legacy_sub_is_spliced_per_call_site(tmp_path):
         "helper:\ntxn NumLogs\nbnz deep\nretsub\ndeep:\nint 5\nretsub\n")
     r1 = lift(SSAProgram(str(one))).render()
     assert "(helper" not in r1, f"single-site must splice too:\n{r1}"
-    lift_to_teal(str(one))
+    check_compilation(str(one))
 
 
-def test_a_divergent_legacy_sub_with_a_nested_call_is_refused_not_broken(tmp_path):
+def test_a_divergent_legacy_sub_with_a_nested_call_is_refused_not_broken(tmp_path, check_compilation):
     """The splice guards refuse a divergent legacy sub that CONTAINS a callsub
     (nesting means callsite-map surgery and recursion is outright
     unrepresentable by copies) — the sub keeps the arity-model recovery: it is
     still emitted, still invoked, and the program still reaches TEAL. Refusal
     must degrade, never break."""
-    from tealql.tealtools.lift.backend import lift_to_teal
 
     teal = tmp_path / "nested.teal"
     teal.write_text(
@@ -1083,10 +1084,10 @@ def test_a_divergent_legacy_sub_with_a_nested_call_is_refused_not_broken(tmp_pat
     rendered = ir.render()
     assert "(helper" in rendered, (
         f"a refused sub must stay a callable (arity-model recovery):\n{rendered}")
-    lift_to_teal(str(teal))          # and must still reach TEAL
+    check_compilation(str(teal))          # and must still reach TEAL
 
 
-def test_a_dead_shallow_arm_rejects_like_the_underflow_it_is(tmp_path):
+def test_a_dead_shallow_arm_rejects_like_the_underflow_it_is(tmp_path, check_compilation):
     """A join arm arriving SHALLOWER than the merge window, where the join
     block's own straight line consumes below that arm's depth: every execution
     entering there dies in the ORIGINAL program — an AVM stack underflow, a
@@ -1100,7 +1101,6 @@ def test_a_dead_shallow_arm_rejects_like_the_underflow_it_is(tmp_path):
     (group-atomic), rejecting at the join entry is observationally identical
     to underflowing mid-block — which is also why a ``log`` or state write
     before the underflow point does NOT veto the kill."""
-    from tealql.tealtools.lift.backend import lift_to_teal
 
     teal = tmp_path / "deadarm.teal"
     teal.write_text("#pragma version 8\ntxn NumAppArgs\nbnz deep\nb join\n"
@@ -1108,7 +1108,7 @@ def test_a_dead_shallow_arm_rejects_like_the_underflow_it_is(tmp_path):
     rendered = lift(SSAProgram(str(teal))).render()
     assert "fail" in rendered and "underflow" in rendered, (
         f"the shallow arm must be an explicit reject:\n{rendered}")
-    lift_to_teal(str(teal))
+    check_compilation(str(teal))
 
     # Atomicity: a log BEFORE the underflow point does not save the arm — the
     # failed transaction discards the log too, so the kill still fires.
@@ -1118,16 +1118,15 @@ def test_a_dead_shallow_arm_rejects_like_the_underflow_it_is(tmp_path):
     r2 = lift(SSAProgram(str(logged))).render()
     assert "fail" in r2 and "underflow" in r2, (
         f"atomicity makes the pre-underflow log unobservable:\n{r2}")
-    lift_to_teal(str(logged))
+    check_compilation(str(logged))
 
 
-def test_a_live_shallow_arm_keeps_its_unknown_not_a_reject(tmp_path):
+def test_a_live_shallow_arm_keeps_its_unknown_not_a_reject(tmp_path, check_compilation):
     """The dead-arm kill fires ONLY on proven inevitability: a join block that
     never dips below the shallow arm's own depth (the deep cell is consumed
     past a branch) leaves the arm LIVE, and killing it would turn approving
     executions into rejects. The arm keeps the max-window representation — the
     missing cell as an explicit unknown."""
-    from tealql.tealtools.lift.backend import lift_to_teal
 
     teal = tmp_path / "livearm.teal"
     teal.write_text(_DIVERGENT_JOIN)
@@ -1136,17 +1135,16 @@ def test_a_live_shallow_arm_keeps_its_unknown_not_a_reject(tmp_path):
         f"a live arm must NOT be rejected:\n{rendered}")
     assert "undefined" in rendered.lower(), (
         f"the live shallow arm keeps its explicit unknown:\n{rendered}")
-    lift_to_teal(str(teal))
+    check_compilation(str(teal))
 
 
-def test_an_unconditional_chain_dip_dooms_the_arm_too(tmp_path):
+def test_an_unconditional_chain_dip_dooms_the_arm_too(tmp_path, check_compilation):
     """The underflow needn't happen in the join block itself: a shallow arm
     whose doom sits down an UNCONDITIONAL chain (single distinct successor at
     every step) is just as inevitable, so the walk offsets each block's dips
     by the accumulated net effect and kills the edge. Before the walk, this
     shape approved where the original underflow-rejects — same defect as the
     same-block case, one block later."""
-    from tealql.tealtools.lift.backend import lift_to_teal
 
     teal = tmp_path / "chain.teal"
     teal.write_text(
@@ -1155,17 +1153,16 @@ def test_an_unconditional_chain_dip_dooms_the_arm_too(tmp_path):
     rendered = lift(SSAProgram(str(teal))).render()
     assert "fail" in rendered and "underflow" in rendered, (
         f"the chain-doomed arm must be an explicit reject:\n{rendered}")
-    lift_to_teal(str(teal))
+    check_compilation(str(teal))
 
 
-def test_a_conditional_dip_past_the_join_keeps_the_arm_alive(tmp_path):
+def test_a_conditional_dip_past_the_join_keeps_the_arm_alive(tmp_path, check_compilation):
     """A dip that only happens on ONE side of a branch after the join must NOT
     kill the edge: the arm's other side approves in the original (measured
     live: shallow + oc==0 approves in both programs), so an edge-kill would
     reject live executions. The walk stops at the branch; the residual
     divergence on the dipping side is the documented per-arm-provenance gap,
     closable only by duplicating the post-join region per arm."""
-    from tealql.tealtools.lift.backend import lift_to_teal
 
     teal = tmp_path / "crossblock.teal"
     teal.write_text(
@@ -1175,7 +1172,7 @@ def test_a_conditional_dip_past_the_join_keeps_the_arm_alive(tmp_path):
     rendered = lift(SSAProgram(str(teal))).render()
     assert "fail" not in rendered, (
         f"a conditionally-live arm must NOT be rejected:\n{rendered}")
-    lift_to_teal(str(teal))
+    check_compilation(str(teal))
 
 
 def test_shared_frame_phi_diamonds_are_resolved_once_per_node():

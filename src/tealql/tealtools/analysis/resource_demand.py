@@ -112,9 +112,13 @@ class BoxAccess:
 
     key: str | None
     dynamic_key: bool
+    owner: str | None = 'current'
 
     def to_dict(self) -> dict[str, Any]:
-        return {"key": self.key, "dynamic_key": self.dynamic_key}
+        result = {"key": self.key, "dynamic_key": self.dynamic_key}
+        if self.owner != 'current':
+            result['owner'] = self.owner
+        return result
 
 
 @dataclass(frozen=True)
@@ -710,18 +714,26 @@ class _Collector:
         self.reference(assignment, assignment.inputs[account_index], "Accounts", facts)
 
     def box_access(self, assignment, facts: ValueFacts) -> None:
-        key_index = {
-            "box_get": 0, "box_del": 0, "box_len": 0,
-            "box_create": 1, "box_put": 1, "box_resize": 1,
-            "box_replace": 2, "box_extract": 2, "box_splice": 3,
-        }.get(assignment.op)
+        from ..language.spec import opcode_spec
+        from ..language.effects import STATE_EFFECTS
+        foreign = assignment.op.startswith('app_box_')
+        spec = opcode_spec(assignment.op)
+        effect = STATE_EFFECTS.get(assignment.op)
+        key_index = effect.key_index if effect else len(spec.args) - 1 - int(foreign)
         if key_index is None or len(assignment.inputs) <= key_index:
             self.unknown(assignment, "missing or unclassified box-name operand", "Boxes")
             return
         key_const = self._constant(assignment.inputs[key_index], facts)
         key = key_const.value if key_const is not None else None
         dynamic = key_const is None
-        self.box_accesses.add(BoxAccess(key, dynamic))
+        owner = 'current'
+        if foreign:
+            if len(assignment.inputs) != len(spec.args):
+                self.unknown(assignment, 'missing foreign box owner', 'Applications')
+                owner = None
+            else:
+                owner = self.reference(assignment, assignment.inputs[-1], 'Applications', facts).value
+        self.box_accesses.add(BoxAccess(key, dynamic, owner))
         self.existence_checks.add("box")
         if dynamic:
             self.dynamic_refs.add("Boxes")

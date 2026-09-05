@@ -330,9 +330,9 @@ def test_sha512_lifts_as_itself(tmp_path):
     `sha512_256` (truncated form, DIFFERENT IV, unrelated digests) — and the
     puya lowering, which cannot represent it (upstream AVMOp enum gap), must
     refuse with a typed LiftError rather than crash."""
+    import pytest
     from tealql.tealtools.diagnostics.errors import LiftError
     from tealql.tealtools.lift import lift
-    from tealql.tealtools.lift.to_puya_ir import to_puya
 
     prog = _prog(tmp_path, "#pragma version 13\n"
                            "pushbytes 0x01\nsha512\nlen\nint 64\n==\nreturn\n")
@@ -342,6 +342,8 @@ def test_sha512_lifts_as_itself(tmp_path):
     rendered = lift(prog).render()
     assert "sha512" in rendered and "sha512_256" not in rendered, (
         f"sha512 lost its identity in the lift:\n{rendered}")
+    pytest.importorskip('puya', reason='optional backend lowering')
+    from tealql.tealtools.lift.to_puya_ir import to_puya
     try:
         to_puya(prog)
     except LiftError:

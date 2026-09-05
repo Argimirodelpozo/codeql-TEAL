@@ -916,24 +916,13 @@ def gap_sources(prog) -> dict:
     reach on its own. :func:`value_sources` remains unchanged for external API
     compatibility and MUST-style caller-set reasoning.
 
-    WHY DROPPING IS SOUND FOR RULE-BASED ENGINES (not only for engines that
-    propagate along every def-use edge): "raw-reachable" and "taint will get
-    there" are different predicates in general — the taint engines block
-    opaque reads and propagate positionally — so a dropped edge would be a
-    real loss if the only raw path to a source ran through a rule-blocked op.
-    It cannot. :func:`parameter_sources` / :func:`local_sources` take their
-    sources from the SAME recorded operands the simulation threads into the
-    read's own ``inputs[0]`` (identical position arithmetic, identical
-    None-skips), so every reconstructed source is the read's ``inputs[0]``
-    itself or an argument of the phi standing there. The dropping path is
-    therefore always ``frame_dig -> [phi]* -> source``: ``frame_dig`` is an
-    identity copy (``_shuffle_mapping``: the output IS input 0) and phis join
-    unconditionally in every taint engine — each step propagates, so the
-    canonical graph carries whatever the dropped edge would have. Rule-blocked
-    ops can only sit on OTHER upstream paths, never on this one. An
-    UNRESOLVED read has no inputs, so ``upstream`` is just the read itself and
-    every reconstructed edge is retained. Pinned by
-    ``test_frame_gap_filter_drops_only_phi_closure_edges``.
+    Raw reachability does not guarantee taint propagation: opaque reads block
+    content flow and other operations propagate positionally. Drop an edge only
+    along ``frame_dig -> [phi]* -> source``. The read is an identity copy and
+    phis join unconditionally, so each step carries the source's taint. Stop at
+    all other assignments; their operands cannot justify dropping an edge.
+    An unresolved read has no inputs and retains its reconstructed sources.
+    Pinned by ``test_frame_gap_filter_drops_only_phi_closure_edges``.
     """
     cached = getattr(prog, "_frame_gap_sources_cache", None)
     if cached is not None:
@@ -941,25 +930,24 @@ def gap_sources(prog) -> dict:
 
     from .models import Phi
 
-    def upstream(root):
-        seen = {root}
-        work = [root]
-        while work:
-            value = work.pop()
-            if isinstance(value, Phi):
-                incoming = value.args
-            else:
-                assignment = getattr(value, "defined_by", None)
-                incoming = assignment.inputs if assignment is not None else ()
-            for source in incoming:
-                if source not in seen:
-                    seen.add(source)
-                    work.append(source)
-        return seen
-
     out = {}
     for output, sources in value_sources(prog).items():
-        missing = set(sources) - upstream(output)
+        missing = set(sources)
+        missing.discard(output)
+        assignment = getattr(output, "defined_by", None)
+        work = list(assignment.inputs[:1]) if assignment is not None else []
+        seen = set()
+        # Only the read's binding and phi closure propagate unconditionally.
+        # Walking through arbitrary assignments both crosses rule barriers and
+        # repeatedly expands almost the entire program for every frame read.
+        while work and missing:
+            value = work.pop()
+            if value in seen:
+                continue
+            seen.add(value)
+            missing.discard(value)
+            if isinstance(value, Phi):
+                work.extend(value.args)
         if missing:
             out[output] = missing
     try:

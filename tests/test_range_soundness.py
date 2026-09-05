@@ -4,13 +4,13 @@ The other range tests assert "computed bound == author-expected bound" — writt
 by the same author as the kernel, so they agree with a wrong bound. This checks
 the property that actually matters: for any operand ranges, EVERY concrete input
 pair that SUCCESSFULLY executes must produce a result inside the propagated range.
-The concrete oracle is ``const_fold`` (exact AVM semantics), so an unsound bound
+The concrete oracle is independent Python integer arithmetic, so an unsound bound
 (too tight, an overflow that doesn't wrap, an off-by-one on ``%`` / ``<<``) — the
 exact bug that would silently narrow an attacker-reachable value out of a guard —
 fails here with a minimal counterexample.
 
 A concrete pair that HALTS at runtime (uint64 overflow on ``+``/``*``, underflow
-on ``-``, divide-by-zero) makes ``const_fold`` return ``None``; there is no result
+on ``-``, divide-by-zero) makes the reference return ``None``; there is no result
 to bound, so it's skipped — matching the kernel's "reasons only about successful
 executions" contract.
 """
@@ -29,17 +29,10 @@ from tealql.tealtools.analysis._range_arithmetic import (    # noqa: E402
     _unary_result_range,
 )
 from tealql.tealtools.ssa import IntRange                    # noqa: E402
-from tealql.tealtools.ssa.const_fold import (                # noqa: E402
-    _fold_bitwise,
-    _fold_bitwise_not,
-    _fold_int_arith,
-    _int_const,
-    _int_from_const,
-)
 
 MAX = 2 ** 64 - 1
 _ARITH = ("+", "-", "*", "/", "%")
-# AVM mnemonics: the kernel and the const_fold oracle both key on ``shl`` /
+# AVM mnemonics: the kernel and the independent oracle both key on ``shl`` /
 # ``shr``; spelled ``<<`` / ``>>`` every shift sample was vacuous (both None).
 _BITWISE = ("&", "|", "^", "shl", "shr")
 
@@ -55,9 +48,32 @@ def _range_and_value(draw, max_value=MAX):
 
 
 def _concrete(op, a, b):
-    fold = _fold_int_arith if op in _ARITH else _fold_bitwise
-    r = fold(op, [_int_const(a), _int_const(b)])
-    return None if r is None else _int_from_const(r)
+    # Independent mathematical reference: no production constant-folder calls.
+    if op in {"/", "%"} and b == 0 or op in {"shl", "shr"} and b >= 64:
+        return None
+    if op == "+":
+        value = a + b
+    elif op == "-":
+        value = a - b
+    elif op == "*":
+        value = a * b
+    elif op == "/":
+        value = a // b
+    elif op == "%":
+        value = a % b
+    elif op == "&":
+        value = a & b
+    elif op == "|":
+        value = a | b
+    elif op == "^":
+        value = a ^ b
+    elif op == "shl":
+        value = (a << b) & MAX
+    elif op == "shr":
+        value = a >> b
+    else:
+        raise AssertionError(op)
+    return value if 0 <= value <= MAX else None
 
 
 def _check_binary(op, av, bv):
@@ -101,5 +117,5 @@ def test_unary_not_range_contains_concrete(av):
     abstract = _unary_result_range("~", ra)
     assert abstract is not None
     lo, hi = _clamp_uint64(*abstract)
-    val = _int_from_const(_fold_bitwise_not([_int_const(a)]))
+    val = MAX ^ a
     assert lo <= val <= hi, f"UNSOUND: ~{a} = {val} not in [{lo},{hi}] (range {ra.lo}..{ra.hi})"

@@ -329,6 +329,9 @@ def _resolve_mode(args) -> "str | None":
 
 def _cmd_detections(args) -> int:
     from tealql.security import DETECTORS
+    from tealql.tealtools.diagnostics.health import AnalysisDegradation, AnalysisHealth
+    from tealql.tealtools.reporting.registry import _input_health, _safe
+    from tealql.tealtools._utils.serialize import finding_to_dict
 
     if args.list:
         if args.json_out:
@@ -360,21 +363,38 @@ def _cmd_detections(args) -> int:
         ]
     logger.info("running %d detection(s) on %d program(s) (mode=%s)",
                 len(names), len(programs), mode or "unfiltered")
+    strict = getattr(args, 'strict', False)
+    notes = [note for prog, _ in programs for note in _input_health(prog, strict).degradations]
 
     def _run(name):
-        # One detector's findings across every per-file program.
+        # Rendering belongs inside the same isolated execution boundary.
         cls = DETECTORS[name]
         found = []
         for prog, file in programs:
-            found.extend(cls(prog, file=file).detect())
+            def execute():
+                detector = cls(prog, file=file)
+                violations = list(detector.detect())
+                degraded = getattr(detector, 'degraded', None)
+                if degraded:
+                    if strict:
+                        raise TealQLError(f'detector {name} ran degraded: {degraded}')
+                    notes.append(AnalysisDegradation('detector-degraded', degraded, file, detector=name))
+                rendered = [finding_to_dict(v) if args.json_out else v.pretty() for v in violations]
+                _json.dumps(rendered)
+                return rendered
+            try:
+                result = _safe(f'detector {name}', execute, [], strict=strict)
+            except Exception as error:
+                raise TealQLError(f'strict detection failed for {name} in {file}: {error}') from error
+            found.extend(result.value)
+            notes.extend(result.degradations)
         logger.info("  %s: %d finding(s)", name, len(found))
         return found
 
     if args.json_out:
-        from tealql.tealtools._utils.serialize import finding_to_dict
-        out = {name: [finding_to_dict(v) for v in _run(name)] for name in names}
-        print(_json.dumps(out, indent=2))
+        out = {name: _run(name) for name in names}
         any_findings = any(v for v in out.values())
+        print(_json.dumps({**out, **AnalysisHealth(tuple(notes)).to_dict()}, indent=2))
     else:
         any_findings = False
         for name in names:
@@ -383,15 +403,17 @@ def _cmd_detections(args) -> int:
                 print(f"=== sec-guide/{name} ===")
             if violations:
                 any_findings = True
-                for v in violations:
-                    print(v.pretty())
+                for text in violations:
+                    print(text)
             elif args.all:
                 print("(no findings)")
             if args.all:
                 print()
         if not args.all and not any_findings:
             print("(no findings)")
-    return 1 if any_findings else 0
+        for note in notes:
+            print(f'[INCOMPLETE] {note.message}')
+    return 2 if notes else 1 if any_findings else 0
 
 
 def _cmd_detections_scan(args) -> int:
@@ -410,8 +432,11 @@ def _cmd_detections_scan(args) -> int:
         arc56=getattr(args, "arc56", None),
     )
 
-    # --update-baseline accepts the CURRENT findings and exits 0.
+    # A partial scan cannot safely replace an accepted baseline.
     if args.update_baseline:
+        if not findings.complete:
+            from tealql.tealtools.diagnostics.errors import TealQLError
+            raise TealQLError('cannot update baseline from an incomplete scan')
         from tealql.security.suppress import write_baseline
         n = write_baseline(args.update_baseline, findings)
         print(f"wrote {n} fingerprint(s) to {args.update_baseline}", file=sys.stderr)
@@ -438,20 +463,30 @@ def _cmd_detections_scan(args) -> int:
     print(renderer(findings))
     # Exit 1 only on FAILURES: with --options, findings below `fail_on` are
     # reported but do not fail CI.
-    return 1 if failures(findings, options) else 0
+    return 2 if not findings.complete else 1 if failures(findings, options) else 0
 
 
 def _cmd_all(args) -> int:
-    from tealql.security.run import run_all_dict, run_all_findings
+    from tealql.security.run import run_all_dict, run_all_result
     prog = _load(args)
-    if args.json_out:
-        payload = run_all_dict(prog)
-        print(_json.dumps(payload, indent=2))
-        n_findings = sum(len(v) for v in payload["detectors"].values())
-    else:
-        text, n_findings = run_all_findings(prog)
-        print(text, end="")
-    return 1 if n_findings else 0
+    strict = getattr(args, 'strict', False)
+    try:
+        if args.json_out:
+            payload = run_all_dict(prog, strict=strict)
+            print(_json.dumps(payload, indent=2))
+            n_findings = sum(len(v) for v in payload["detectors"].values())
+            complete = payload['complete']
+        else:
+            result = run_all_result(prog, strict=strict)
+            text, n_findings = result.value
+            complete = result.complete
+            print(text, end="")
+    except Exception as error:
+        if not strict:
+            raise
+        from tealql.tealtools.diagnostics.errors import TealQLError
+        raise TealQLError(f'strict analysis failed: {error}') from error
+    return 2 if not complete else 1 if n_findings else 0
 
 
 def register(sub, add) -> None:
@@ -477,8 +512,8 @@ def register(sub, add) -> None:
                      help="list every attacker-input source")
     tqg.add_argument("--verify", dest="verify", action="store_true",
                      help="attack surface + per-sink VERDICT: chain each reachable "
-                          "sink to its guard-aware detector (CONFIRMED / guarded / "
-                          "unverified)")
+                          "sink to its guard-aware detector (CONFIRMED / NOT_FLAGGED / "
+                          "UNVERIFIED)")
     tq.add_argument("--precise", dest="precise", action="store_true",
                     help="back reachability with the lifted Puya IR (drops phantom "
                          "reaches + recovers interprocedural ones); applies to the "

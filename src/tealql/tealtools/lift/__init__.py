@@ -44,7 +44,15 @@ def build_lifter(prog, file=None):
         target = request.target()
         target.propagate_constants()
         lf = _Lifter(target)
-        lf.build()
+        ir = lf.build()
+        from . import pre_ir
+        from types import MappingProxyType
+        pre_ir.freeze(ir)
+        for register in lf.regs.values():
+            pre_ir.freeze(register)
+        lf.subs = tuple(lf.subs)
+        lf.name2sub = MappingProxyType(lf.name2sub)
+        lf._analysis_frozen = True
         lifter = lf
     except Exception as e:
         try:

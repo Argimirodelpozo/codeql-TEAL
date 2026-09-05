@@ -435,6 +435,20 @@ class PathPredicateAnalysis:
         """Predicates contributed specifically by ``pred -> succ``."""
         return self._edge_predicates(pred, succ)
 
+    def evidence_at(self, file: str, line: int):
+        """Must predicates scoped to one use; assertion dependencies are separate.
+
+        The point is where the fact holds, not a claim about the instruction
+        that established it. Consumers must match the subject and relation.
+        """
+        from ..diagnostics.evidence import GuardEvidence
+        from ..diagnostics.location import InstructionPoint
+        return tuple(GuardEvidence(
+            str(p.value), p.kind, ', '.join(map(str, p.args)),
+            InstructionPoint(file, line), scope=(file,), extent=(line, line),
+            basis='must-predicate',
+        ) for p in sorted(self.predicates_at(file, line), key=str))
+
     def edge_is_feasible(self, pred: BasicBlock, succ: BasicBlock) -> bool:
         """False only when entry plus edge facts prove a contradiction."""
         conditions = (
@@ -644,8 +658,44 @@ class PathPredicateAnalysis:
             return self._decompose_cond(cond, taken=(kind == BOOL_TRUE))
         if last.op in MULTIWAY_BRANCH_OPS:
             edge = self._switch_or_match_edge(pred, succ, last)
-            return frozenset((edge,)) if edge is not None else frozenset()
+            if edge is None:
+                return frozenset()
+            return frozenset({edge, *self._router_predicates(edge)})
         return frozenset()
+
+    def _router_predicates(self, edge):
+        """Decode Puya's (!ApplicationID)*6 + OnCompletion switch key.
+
+        The multiplier and both immutable current-transaction fields are
+        required. Existing collapsed-edge checks run before this decomposition.
+        """
+        if edge.kind != "eq" or not edge.args:
+            return ()
+        index = const_int(edge.args[0])
+        definition = getattr(edge.value, "defined_by", None)
+        if index is None or not 0 <= index < 12 or definition is None or definition.op != "+":
+            return ()
+        def field(value, name):
+            d = getattr(value, "defined_by", None)
+            return d is not None and d.op == "txn" and d.immediates.strip() == name
+        operands = [self._operand(v) for v in definition.inputs]
+        for completion in operands:
+            if not field(completion, "OnCompletion"):
+                continue
+            scaled = next((v for v in operands if v is not completion), None)
+            multiply = getattr(scaled, "defined_by", None)
+            if multiply is None or multiply.op != "*" or len(multiply.inputs) != 2:
+                continue
+            parts = [self._operand(v) for v in multiply.inputs]
+            for part, factor in ((parts[0], parts[1]), (parts[1], parts[0])):
+                negate = getattr(part, "defined_by", None)
+                if const_int(factor) != 6 or negate is None or negate.op != "!" or len(negate.inputs) != 1:
+                    continue
+                app_id = self._operand(negate.inputs[0])
+                if field(app_id, "ApplicationID"):
+                    return (BranchCondition(completion, "eq", (Const("int", str(index % 6)),)),
+                            BranchCondition(app_id, "zero" if index >= 6 else "nonzero"))
+        return ()
 
     def _decompose_cond(
         self, cond: Operand, *, taken: bool,

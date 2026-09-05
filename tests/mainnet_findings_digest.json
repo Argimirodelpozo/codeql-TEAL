@@ -27,9 +27,9 @@
    "findings": 6
   },
   "delete-funds-check": {
-   "contracts": 177,
+   "contracts": 170,
    "crashes": 0,
-   "findings": 400
+   "findings": 244
   },
   "group-size-check": {
    "contracts": 52,
@@ -52,14 +52,14 @@
    "findings": 36
   },
   "is-deletable": {
-   "contracts": 177,
+   "contracts": 170,
    "crashes": 0,
-   "findings": 400
+   "findings": 244
   },
   "is-updatable": {
-   "contracts": 161,
+   "contracts": 154,
    "crashes": 0,
-   "findings": 375
+   "findings": 217
   },
   "partial-tainted-fund-flow": {
    "contracts": 19,
@@ -97,19 +97,19 @@
    "findings": 82
   },
   "timelock-upgrade": {
-   "contracts": 116,
+   "contracts": 110,
    "crashes": 0,
-   "findings": 191
+   "findings": 145
   },
   "unprotected-deletable": {
-   "contracts": 79,
+   "contracts": 69,
    "crashes": 0,
-   "findings": 203
+   "findings": 90
   },
   "unprotected-updatable": {
-   "contracts": 61,
+   "contracts": 52,
    "crashes": 0,
-   "findings": 184
+   "findings": 72
   },
   "unsafe-division-order": {
    "contracts": 36,
@@ -127,18 +127,14 @@
   "01565792ce736888": {
    "abi-method-selector": "3897",
    "arbitrary-inner-asset": "2329,2501,2519,3139",
-   "delete-funds-check": "64,227,379,390,444,608,684,855,1113,1216,1342,1394,1441,1596,1956,2068,2083,2136,2167,2230,2253,2362,2548,2828,2858,2953,3897",
    "inner-txn-close-rekey": "2505",
-   "is-deletable": "64,227,379,390,444,608,684,855,1113,1216,1342,1394,1441,1596,1956,2068,2083,2136,2167,2230,2253,2362,2548,2828,2858,2953,3897",
-   "is-updatable": "64,227,379,390,444,608,684,855,1113,1216,1342,1394,1441,1596,1956,2068,2083,2136,2167,2230,2253,2362,2548,2828,2858,2953,3897",
+   "is-updatable": "227",
    "partial-tainted-fund-flow": "551,3522",
    "tainted-asset-admin": "2118",
    "tainted-fund-flow": "1987,2010,2051,2406,2503,2505,2507,2521,2523,3037",
    "tainted-log": "306,682,1111,1429,1439,2923,3017",
    "tainted-state-write": "589,947,1024,1032,1078,1086",
-   "timelock-upgrade": "1216,1342,2136,2167,2230,2828",
-   "unprotected-deletable": "64,227,379,390,444,608,684,855,1113,1394,1441,1596,1956,2068,2083,2253,2362,2548,2858,2953,3897",
-   "unprotected-updatable": "64,227,379,390,444,608,684,855,1113,1394,1441,1596,1956,2068,2083,2253,2362,2548,2858,2953,3897",
+   "unprotected-updatable": "227",
    "unsafe-division-order": "1476,1517,2292,2741"
   },
   "0395386c2b632561": {
@@ -258,13 +254,9 @@
    "timelock-upgrade": "65"
   },
   "0ef72006804c6af6": {
-   "delete-funds-check": "36,74,146,255,337",
+   "delete-funds-check": "74,146",
    "inner-txn-close-rekey": "94,111,185,237",
-   "is-deletable": "36,74,146,255,337",
-   "is-updatable": "36,74,146,255,337",
-   "timelock-upgrade": "36,74,146",
-   "unprotected-deletable": "255,337",
-   "unprotected-updatable": "255,337",
+   "is-deletable": "74,146",
    "unsafe-division-order": "314,330"
   },
   "0f40ad51eb9d8db4": {
@@ -431,13 +423,8 @@
    "unprotected-updatable": "3"
   },
   "234ba11a432027d6": {
-   "delete-funds-check": "62,268,333,492,560,641",
    "inner-txn-close-rekey": "389",
-   "is-deletable": "62,268,333,492,560,641",
-   "is-updatable": "62,268,333,492,560,641",
-   "partial-tainted-fund-flow": "387,406,603,630",
-   "unprotected-deletable": "62,268,333,492,560,641",
-   "unprotected-updatable": "62,268,333,492,560,641"
+   "partial-tainted-fund-flow": "387,406,603,630"
   },
   "240aeb1c93069e03": {
    "abi-method-selector": "98",
@@ -483,14 +470,13 @@
    "abi-method-selector": "1157"
   },
   "26c321c818124efa": {
-   "delete-funds-check": "26,53,133,180,336,464,705,788,808,851",
+   "delete-funds-check": "808",
    "inner-txn-close-rekey": "152,841",
-   "is-deletable": "26,53,133,180,336,464,705,788,808,851",
-   "is-updatable": "26,53,133,180,336,464,705,788,808,851",
+   "is-deletable": "808",
+   "is-updatable": "851",
    "tainted-log": "786",
-   "timelock-upgrade": "464,851",
-   "unprotected-deletable": "26,53,133,180,336,705,788,808",
-   "unprotected-updatable": "26,53,133,180,336,705,788,808"
+   "timelock-upgrade": "851",
+   "unprotected-deletable": "808"
   },
   "26ce827424d8d0e1": {
    "abi-method-selector": "2336",
@@ -526,13 +512,9 @@
    "unsafe-division-order": "1694"
   },
   "2b0305e50afd3f15": {
-   "delete-funds-check": "36,74,148,263,341",
+   "delete-funds-check": "74,148",
    "inner-txn-close-rekey": "94,111,187,245",
-   "is-deletable": "36,74,148,263,341",
-   "is-updatable": "36,74,148,263,341",
-   "timelock-upgrade": "36,74,148",
-   "unprotected-deletable": "263,341",
-   "unprotected-updatable": "263,341"
+   "is-deletable": "74,148"
   },
   "2f5099d2a06e3a2f": {
    "abi-method-selector": "95,107,131",
@@ -767,14 +749,13 @@
    "unprotected-updatable": "83"
   },
   "5f5deaccc434a4cb": {
-   "delete-funds-check": "22,37,64,129,307,371,405,436,473",
+   "delete-funds-check": "436",
    "inner-txn-close-rekey": "83,463",
-   "is-deletable": "22,37,64,129,307,371,405,436,473",
-   "is-updatable": "22,37,64,129,307,371,405,436,473",
+   "is-deletable": "436",
+   "is-updatable": "473",
    "tainted-log": "369",
-   "timelock-upgrade": "129,473",
-   "unprotected-deletable": "22,37,64,307,371,405,436",
-   "unprotected-updatable": "22,37,64,307,371,405,436"
+   "timelock-upgrade": "473",
+   "unprotected-deletable": "436"
   },
   "5fab6743b4cc15ae": {
    "abi-method-selector": "153,163",
@@ -799,13 +780,8 @@
    "unprotected-deletable": "60"
   },
   "61bfeed2b4a66494": {
-   "delete-funds-check": "24,100,123,245,489,805,984,1056,1093,1105,2008,2048,2075,2112",
-   "is-deletable": "24,100,123,245,489,805,984,1056,1093,1105,2008,2048,2075,2112",
-   "is-updatable": "24,100,123,245,489,805,984,1056,1093,1105,2008,2048,2075,2112",
    "partial-tainted-fund-flow": "662",
    "tainted-fund-flow": "615,664",
-   "unprotected-deletable": "24,100,123,245,489,805,984,1056,1093,1105,2008,2048,2075,2112",
-   "unprotected-updatable": "24,100,123,245,489,805,984,1056,1093,1105,2008,2048,2075,2112",
    "unsafe-division-order": "1647,1691,2368"
   },
   "63eae75294c0f455": {
@@ -820,18 +796,14 @@
   "674d981b82b5d967": {
    "abi-method-selector": "3855",
    "arbitrary-inner-asset": "2308,2480,2498,3097",
-   "delete-funds-check": "64,227,379,390,444,608,684,855,1113,1216,1342,1394,1439,1575,1935,2047,2062,2115,2146,2209,2232,2341,2527,2786,2816,2911,3855",
    "inner-txn-close-rekey": "2484",
-   "is-deletable": "64,227,379,390,444,608,684,855,1113,1216,1342,1394,1439,1575,1935,2047,2062,2115,2146,2209,2232,2341,2527,2786,2816,2911,3855",
-   "is-updatable": "64,227,379,390,444,608,684,855,1113,1216,1342,1394,1439,1575,1935,2047,2062,2115,2146,2209,2232,2341,2527,2786,2816,2911,3855",
+   "is-updatable": "227",
    "partial-tainted-fund-flow": "551,3480",
    "tainted-asset-admin": "2097",
    "tainted-fund-flow": "1966,1989,2030,2385,2482,2484,2486,2500,2502,2995",
    "tainted-log": "306,682,1111,1429,1437,2881,2975",
    "tainted-state-write": "589,947,1024,1032,1078,1086",
-   "timelock-upgrade": "1216,1342,2115,2146,2209,2786",
-   "unprotected-deletable": "64,227,379,390,444,608,684,855,1113,1394,1439,1575,1935,2047,2062,2232,2341,2527,2816,2911,3855",
-   "unprotected-updatable": "64,227,379,390,444,608,684,855,1113,1394,1439,1575,1935,2047,2062,2232,2341,2527,2816,2911,3855",
+   "unprotected-updatable": "227",
    "unsafe-division-order": "2271,3409"
   },
   "6753af89b116a777": {
@@ -994,14 +966,10 @@
    "unprotected-updatable": "341"
   },
   "8731391f236f81c3": {
-   "delete-funds-check": "34,68,193,214,235,256,273,292,329,372,464,517,549,621,643,973,1007,1270,1508,1626,2020,2063,2106,2130,2171,2215,2275,2477,2584",
+   "delete-funds-check": "621",
    "inner-txn-fee": "1290,1550,1578,1775,1792,2100,2384,2554,2571",
-   "is-deletable": "34,68,193,214,235,256,273,292,329,372,464,517,549,621,643,973,1007,1270,1508,1626,2020,2063,2106,2130,2171,2215,2275,2477,2584",
-   "is-updatable": "34,68,193,214,235,256,273,292,329,372,464,517,549,621,643,973,1007,1270,1508,1626,2020,2063,2106,2130,2171,2215,2275,2477,2584",
+   "is-deletable": "621",
    "partial-tainted-fund-flow": "1786",
-   "timelock-upgrade": "68,193,214,235,256,273,292,372,464,517,549,621,973,1270,2020,2063,2106,2130,2171,2215",
-   "unprotected-deletable": "34,329,643,1007,1508,1626,2275,2477,2584",
-   "unprotected-updatable": "34,329,643,1007,1508,1626,2275,2477,2584",
    "unsafe-division-order": "582"
   },
   "885e86e21e1027b0": {
@@ -1061,18 +1029,14 @@
   "930dc9a9b91a890a": {
    "abi-method-selector": "3894",
    "arbitrary-inner-asset": "2323,2490,2508,3128",
-   "delete-funds-check": "58,221,373,384,438,602,678,849,1107,1210,1336,1388,1435,1590,1950,2062,2077,2130,2161,2224,2247,2356,2537,2817,2847,2942,3894",
    "inner-txn-close-rekey": "2494",
-   "is-deletable": "58,221,373,384,438,602,678,849,1107,1210,1336,1388,1435,1590,1950,2062,2077,2130,2161,2224,2247,2356,2537,2817,2847,2942,3894",
-   "is-updatable": "58,221,373,384,438,602,678,849,1107,1210,1336,1388,1435,1590,1950,2062,2077,2130,2161,2224,2247,2356,2537,2817,2847,2942,3894",
+   "is-updatable": "221",
    "partial-tainted-fund-flow": "545,3519",
    "tainted-asset-admin": "2112",
    "tainted-fund-flow": "1981,2004,2045,2400,2492,2494,2496,2510,2512,3026",
    "tainted-log": "300,676,1105,1423,1433,2912,3006",
    "tainted-state-write": "583,941,1018,1026,1072,1080",
-   "timelock-upgrade": "1210,1336,2130,2161,2224,2817",
-   "unprotected-deletable": "58,221,373,384,438,602,678,849,1107,1388,1435,1590,1950,2062,2077,2247,2356,2537,2847,2942,3894",
-   "unprotected-updatable": "58,221,373,384,438,602,678,849,1107,1388,1435,1590,1950,2062,2077,2247,2356,2537,2847,2942,3894",
+   "unprotected-updatable": "221",
    "unsafe-division-order": "1470,1511,2286,2730"
   },
   "938f81b7fa63bd22": {
@@ -1139,13 +1103,6 @@
   },
   "993ec3747870c69e": {
    "tainted-log": "24,46"
-  },
-  "9b081d0b99cccd5e": {
-   "delete-funds-check": "23,38",
-   "is-deletable": "23,38",
-   "is-updatable": "23,38",
-   "unprotected-deletable": "23,38",
-   "unprotected-updatable": "23,38"
   },
   "9cdaf64d1b7a59f9": {
    "delete-funds-check": "84",
@@ -1524,13 +1481,6 @@
    "tainted-fund-flow": "337,341",
    "tainted-log": "2091",
    "timelock-upgrade": "68"
-  },
-  "ca53e0cc0acd8208": {
-   "delete-funds-check": "23,38",
-   "is-deletable": "23,38",
-   "is-updatable": "23,38",
-   "unprotected-deletable": "23,38",
-   "unprotected-updatable": "23,38"
   },
   "cf2daeda52103416": {
    "abi-method-selector": "34,41,48,52,59",

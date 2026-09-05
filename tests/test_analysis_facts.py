@@ -184,7 +184,11 @@ def test_fact_superset_and_guarded_view_share_the_minimum_snapshots(monkeypatch)
     assert reverse.domains == broad.domains
     assert reverse.facts == broad.facts
     assert reverse.aliases == broad.aliases
-    assert reverse._refinements == broad._refinements
+    # Refinements now come from the shared predicates at the queried use;
+    # query order must preserve observable answers, not a duplicate guard list.
+    for program, facts in ((prog, broad), (guarded_first, reverse)):
+        use = next(a for a in program.assignments if a.op == "==")
+        assert facts.range_at(use.inputs[0], use) == facts.range_at(use.inputs[1], use)
 
 
 def test_cached_derived_view_allows_completed_passes_but_rejects_refinement():

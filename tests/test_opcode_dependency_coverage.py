@@ -73,13 +73,13 @@ def test_new_unlisted_transform_propagates_to_every_output():
     assert CONSERVATIVE_VALUE_PROPAGATION_RULE.flows(assignment, [2]) == [1]
 
 
-def _flows_to(src: str, sink_op: str) -> bool:
+def _flows_to(src: str, sink_op: str, rules=ATTACKER_CONTROL_RULES) -> bool:
     prog = SSAProgram.from_text(src, name="flow.teal")
     return bool(TaintAnalysis(
         prog,
         sources=[Source("argument", lambda a: a.op == "txna")],
         sinks=[Sink("consumer", lambda a: a.op == sink_op, lambda a: 1)],
-        default_rules=ATTACKER_CONTROL_RULES,
+        default_rules=rules,
     ).detect())
 
 
@@ -120,12 +120,10 @@ def test_dynamic_slice_selector_and_value_both_control_the_result():
     )
 
 
-def test_opaque_state_read_is_an_explicit_no_flow_boundary():
-    assert not _flows_to(
-        "#pragma version 8\n"
-        "txna ApplicationArgs 0\napp_global_get\npop\nint 1\nreturn\n",
-        "pop",
-    )
+def test_storage_selection_and_content_are_distinct_policies():
+    source = "#pragma version 8\ntxna ApplicationArgs 0\napp_global_get\npop\nint 1\nreturn\n"
+    assert _flows_to(source, "pop", ATTACKER_CONTROL_RULES)
+    assert not _flows_to(source, "pop", DEFAULT_RULES)
 
 
 def test_cleanup_pure_table_contains_only_modelled_canonical_opcodes():

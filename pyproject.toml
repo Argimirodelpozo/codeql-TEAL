@@ -52,6 +52,9 @@ dev = [
     # domains (concrete result must lie in the propagated range/length).
     "hypothesis>=6",
 ]
+behavioral = [
+    "py-algorand-sdk==2.11.1",
+]
 
 [project.urls]
 Repository = "https://github.com/Argimirodelpozo/codeql-TEAL"

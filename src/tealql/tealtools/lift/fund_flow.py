@@ -19,7 +19,7 @@ self-inflicted, not a tainted-field vuln. Rekey is an lsig-only check; see
 """
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from dataclasses import dataclass
 
 from . import pre_ir
@@ -360,8 +360,33 @@ def _scratch_value_edges(lifter, dom_by_sub) -> dict:
     return out
 
 
+class _GuardDefinitions(dict):
+    """Query-local guard memo over a frozen definition graph.
+
+    Keep both entry count and retained register/key count bounded. The return
+    map is held strongly, so object-id reuse cannot cross query contexts.
+    """
+    def __init__(self):
+        super().__init__()
+        self.guard_cache = OrderedDict()
+        self.sender_cache = OrderedDict()
+        self.guard_weight = 0
+        self.guard_returns = None
+        self.guard_hits = 0
+
+    def remember(self, key, condition, value):
+        weight = 1 + len(key[2]) + len(key[3])
+        if weight > 65536:
+            return
+        self.guard_cache[key] = condition, value, weight
+        self.guard_weight += weight
+        while len(self.guard_cache) > 1024 or self.guard_weight > 65536:
+            _, (_, _, removed) = self.guard_cache.popitem(last=False)
+            self.guard_weight -= removed
+
+
 def _def_map(lifter) -> dict:
-    d: dict = {}
+    d: dict = _GuardDefinitions() if getattr(lifter, '_analysis_frozen', False) else {}
     for b in pre_ir.blocks(lifter.subs):
         for ph in b.phis:
             d[id(ph.register)] = ph
@@ -485,6 +510,19 @@ def _input_key(src):
 
 
 def _classify(kind, polarity, cond, def_of, sink_regs, sink_keys, inv_ret=None) -> Guard:
+    cache_key = None
+    if isinstance(def_of, _GuardDefinitions) and isinstance(cond, pre_ir.Register):
+        if def_of.guard_returns is not inv_ret:
+            def_of.guard_cache.clear()
+            def_of.sender_cache.clear()
+            def_of.guard_weight = 0
+            def_of.guard_returns = inv_ret
+        cache_key = (id(cond), polarity, frozenset(sink_regs), frozenset(sink_keys))
+        if cache_key in def_of.guard_cache:
+            _, (ci, cs), _ = def_of.guard_cache[cache_key]
+            def_of.guard_cache.move_to_end(cache_key)
+            def_of.guard_hits += 1
+            return Guard(kind, polarity, ci, cs)
     # HAZARD: guard-classification soundness. Every rule below exists because
     # crediting a check that does not actually constrain the sink's value
     # suppresses a real, exploitable flow.
@@ -518,8 +556,9 @@ def _classify(kind, polarity, cond, def_of, sink_regs, sink_keys, inv_ret=None) 
     # path must still credit after a weaker one was walked.
     memo: dict = {}
     active: set = set()       # id(register) on the current descent: cycle guard
+    sender_cache = def_of.sender_cache if isinstance(def_of, _GuardDefinitions) else OrderedDict()
 
-    def _comparison_pins_sender(src) -> bool:
+    def _compute_sender_pin(src) -> bool:
         """Exactly one operand is Sender and the other is a trusted identity.
 
         An attacker-supplied counterpart authorises nothing
@@ -559,6 +598,19 @@ def _classify(kind, polarity, cond, def_of, sink_regs, sink_keys, inv_ret=None) 
                     })):
                 return False
         return True
+
+    def _comparison_pins_sender(src) -> bool:
+        # This property depends on definitions and return edges, never on the
+        # current sink's taint set. A shared comparison must not re-walk its
+        # whole operand graph for every parameter and call-site obligation.
+        key = id(src)
+        if key not in sender_cache:
+            sender_cache[key] = (src, _compute_sender_pin(src))
+            if len(sender_cache) > 1024:
+                sender_cache.popitem(last=False)
+        else:
+            sender_cache.move_to_end(key)
+        return sender_cache[key][1]
 
     def _every_leaf_pins_sender(src, connective, sense) -> bool:
         """``src`` is a ``connective`` tree (``||`` under a required-True
@@ -728,6 +780,8 @@ def _classify(kind, polarity, cond, def_of, sink_regs, sink_keys, inv_ret=None) 
         return (ci, cs)
 
     ci, cs = visit(cond, True, True, polarity != "false", False)
+    if cache_key is not None:
+        def_of.remember(cache_key, cond, (ci, cs))
     return Guard(kind, polarity, ci, cs)
 
 
@@ -887,6 +941,12 @@ def _entry_guards(lifter, def_of, dom_by_sub, taint, inv_ret=None,
                 for arg in inv.args:
                     walked = list(_walk(arg, def_of))
                     aregs = {id(r) for r, _ in walked}
+                    tainted = any(r in taint for r in aregs)
+                    if not tainted:
+                        # The fixed point below excludes this site from every
+                        # parameter obligation. No value guard is consumed.
+                        facts.append((s.id, False, False, False, []))
+                        continue
                     akeys = {k for _, oo in walked
                              if (k := _input_key(_intr(oo) if oo is not None else None)) is not None}
                     # Match guards against the TAINTED members only, exactly as
@@ -901,7 +961,7 @@ def _entry_guards(lifter, def_of, dom_by_sub, taint, inv_ret=None,
                     gregs = {r for r in aregs if taint.get(r)}
                     guards = _dominating_guards(by_id, dom, b.id, idx, def_of, gregs,
                                                 akeys, inv_ret)
-                    facts.append((s.id, any(r in taint for r in aregs),
+                    facts.append((s.id, tainted,
                                   any(g.checks_input for g in guards),
                                   any(g.checks_sender for g in guards),
                                   [cpidx[r] for r in aregs if r in cpidx]))
@@ -1235,27 +1295,10 @@ def itxn_selector_lines_returned_to_sender(
 # so these indices read backwards from TEAL source order. Only the KEY is flagged
 # — it is the destination slot a tainted value lets the attacker choose, whereas
 # storing user data in the VALUE is normal.
-_STATE_WRITE_KEY_IDX = {
-    "app_global_put": 1,    # args: value, KEY
-    "app_local_put": 1,     # args: value, KEY, account
-    "app_global_del": 0,    # args: KEY (attacker-chosen global slot deleted)
-    "app_local_del": 0,     # args: KEY, account
-    "box_put": 1,           # args: value, KEY
-    "box_create": 1,        # args: size, KEY
-    "box_replace": 2,       # args: bytes, start, KEY
-    "box_splice": 3,        # args: replacement, length, start, KEY
-    "box_resize": 1,        # args: size, KEY
-    "box_del": 0,           # args: KEY (attacker-chosen box deleted)
-}
-_STATE_WRITE_SEV = {
-    "app_global_put": "CRITICAL",   # overwrite ANY global slot (owner/admin state)
-    "app_local_put": "HIGH",
-    "app_global_del": "CRITICAL",   # delete ANY global slot (owner/admin/pause key)
-    "app_local_del": "HIGH",
-    "box_put": "HIGH", "box_replace": "HIGH", "box_splice": "HIGH",
-    "box_create": "MEDIUM", "box_resize": "MEDIUM",
-    "box_del": "MEDIUM",            # delete an arbitrary (e.g. another user's) box
-}
+from ..language.effects import STATE_EFFECTS
+
+_STATE_WRITE_KEY_IDX = {op: e.key_index for op, e in STATE_EFFECTS.items()}
+_STATE_WRITE_SEV = {op: e.severity.upper() for op, e in STATE_EFFECTS.items()}
 
 
 def _state_write_sink_of(s):

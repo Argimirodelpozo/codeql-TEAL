@@ -9,9 +9,8 @@
 # compiler internals (<5.8) and a git-pinned tree-sitter-teal commit. hatchling
 # stays the build backend; uv is the resolver / installer / runner.
 #
-# Not run here: the behavioural lift gate and the assembler differential —
-# both need a live algod localnet, so they stay developer-side. Everything
-# else runs, including the Tier-3 backend harness (LIFT_SEMANTICS_BACKEND —
+# The private-node behavioral gate has a separate scheduled/manual workflow.
+# This workflow runs the hermetic suite, including the Tier-3 backend harness (LIFT_SEMANTICS_BACKEND —
 # once believed slow, measured 2026-08-05 at +5 tests / ~5s).
 name: CI
 
@@ -36,7 +35,7 @@ jobs:
         with:
           enable-cache: true
       - name: Ruff — unused imports, undefined names, syntax
-        run: uvx ruff check src/ tests/
+        run: uvx ruff check src/ tests/ tools/
 
   test:
     runs-on: ubuntu-latest
@@ -56,6 +55,20 @@ jobs:
           LIFT_SEMANTICS_CORPUS: "1"
           LIFT_SEMANTICS_BACKEND: "1"
         run: uv run pytest tests/ -q -ra -n auto --cov
+
+  core-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked --extra dev
+      - name: Verify optional compiler is absent
+        run: uv run python -c "import importlib.util; assert importlib.util.find_spec('puya') is None"
+      - name: Test the core installation
+        run: uv run pytest tests/ -q -ra -n auto
 
   wheel-smoke:
     runs-on: ubuntu-latest

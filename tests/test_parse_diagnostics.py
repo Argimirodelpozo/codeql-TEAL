@@ -187,8 +187,9 @@ def test_cli_detections_scan_garbage_warns_and_reports_nothing(tmp_path, capsys)
     # ONE readouterr: it DRAINS the buffer, so a second call returns empty and
     # any assertion on that half would pass vacuously.
     captured = capsys.readouterr()
-    assert rc == 0
+    assert rc == 2
     assert "(no findings)" in captured.out
+    assert "INCOMPLETE" in captured.out
     assert "failed to parse" in captured.err, (
         "garbage input must warn on stderr — a silent '(no findings)' is the "
         "exact false clean bill this module exists to prevent")

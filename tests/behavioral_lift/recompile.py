@@ -27,8 +27,10 @@ from tealql.tealtools.lift.backend import lift_to_teal, _destructure_with_orphan
 
 
 def algod_client():
+    import os
     from algosdk.v2client import algod
-    return algod.AlgodClient("a" * 64, "http://localhost:4001")
+    return algod.AlgodClient(os.environ.get('ALGOD_TOKEN', 'a' * 64),
+                            os.environ.get('ALGOD_ADDRESS', 'http://localhost:4001'))
 
 
 def _contract_dirs(args):

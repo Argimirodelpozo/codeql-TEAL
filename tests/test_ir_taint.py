@@ -158,7 +158,8 @@ def test_summary_wellformed_on_real_contract():
         nparams = len(by_id[sid].parameters)
         assert all(0 <= i < nparams for i in params), f"{sid}: bad passthrough idx"
     # taint still completes end to end
-    assert isinstance(user_input_taint(lifter), dict)
+    from collections.abc import Mapping
+    assert isinstance(user_input_taint(lifter), Mapping)
 
 
 def _unknown_lifter():

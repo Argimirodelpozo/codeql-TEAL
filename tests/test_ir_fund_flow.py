@@ -43,13 +43,13 @@ def test_sink_families_share_lifted_cfg_and_taint_fixed_points(
         "txna ApplicationArgs 0\nbtoi\nitxn_begin\n"
         "itxn_field Amount\nitxn_submit\nint 1\nreturn\n"
     )
-    lifter = _Lifter(SSAProgram(str(p)))
-    lifter.build()
+    from tealql.tealtools.lift import build_lifter
+    lifter = build_lifter(SSAProgram(str(p)))
 
     calls = {"dom": 0, "pdom": 0, "taint": 0}
     original_dom = flow_module._dominators
     original_pdom = flow_module._post_dominators
-    original_summary = taint_module._return_summary
+    original_summary = taint_module.compute_summaries
 
     def counted_dom(sub):
         calls["dom"] += 1
@@ -65,7 +65,7 @@ def test_sink_families_share_lifted_cfg_and_taint_fixed_points(
 
     monkeypatch.setattr(flow_module, "_dominators", counted_dom)
     monkeypatch.setattr(flow_module, "_post_dominators", counted_pdom)
-    monkeypatch.setattr(taint_module, "_return_summary", counted_summary)
+    monkeypatch.setattr(taint_module, "compute_summaries", counted_summary)
 
     assert flow_module.tainted_fund_flows(lifter)
     assert flow_module.tainted_state_writes(lifter) == []

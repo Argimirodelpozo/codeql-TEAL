@@ -211,6 +211,13 @@ OPAQUE_READ_RULE = FlowRule(
 )
 
 
+SELECTION_PROPAGATION_RULE = FlowRule(
+    name="external-value-selection",
+    matches=lambda a: value_dependency_kind(a.op) == "opaque-read",
+    flows=lambda a, ti: [i + 1 for i in range(len(a.outputs))] if ti else [],
+)
+
+
 CONSERVATIVE_VALUE_PROPAGATION_RULE = FlowRule(
     name="conservative-derived-value",
     matches=lambda a: value_dependency_kind(a.op) == "derived",
@@ -254,7 +261,7 @@ ATTACKER_CONTROL_RULES: list[FlowRule] = [
     SPLICE_PROPAGATION_RULE,
     BYTE_MATH_PROPAGATION_RULE,
     SCRATCH_SELECT_PROPAGATION_RULE,
-    OPAQUE_READ_RULE,
+    SELECTION_PROPAGATION_RULE,
     CONSERVATIVE_VALUE_PROPAGATION_RULE,
 ]
 

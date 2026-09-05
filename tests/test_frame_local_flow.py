@@ -12,7 +12,6 @@ from pathlib import Path
 
 import pytest
 
-from tealql.tealtools.language.avm import op_arity
 from tealql.tealtools.ssa import SSAProgram
 from tealql.tealtools.ssa.relations import (
     frame_gap_sources,
@@ -20,8 +19,6 @@ from tealql.tealtools.ssa.relations import (
     frame_param_sources,
     frame_unresolved_reads,
     frame_value_sources,
-    shared_execution_blocks,
-    unresolved_call_results,
 )
 
 TESTS = Path(__file__).resolve().parent
@@ -112,6 +109,39 @@ def test_gap_map_omits_sources_already_carried_by_ssa():
     assert gap == {}, (
         "a resolved frame input was redundantly reintroduced as an implicit edge")
     assert frame_gap_sources(prog) is gap, "the shared MAY bridge must be cached"
+
+
+def test_gap_filter_keeps_rule_barriers_without_expanding_unrelated_graph(monkeypatch):
+    from types import SimpleNamespace
+    from tealql.tealtools.ssa import frame_slots
+    from tealql.tealtools.ssa.models import Phi, SSAVar
+
+    key = SSAVar("gap.teal", 1, 1)
+    stored_value = SSAVar("gap.teal", 2, 1)
+    expansions = 0
+
+    class ReadInputs(list):
+        def __iter__(self):
+            nonlocal expansions
+            expansions += 1
+            return super().__iter__()
+
+    # A state read depends on its key for selection, but not for content taint.
+    # Its upstream graph must not justify dropping a compatibility edge.
+    stored_value.defined_by = SimpleNamespace(op="app_global_get", inputs=ReadInputs([key]))
+    joined = Phi("gap.teal", 3, 1)
+    joined.args = [stored_value, joined]  # Cyclic phi closure must terminate.
+    sources = {}
+    for line in range(4, 132):
+        output = SSAVar("gap.teal", line, 1)
+        output.defined_by = SimpleNamespace(op="frame_dig", inputs=[joined])
+        sources[output] = {stored_value, key}
+    monkeypatch.setattr(frame_slots, "value_sources", lambda _: sources)
+
+    assert frame_slots.gap_sources(SimpleNamespace()) == {
+        output: {key} for output in sources
+    }
+    assert expansions == 0
 
 
 def test_may_consumers_use_the_gap_map_with_local_sources():
@@ -308,123 +338,19 @@ def test_a_clean_contract_stays_quiet(caplog):
     assert not caplog.records
 
 
-#: Call-result slots the builder cannot name, over the 231 distinct probes.
-#: A CEILING at today's measurement, not a target — 0 is the target.
-_UNRESOLVED_CALL_RESULTS = 15
-
-#: Ops whose operand list is SHORTER than their canonical arity, same corpus.
-#: Convention-independent (it asks "did the builder name every operand?"), so it
-#: is comparable across stack models: main measures 516 of 97,077 here, this
-#: model 22. That gap is the point of the model change, and the ceiling stops it
-#: quietly closing back up.
-_MISSING_OPERANDS = 22
-
-_ARITY_SKIP = frozenset({"frame_dig", "frame_bury", "callsub", "retsub", "proto",
-                         "intcblock", "bytecblock", "return", "err"})
-
-
-def _corpus():
-    from tests.mainnet_ratchet import distinct_probes
-    probes = distinct_probes()
-    if len(probes) < 100:
-        pytest.skip("mainnet probe corpus not present")
-    return probes
+# Per-program ceilings prevent one program's improvement from hiding another's
+# regression. Construction failures fail the case instead of reducing totals.
+from tests.corpus_manifest import distinct_files, load_manifest, representation_metrics
 
 
 @pytest.mark.slow
-def test_the_builder_names_what_a_call_returns():
-    """A ``proto A R`` callee promises R values; a ``None`` in those slots is a
-    value no consumer can see, and it reads as CLEAN.
-
-    This assertion did not exist while a recursive callee's result was ``None``
-    in 15 of these very contracts — they lifted, the live-AVM dryrun matched
-    outcome for outcome, and the suite was green. A downstream prover found it.
-    """
-    total, worst = 0, []
-    for _h, path in _corpus():
-        try:
-            prog = SSAProgram(str(path), strict=False)
-        except Exception:
-            continue
-        n = len(unresolved_call_results(prog))
-        total += n
-        if n:
-            worst.append((path.name, n))
-    worst.sort(key=lambda x: -x[1])
-    assert total <= _UNRESOLVED_CALL_RESULTS, (
-        f"{total} call-result slot(s) have no value (ceiling "
-        f"{_UNRESOLVED_CALL_RESULTS}) — a call whose result the builder cannot "
-        f"name is a silent hole:\n  " + "\n  ".join(f"{n}: {c}" for n, c in worst[:8]))
-
-
-@pytest.mark.slow
-def test_the_builder_names_every_operand_it_can():
-    """``len(inputs) < canonical arity`` means an operand the builder could not
-    name — ``_build_assignments`` drops a ``None`` rather than keeping a hole.
-
-    Deliberately asks a question that does NOT depend on the stack model, so the
-    number stays meaningful across one. Frame and call ops are excluded because
-    their arity IS model-specific."""
-    total = examined = 0
-    by_op: dict = {}
-    for _h, path in _corpus():
-        try:
-            prog = SSAProgram(str(path), strict=False)
-        except Exception:
-            continue
-        for a in prog.assignments:
-            if a.op in _ARITY_SKIP:
-                continue
-            n_in, _ = op_arity(a.op, a.immediates)
-            if n_in <= 0:
-                continue
-            examined += 1
-            if len(a.inputs) < n_in:
-                total += 1
-                by_op[a.op] = by_op.get(a.op, 0) + 1
-    assert examined > 50_000, f"metric went vacuous ({examined} ops examined)"
-    assert total <= _MISSING_OPERANDS, (
-        f"{total} op(s) of {examined} are missing an operand (ceiling "
-        f"{_MISSING_OPERANDS}) — the builder stopped naming values it used to: "
-        f"{sorted(by_op.items(), key=lambda kv: -kv[1])[:8]}")
-
-
-#: Blocks executed by more than one routine, over the 231 distinct probes.
-#: A CEILING. Not a defect to drive to zero — a shared tail is legal TEAL — but
-#: the simulation runs such a block ONCE, on its owner's stack, so its operands
-#: are the wrong values for the other caller. It must stay listed.
-_SHARED_EXECUTION_BLOCKS = 10
-
-
-@pytest.mark.slow
-def test_shared_tails_are_listed_not_silent():
-    """A block two routines branch into is executed by both and simulated once.
-
-    That is context-insensitivity, the same class as `not_function_shaped`, and
-    the same rule applies: list it. What must NOT happen is the operands inside
-    reading like any other resolved value, because for one of the two callers
-    they are simply the wrong ones.
-
-    It is 10 blocks of 29,786 (0.03%), which is why the two partitioners behind
-    it are NOT being converged — `pyblock_partition` runs before the
-    `SSAProgram` exists and cannot reuse the corrected policy, so converging is
-    a semantic change, and this is what it would buy.
-    """
-    total, worst = 0, []
-    for _h, path in _corpus():
-        try:
-            prog = SSAProgram(str(path), strict=False)
-        except Exception:
-            continue
-        n = len(shared_execution_blocks(prog))
-        total += n
-        if n:
-            worst.append((path.name, n))
-    worst.sort(key=lambda x: -x[1])
-    assert total <= _SHARED_EXECUTION_BLOCKS, (
-        f"{total} block(s) are executed by more than one routine (ceiling "
-        f"{_SHARED_EXECUTION_BLOCKS}) — each is simulated on ONE owner's stack, "
-        f"so the other caller's operands there are wrong: {worst[:6]}")
+@pytest.mark.parametrize("content_hash,path", distinct_files(PROBES), ids=lambda p: str(p))
+def test_corpus_representation_completes(content_hash, path):
+    expected = load_manifest()["representation"][content_hash]
+    actual = representation_metrics(SSAProgram(str(path), strict=False))
+    assert actual["examined"] == expected["examined"]
+    for metric in ("unresolved", "missing", "shared"):
+        assert actual[metric] <= expected[metric], (path.name, metric, actual, expected)
 
 
 def test_legacy_callee_calls_cross_so_caller_frame_params_survive(tmp_path):
@@ -443,7 +369,7 @@ def test_legacy_callee_calls_cross_so_caller_frame_params_survive(tmp_path):
     depths) has no single crossing, so its continuation must STAY poisoned
     and the frame read after it must refuse rather than take one path's
     height."""
-    from tealql.tealtools.lift import to_puya
+    from tealql.tealtools.lift import lift
 
     teal = tmp_path / "legacy_call.teal"
     teal.write_text(
@@ -459,8 +385,8 @@ def test_legacy_callee_calls_cross_so_caller_frame_params_survive(tmp_path):
         "entry depth")
     dig = next(a for a in prog.assignments if a.op == "frame_dig")
     assert dig.inputs, "the frame param read after the legacy call must resolve"
-    main, _subs = to_puya(prog)
-    assert "Undefined" not in repr(main), (
+    main = lift(prog).main
+    assert "undefined" not in main.render().lower(), (
         "frame params read after a legacy call must lift to the params")
 
     divergent = tmp_path / "divergent_call.teal"
@@ -478,7 +404,10 @@ def test_legacy_callee_calls_cross_so_caller_frame_params_survive(tmp_path):
         "path's depth would misanchor the other paths' frame reads")
     dig2 = next(a for a in prog2.assignments if a.op == "frame_dig")
     assert not dig2.inputs, "the poisoned frame read must refuse, not guess"
-    assert to_puya(prog2) is not None    # splice path: must lift, never raise
+    assert lift(prog2) is not None    # splice path: must lift, never raise
+    pytest.importorskip('puya', reason='optional backend lowering')
+    from tealql.tealtools.lift import to_puya
+    assert to_puya(prog) is not None and to_puya(prog2) is not None
 
 
 def test_frame_gap_filter_drops_only_phi_closure_edges():

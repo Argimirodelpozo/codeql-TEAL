@@ -190,14 +190,22 @@ def check_bounds(prog: SSAProgram, *,
     # sound verdicts. Both speculative sources supply LOWER bounds only.
     rel_spec = None
     if speculative:
-        from ..lift import to_puya_ir
+        # Declared ABI lengths are core metadata. Optional compiler recovery
+        # adds speculative seeds, but its absence must not disable those facts.
+        recovered = {}
+        try:
+            from ..lift import to_puya_ir
+        except ModuleNotFoundError as error:
+            if error.name != 'puya':
+                raise
+        else:
+            recovered = to_puya_ir.recovered_min_lengths(prog)
         mtable = None
         if arc56 is not None:
             from ..metadata.arc56 import Arc56Spec, load_optional
             spec = arc56 if isinstance(arc56, Arc56Spec) else load_optional(arc56)
             mtable = spec.method_table() if spec is not None else None
-        fixed = {**to_puya_ir.recovered_min_lengths(prog),
-                 **_abi_arg_lengths(prog, mtable)}
+        fixed = {**recovered, **_abi_arg_lengths(prog, mtable)}
         if fixed:
             rel_spec = LengthRelations(prog)
             _seed_all(rel_spec, sites)

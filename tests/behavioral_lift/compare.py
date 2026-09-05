@@ -12,16 +12,22 @@ import re
 import sys
 from pathlib import Path
 
-from algosdk import account, transaction
-from algosdk.v2client import models
+from functools import cache
 
 from .recompile import REPO, algod_client, lift_to_teal
 
-_PC = re.compile(r"(app=\d+, )?pc=\d+")
-_SK, _ADDR = account.generate_account()
-_OCS = [transaction.OnComplete.NoOpOC, transaction.OnComplete.OptInOC,
-        transaction.OnComplete.CloseOutOC, transaction.OnComplete.UpdateApplicationOC,
-        transaction.OnComplete.DeleteApplicationOC]
+from .observations import compare_cases, observe_dryrun, required_effects
+
+_OCS = (0, 1, 2, 4, 5)
+PROTOCOL = 'future'  # pinned go-algorand 5.0.0 image in localnet.yml
+ROUND = 500
+TIMESTAMP = 1_700_000_000
+
+
+@cache
+def _address():
+    from algosdk import encoding
+    return encoding.encode_address(bytes([1]) * 32)
 
 
 def _compile(algod, teal: str) -> bytes:
@@ -39,22 +45,33 @@ def _selectors(teal: str) -> list:
     return out[:8]
 
 
-def _dryrun(algod, approval: bytes, clear: bytes, app_args, oc) -> str:
+def _dryrun(algod, approval: bytes, clear: bytes, app_args, oc):
+    from algosdk import transaction
+    from algosdk.v2client import models
+    address = _address()
     sp = transaction.SuggestedParams(fee=1000, first=1, last=1000, gh="a" * 43 + "=", flat_fee=True)
-    txn = transaction.ApplicationCallTxn(_ADDR, sp, index=999, on_complete=oc, app_args=app_args)
+    txn = transaction.ApplicationCallTxn(address, sp, index=999, on_complete=oc, app_args=app_args)
     stxn = transaction.SignedTransaction(txn, base64.b64encode(b"\0" * 64).decode())
     app = models.Application(id=999, params=models.ApplicationParams(
-        approval_program=approval, clear_state_program=clear, creator=_ADDR,
-        global_state_schema=models.ApplicationStateSchema(64, 64),
-        local_state_schema=models.ApplicationStateSchema(16, 16)))
-    acct = models.Account(address=_ADDR, status="Offline", amount=10 ** 12,
-                          amount_without_pending_rewards=10 ** 12)
-    res = algod.dryrun(models.DryrunRequest(txns=[stxn], apps=[app], accounts=[acct]))
-    t = res["txns"][0]
-    msg = (t.get("app-call-messages") or ["?"])[-1]
-    approved = msg == "PASS"                            # APPROVE (1) vs reject/error
-    detail = _PC.sub("@", msg) + "|logs=" + ",".join(t.get("logs", []))
-    return approved, detail                             # (outcome, normalised detail)
+        approval_program=approval, clear_state_program=clear, creator=address,
+        global_state_schema=models.ApplicationStateSchema(32, 32),
+        local_state_schema=models.ApplicationStateSchema(8, 8)))
+    acct = models.Account(address=address, status="Offline", amount=10 ** 12,
+                          amount_without_pending_rewards=10 ** 12,
+                          apps_local_state=[models.ApplicationLocalState(
+                              id=999, schema=models.ApplicationStateSchema(8, 8))])
+    res = algod.dryrun(models.DryrunRequest(txns=[stxn], apps=[app], accounts=[acct],
+                      protocol_version=PROTOCOL, round=ROUND, latest_timestamp=TIMESTAMP))
+    return observe_dryrun(res)
+
+
+def compare_bytecode(algod, original, lifted, clear, inputs, required):
+    def execute(case):
+        args, oc = case
+        return (_dryrun(algod, original, clear, args, oc),
+                _dryrun(algod, lifted, clear, args, oc))
+    return compare_cases(((args, oc) for args in inputs for oc in _OCS),
+                         execute, required=required)
 
 
 def compare(algod, contract: str, orig_teal: str, orig_bytecode: bytes | None = None) -> dict:
@@ -75,39 +92,13 @@ def compare(algod, contract: str, orig_teal: str, orig_bytecode: bytes | None = 
     lifted_b = _compile(algod, lifted)
     clear = _compile(algod, "#pragma version 10\nint 1")
     inputs = [[]] + [[s] for s in _selectors(lifted)] + [[b"\x01\x02\x03\x04"]]
-    match = mech = diverge = approve = 0
-    diffs = []
-    for args in inputs:
-        for oc in _OCS:
-            try:
-                ao, do = _dryrun(algod, orig_b, clear, args, oc)
-                al, dl = _dryrun(algod, lifted_b, clear, args, oc)
-            except Exception as e:
-                diffs.append(f"dryrun-error oc={oc} args={len(args)}: {str(e)[:40]}")
-                continue
-            a = base64.b16encode(args[0]).decode() if args else "-"
-            if ao != al:                               # APPROVE vs reject: a REAL behaviour bug
-                diverge += 1
-                if len(diffs) < 4:
-                    diffs.append(f"OUTCOME oc={oc} arg={a}: orig={'APPROVE' if ao else 'reject'} "
-                                 f"lift={'APPROVE' if al else 'reject'}")
-            elif ao and do != dl:                      # both approve, but logs differ
-                diverge += 1
-                if len(diffs) < 4:
-                    diffs.append(f"LOGS oc={oc} arg={a}: {do[:30]} != {dl[:30]}")
-            elif ao:    # both APPROVE, same logs (real positive match)
-                approve += 1
-                match += 1
-            elif do != dl:    # both reject, different fail opcode (benign)
-                mech += 1
-            else:
-                match += 1
-    return {"match": match, "mech": mech, "diverge": diverge, "approve": approve, "diffs": diffs}
+    return compare_bytecode(algod, orig_b, lifted_b, clear, inputs,
+                            required_effects(orig_teal, lifted))
 
 
 def main(argv):
     algod = algod_client()
-    tot_m = tot_mech = tot_d = tot_appr = faithful = 0
+    tot_m = tot_mech = tot_d = tot_appr = faithful = inconclusive = 0
     for contract in sorted({d.parent for a in argv for d in Path(a).rglob("codeql-database.yml")}):
         name = contract.parent.name if contract.name == "contract" else contract.name
         teal_files = list(contract.parent.glob("*.teal"))
@@ -121,24 +112,27 @@ def main(argv):
         try:
             r = compare(algod, str(contract), teal_files[0].read_text(), orig_bytecode)
         except Exception as e:
-            print(f"  SKIP {name:30s} {type(e).__name__}: {str(e)[:42]}", flush=True)
+            inconclusive += 1
+            print(f"  INCONCLUSIVE {name:30s} {type(e).__name__}: {str(e)[:42]}", flush=True)
             continue
         tot_m += r["match"]
         tot_mech += r["mech"]
         tot_d += r["diverge"]
         tot_appr += r["approve"]
         # behaviourally faithful = no APPROVE/reject (outcome) divergence on any input
-        flag = "FAITHFUL" if r["diverge"] == 0 else "DIVERGES"
-        faithful += r["diverge"] == 0
+        flag = r["status"]
+        faithful += flag == "FAITHFUL"
+        inconclusive += flag == "INCONCLUSIVE"
         print(f"  {flag} {name:26s} same={r['match'] + r['mech']:3d} "
               f"(appr={r['approve']}, {r['mech']} fail-op)  diverge={r['diverge']}", flush=True)
         for d in r["diffs"]:
             print(f"        {d}", flush=True)
     print(f"\n=== behaviourally faithful: {faithful} contracts | "
           f"{tot_m + tot_mech} same-outcome inputs ({tot_appr} both-APPROVE, "
-          f"{tot_mech} fail-opcode-only), {tot_d} real outcome divergences ===")
+          f"{tot_mech} fail-opcode-only), {tot_d} divergences, {inconclusive} inconclusive ===")
+    return 1 if tot_d else 2 if inconclusive or not faithful else 0
 
 
 if __name__ == "__main__":
     sys.path.insert(0, str(REPO))
-    main(sys.argv[1:])
+    raise SystemExit(main(sys.argv[1:]))

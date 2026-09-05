@@ -3,9 +3,7 @@
 where each node's Value operands live, so every lift pass shares one spelling of
 the Op/ControlOp/Phi dispatch.
 
-These build real ``pre_ir`` nodes (no CodeQL DB), but importing the pre-IR
-package eagerly pulls in the lift, which needs ``puya`` — so the module
-skip-gates on puya being importable, matching the fixture-skip pattern elsewhere.
+These tests build Puya-free pre-IR nodes.
 
 The load-bearing case is ``map_operands``'s ``copy_source`` flag: a bare-Value
 copy source must be rewritten under substitution but left alone under
@@ -14,9 +12,7 @@ trivial-phi collapse (forwarding a copy into a removed register corrupted
 parity test pins that ``operands`` and ``map_operands`` visit identical
 positions, so a pass that reads via one and writes via the other stays in sync.
 """
-import pytest
 
-pytest.importorskip("puya")  # pre_ir package __init__ eagerly imports the lift
 
 from tealql.tealtools.lift.pre_ir import (  # noqa: E402
     Assert,

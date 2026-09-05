@@ -201,5 +201,100 @@ def test_suppressions_do_not_swallow_degradation(contract, lift_fails, capsys):
 
     rc = main(["detections-scan", str(contract)])
     out = capsys.readouterr().out
-    assert rc in (0, 1)
+    assert rc == 2
     assert "[DEGRADED]" in out, "CLI dropped the degradation notices"
+
+
+@pytest.mark.parametrize('version', [0, 14])
+def test_scan_propagates_unsupported_input_version(tmp_path, version):
+    (tmp_path / 'future.teal').write_text(f'#pragma version {version}\nint 1\nreturn')
+    result = scan(tmp_path)
+    assert not result.complete
+    assert any(n.kind == 'unsupported-version' for n in result.notifications)
+    with pytest.raises(TealQLError, match='incomplete input'):
+        scan(tmp_path, strict=True)
+
+
+def test_empty_scan_cannot_replace_a_baseline(tmp_path, capsys):
+    from tealql.cli.main import main
+    baseline = tmp_path / 'baseline.json'
+    baseline.write_text('original baseline')
+    result = scan(tmp_path)
+    assert not result.complete and result.notifications[0].kind == 'empty-scan'
+    assert main(['detections-scan', str(tmp_path), '--update-baseline', str(baseline)]) == 2
+    assert baseline.read_text() == 'original baseline'
+    assert 'incomplete scan' in capsys.readouterr().err
+
+
+def test_scan_render_failure_retains_other_findings(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from tealql.security import DETECTORS
+    class Broken:
+        def pretty(self):
+            raise RuntimeError('broken finding')
+    class Detector:
+        def __init__(self, *args, **kwargs):
+            pass
+        def detect(self):
+            return [Broken(), SimpleNamespace(location='p.teal:2', pretty=lambda: 'retained')]
+    (tmp_path / 'p.teal').write_text('#pragma version 8\nint 1\nreturn')
+    monkeypatch.setattr('tealql.security.scan.DETECTORS', {'fee-validation': Detector})
+    monkeypatch.setitem(DETECTORS, 'fee-validation', Detector)
+    result = scan(tmp_path)
+    assert not result.complete and len(result) == 1
+    assert result.notifications[0].kind == 'finding-render-failed'
+    assert 'retained' in render_text(result)
+    assert not json.loads(render_json(result))['complete']
+    assert not json.loads(render_sarif(result))['runs'][0]['invocations'][0]['executionSuccessful']
+    with pytest.raises(TealQLError, match='could not render'):
+        scan(tmp_path, strict=True)
+
+
+@pytest.mark.parametrize('json_out', [False, True])
+@pytest.mark.parametrize('strict', [False, True])
+def test_all_cli_exit_status_tracks_detector_failure(tmp_path, monkeypatch, capsys, json_out, strict):
+    from tealql.cli.main import main
+    from tealql.security import DETECTORS
+    class Detector:
+        def __init__(self, *args, **kwargs):
+            pass
+        def detect(self):
+            raise RuntimeError('test detector failure')
+    source = tmp_path / 'p.teal'
+    source.write_text('#pragma version 8\nint 1\nreturn')
+    monkeypatch.setitem(DETECTORS, 'fee-validation', Detector)
+    assert main(['all', str(source)] + (['--json'] if json_out else []) + (['--strict'] if strict else [])) == 2
+    out = capsys.readouterr()
+    if strict:
+        assert 'strict analysis failed' in out.err
+    elif json_out:
+        assert not json.loads(out.out)['complete']
+    else:
+        assert 'INCOMPLETE' in out.out
+
+
+@pytest.mark.parametrize('json_out', [False, True])
+@pytest.mark.parametrize('failure', ['crash', 'degraded', 'render'])
+def test_selected_detector_preserves_incomplete_status(tmp_path, monkeypatch, capsys, json_out, failure):
+    from tealql.cli.main import main
+    from tealql.security import DETECTORS
+    class Detector:
+        def __init__(self, *args, **kwargs):
+            self.degraded = 'missing representation' if failure == 'degraded' else None
+        def detect(self):
+            if failure == 'crash':
+                raise RuntimeError('detection failed')
+            return [self] if failure == 'render' else []
+        def pretty(self):
+            raise RuntimeError('render failed')
+    source = tmp_path / 'p.teal'
+    source.write_text('#pragma version 8\nint 1\nreturn')
+    monkeypatch.setitem(DETECTORS, 'fee-validation', Detector)
+    args = ['detections', str(source), '--detector', 'fee-validation'] + (['--json'] if json_out else [])
+    assert main(args) == 2
+    out = capsys.readouterr().out
+    if json_out:
+        assert not json.loads(out)['complete'] and json.loads(out)['notifications']
+    else:
+        assert 'INCOMPLETE' in out
+    assert main(args + ['--strict']) == 2

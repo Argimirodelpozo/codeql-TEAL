@@ -545,6 +545,21 @@ def _resource_demand_text(ctx: VisualizationContext) -> str:
     return json.dumps(_resource_demand_result(ctx).to_dict(), indent=2, sort_keys=True)
 
 
+def _resource_requirements_text(ctx):
+    from ..analysis.resource_requirements import resource_requirements
+    return '\n'.join(f'{r.status} {r.dimension}: {r.requirement}'
+                     for r in resource_requirements(ctx.prog))
+
+
+def _box_permissions_text(ctx):
+    from ..analysis.box_permissions import box_access_permissions
+    results = box_access_permissions(ctx.prog, (), (), application_refs={})
+    lines = [f'INCOMPLETE: {msg}' for msg in results.health.messages()]
+    lines.extend(f'{location}: box {key}; UNKNOWN: {result.value.reason}'
+                 for location, key, result in results.value)
+    return '\n'.join(lines) or '(no box accesses)'
+
+
 def _resource_demand_dot(ctx: VisualizationContext) -> str:
     from .graphs import annotated_cfg_dot
 
@@ -1149,6 +1164,12 @@ def _build_catalog() -> tuple[ViewSpec, ...]:
         ViewSpec("analysis.resource_demand", "Resource demand", ViewKind.ANALYSIS,
                  "Conservative fields, identities, boxes, and inner-txn syntax.",
                  _resource_demand_text, _resource_demand_dot),
+        ViewSpec("analysis.resource_requirements", "Resource requirements", ViewKind.ANALYSIS,
+                 "Conditional obligations for availability, fees, budget, balance, and recovery.",
+                 _resource_requirements_text, graph_reason='Requirements are a flat set of environmental obligations.'),
+        ViewSpec("analysis.box_permissions", "Box permission obligations", ViewKind.ANALYSIS,
+                 "Box access sites requiring an explicit application and call-frame environment.",
+                 _box_permissions_text, graph_reason='App identities and call frames must be supplied to the Python permission API.'),
         ViewSpec("analysis.dominance", "Dominance", ViewKind.ANALYSIS,
                  "Dominators, post-dominators, and immediate parents.",
                  _dominance_text, _dominance_dot),

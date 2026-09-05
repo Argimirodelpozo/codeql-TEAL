@@ -2,14 +2,40 @@
 ``puya/ir/models.py`` and lowered to it by :mod:`to_puya_ir`. A type is one
 ``ir_type`` kind string (uint64/bytes/bool/account/asset/application/?).
 
-HAZARD: it stays SEPARATE and MUTABLE because the lift recovers types by a fixpoint
+The working model stays mutable because the lift recovers types by a fixpoint
 (registers born ``?``, refined in place) — something Puya's ``@attrs.frozen``
-``Register``, with no unknown ``IRType``, cannot express.
+``Register``, with no unknown ``IRType``, cannot express. Cached analysis
+instances are sealed by ``freeze`` after construction.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import Optional, Union
+from types import MappingProxyType
+
+class _Freezable:
+    """Mutable during construction, sealed when published to cached analyses."""
+    def __setattr__(self, name, value):
+        if getattr(self, "_frozen", False):
+            raise TypeError("cached analysis IR is read-only")
+        object.__setattr__(self, name, value)
+
+
+def freeze(value, seen=None):
+    """Seal owned IR recursively; non-owning SSA provenance is never traversed."""
+    seen = set() if seen is None else seen
+    if isinstance(value, list):
+        return tuple(freeze(v, seen) for v in value)
+    if isinstance(value, dict):
+        return MappingProxyType({k: freeze(v, seen) for k, v in value.items()})
+    if isinstance(value, _Freezable) and id(value) not in seen:
+        seen.add(id(value))
+        for member in fields(value):
+            if member.name != "origin":
+                object.__setattr__(value, member.name, freeze(getattr(value, member.name), seen))
+        object.__setattr__(value, "_frozen", True)
+    return value
+
 
 # --------------------------------------------------------------------------
 # Values — single value providers (Puya: Value < ValueProvider)
@@ -17,7 +43,7 @@ from typing import Optional, Union
 
 
 @dataclass
-class Register:
+class Register(_Freezable):
     """Puya ``Register``: an SSA value, ``name#version`` of type ``ir_type``.
 
     HAZARD: mutable and never hashed — passes refine ``ir_type`` in place, so every
@@ -76,7 +102,7 @@ Value = Union[Register, UInt64Constant, BytesConstant, Undefined]
 
 
 @dataclass
-class Intrinsic:
+class Intrinsic(_Freezable):
     """Puya ``Intrinsic``: an AVM op applied to ``args`` with ``immediates``."""
     op: str
     immediates: list  # list[str | int]
@@ -113,7 +139,7 @@ class Intrinsic:
 
 
 @dataclass
-class InvokeSubroutine:
+class InvokeSubroutine(_Freezable):
     target: str  # subroutine id
     args: list  # list[Value]
     origin: object = field(default=None, repr=False, compare=False)
@@ -136,7 +162,7 @@ class InvokeSubroutine:
 
 
 @dataclass
-class ValueTuple:
+class ValueTuple(_Freezable):
     values: list  # list[Value]
 
     def __str__(self) -> str:
@@ -151,7 +177,7 @@ ValueProvider = Union[Value, Intrinsic, InvokeSubroutine, ValueTuple]
 
 
 @dataclass
-class Assignment:
+class Assignment(_Freezable):
     """Puya ``Assignment``: ``let <targets> = <source>``."""
     targets: list  # list[Register]
     source: object  # ValueProvider
@@ -164,7 +190,7 @@ class Assignment:
 
 
 @dataclass
-class Assert:
+class Assert(_Freezable):
     condition: object  # Value
     message: Optional[str] = None
     line: int = 0      # source line of the originating TEAL assert (0 = unknown)
@@ -175,7 +201,7 @@ class Assert:
 
 
 @dataclass
-class IntrinsicOp:
+class IntrinsicOp(_Freezable):
     """A side-effecting intrinsic used as a statement (no SSA results)."""
     intrinsic: Intrinsic
 
@@ -191,7 +217,7 @@ Op = Union[Assignment, Assert, IntrinsicOp]
 
 
 @dataclass
-class PhiArgument:
+class PhiArgument(_Freezable):
     value: object  # Register | Value
     through: int   # predecessor block id
 
@@ -200,7 +226,7 @@ class PhiArgument:
 
 
 @dataclass
-class Phi:
+class Phi(_Freezable):
     register: Register
     args: list  # list[PhiArgument]
     comment: Optional[str] = None  # trailing annotation, e.g. value range
@@ -217,7 +243,7 @@ class Phi:
 
 
 @dataclass
-class Goto:
+class Goto(_Freezable):
     target: int  # block id
 
     def render(self) -> str:
@@ -225,7 +251,7 @@ class Goto:
 
 
 @dataclass
-class ConditionalBranch:
+class ConditionalBranch(_Freezable):
     condition: object  # Value
     non_zero: int      # block id taken when condition != 0
     zero: int          # block id taken when condition == 0
@@ -235,7 +261,7 @@ class ConditionalBranch:
 
 
 @dataclass
-class GotoNth:
+class GotoNth(_Freezable):
     value: object
     blocks: list  # list[int]
     default: int
@@ -246,7 +272,7 @@ class GotoNth:
 
 
 @dataclass
-class Switch:
+class Switch(_Freezable):
     value: object
     cases: list  # list[(case_label:str, block_id:int)]
     default: int
@@ -257,7 +283,7 @@ class Switch:
 
 
 @dataclass
-class SubroutineReturn:
+class SubroutineReturn(_Freezable):
     result: list  # list[Value]
 
     def render(self) -> str:
@@ -266,7 +292,7 @@ class SubroutineReturn:
 
 
 @dataclass
-class ProgramExit:
+class ProgramExit(_Freezable):
     result: object  # Value (uint64)
 
     def render(self) -> str:
@@ -274,7 +300,7 @@ class ProgramExit:
 
 
 @dataclass
-class Fail:
+class Fail(_Freezable):
     error_message: Optional[str] = None
 
     def render(self) -> str:
@@ -290,7 +316,7 @@ ControlOp = Union[Goto, ConditionalBranch, GotoNth, Switch,
 
 
 @dataclass
-class BasicBlock:
+class BasicBlock(_Freezable):
     id: int
     phis: list = field(default_factory=list)   # list[Phi]
     ops: list = field(default_factory=list)    # list[Op]
@@ -312,7 +338,7 @@ class BasicBlock:
 
 
 @dataclass
-class Parameter:
+class Parameter(_Freezable):
     register: Register
 
     def __str__(self) -> str:
@@ -320,7 +346,7 @@ class Parameter:
 
 
 @dataclass
-class Subroutine:
+class Subroutine(_Freezable):
     id: str
     parameters: list           # list[Parameter]
     returns: list              # list[str] (ir_type kinds)
@@ -338,7 +364,7 @@ class Subroutine:
 
 
 @dataclass
-class Program:
+class Program(_Freezable):
     main: Subroutine
     subroutines: list = field(default_factory=list)  # list[Subroutine]
     #: How often each guarded pass FIRED building this program (pass name ->

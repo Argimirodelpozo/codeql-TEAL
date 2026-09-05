@@ -1,0 +1,5 @@
+{
+  "Version": 35,
+  "EndpointAddress": "0.0.0.0:8080",
+  "EnableDeveloperAPI": true
+}
