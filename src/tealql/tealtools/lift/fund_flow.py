@@ -10,8 +10,8 @@ CFG; guards are recognised intra-procedurally AND across ``callsub`` boundaries.
 ``param_derived`` marks only the residual unresolved case: a param feeds the
 sink, nothing guards it, and the sub has no call sites to inspect.
 
-Supersedes the SSA-layer ``tainted-fund-flow`` sibling, which survives only as
-the automatic fallback when a contract fails to lift.
+The default detector requires this representation and reports incomplete
+analysis when it cannot be built.
 
 HAZARD: RekeyTo is deliberately NOT a fund field here -- an app/itxn RekeyTo is
 self-inflicted, not a tainted-field vuln. Rekey is an lsig-only check; see
@@ -33,6 +33,7 @@ from .taint import (
 )
 from ..language.avm import FUND_FIELDS as _FUND_FIELDS, is_current_sender_read
 from ..cfg.dominance import iterative_dominators
+from ..diagnostics.evidence import GuardEvidence
 
 _SEV_ORDER = {"CRITICAL": 3, "HIGH": 2, "MEDIUM": 1, "LOW": 0}
 
@@ -360,14 +361,21 @@ def _scratch_value_edges(lifter, dom_by_sub) -> dict:
     return out
 
 
-class _GuardDefinitions(dict):
+class _Definitions(dict):
+    def __init__(self, program=None):
+        super().__init__()
+        self.authority_program = program
+        self.authority_evidence = set()
+
+
+class _GuardDefinitions(_Definitions):
     """Query-local guard memo over a frozen definition graph.
 
     Keep both entry count and retained register/key count bounded. The return
     map is held strongly, so object-id reuse cannot cross query contexts.
     """
-    def __init__(self):
-        super().__init__()
+    def __init__(self, program=None):
+        super().__init__(program)
         self.guard_cache = OrderedDict()
         self.sender_cache = OrderedDict()
         self.guard_weight = 0
@@ -386,7 +394,8 @@ class _GuardDefinitions(dict):
 
 
 def _def_map(lifter) -> dict:
-    d: dict = _GuardDefinitions() if getattr(lifter, '_analysis_frozen', False) else {}
+    index = _GuardDefinitions if getattr(lifter, '_analysis_frozen', False) else _Definitions
+    d = index(getattr(lifter, 'prog', None))
     for b in pre_ir.blocks(lifter.subs):
         for ph in b.phis:
             d[id(ph.register)] = ph
@@ -394,6 +403,13 @@ def _def_map(lifter) -> dict:
             for t in getattr(o, "targets", ()) or ():
                 d[id(t)] = o
     return d
+
+
+def authority_evidence(lifter):
+    """Authority premises used by the cached guard analysis, including summaries."""
+    cached = getattr(lifter, '_fund_flow_value_maps', None)
+    definitions = cached[1][0] if cached is not None else None
+    return tuple(sorted(getattr(definitions, 'authority_evidence', ()), key=repr))
 
 
 def _ir_op_str(o) -> str:
@@ -483,6 +499,15 @@ class Guard:
     polarity: str | None      # "true" / "false" for a branch, else None
     checks_input: bool        # the condition tests the (same-source) tainted input
     checks_sender: bool       # the condition tests txn Sender / Global.CreatorAddress
+    evidence: tuple[GuardEvidence, ...] = ()
+
+    def __post_init__(self):
+        if not self.evidence and (self.checks_input or self.checks_sender):
+            # Compatibility summaries describe a dependency until their
+            # precise predicate and authority premises have been supplied.
+            self.evidence = (GuardEvidence(
+                'txn Sender' if self.checks_sender else 'sink input',
+                'constraint-dependency', scope=(self.kind,)),)
 
     def describe(self) -> str:
         tags = []
@@ -519,10 +544,10 @@ def _classify(kind, polarity, cond, def_of, sink_regs, sink_keys, inv_ret=None) 
             def_of.guard_returns = inv_ret
         cache_key = (id(cond), polarity, frozenset(sink_regs), frozenset(sink_keys))
         if cache_key in def_of.guard_cache:
-            _, (ci, cs), _ = def_of.guard_cache[cache_key]
+            _, (ci, cs, evidence), _ = def_of.guard_cache[cache_key]
             def_of.guard_cache.move_to_end(cache_key)
             def_of.guard_hits += 1
-            return Guard(kind, polarity, ci, cs)
+            return Guard(kind, polarity, ci, cs, evidence)
     # HAZARD: guard-classification soundness. Every rule below exists because
     # crediting a check that does not actually constrain the sink's value
     # suppresses a real, exploitable flow.
@@ -557,47 +582,24 @@ def _classify(kind, polarity, cond, def_of, sink_regs, sink_keys, inv_ret=None) 
     memo: dict = {}
     active: set = set()       # id(register) on the current descent: cycle guard
     sender_cache = def_of.sender_cache if isinstance(def_of, _GuardDefinitions) else OrderedDict()
+    authorities = set()
 
-    def _compute_sender_pin(src) -> bool:
+    def _compute_sender_pin(src):
         """Exactly one operand is Sender and the other is a trusted identity.
 
         An attacker-supplied counterpart authorises nothing
         (``Sender == ApplicationArgs[2]`` is satisfied by any caller who passes
         their own address), nor does ``CreatorAddress == arg`` check Sender at
-        all. Constants must be 32-byte non-zero address values.
-
-        HAZARD: walk the operand's whole def-tree, not just its defining op. An
-        ARC-4 address argument reaches the comparison through at least one
-        `extract`, so a one-hop check saw only that `extract` and credited a
-        sender guard for the COMPILED spelling of the very idiom it exists to
-        refuse — while correctly refusing the hand-written one. The benchmark
-        pinned only the direct form, so nothing caught it."""
-        def has_sender(a) -> bool:
-            return any(
-                _is_sender_op(_intr(oo) if oo is not None else None)
-                for _r, oo in _walk(a, def_of, inv_ret=inv_ret)
-            )
-
-        sender_arms = [has_sender(a) for a in src.args]
+        all. The Sender operand must preserve its exact identity through
+        copies and every join arm; a computation containing it is insufficient.
+        """
+        from .authority import address_authority, sender_identity
+        from ..analysis.authority import AddressAuthority
+        sender_arms = [sender_identity(a, def_of, inv_ret) for a in src.args]
         if sum(sender_arms) != 1:
-            return False
+            return AddressAuthority(False, 'comparison lacks one exact Sender operand')
         other = src.args[0] if sender_arms[1] else src.args[1]
-        if isinstance(other, pre_ir.UInt64Constant):
-            return False
-        if isinstance(other, pre_ir.BytesConstant):
-            h = other.value[2:] if other.value.startswith("0x") else other.value
-            return len(h) == 64 and not set(h) <= {"0"}
-        for _r, oo in _walk(other, def_of, inv_ret=inv_ret):
-            s = _intr(oo) if oo is not None else None
-            if s is None:
-                continue
-            imm = " ".join(str(i) for i in (s.immediates or []))
-            if (source_label(s) is not None or s.op.startswith("gtxn")
-                    or (s.op == "global" and imm in {
-                        "CallerApplicationID", "CallerApplicationAddress",
-                    })):
-                return False
-        return True
+        return address_authority(other, def_of, inv_ret)
 
     def _comparison_pins_sender(src) -> bool:
         # This property depends on definitions and return edges, never on the
@@ -610,7 +612,9 @@ def _classify(kind, polarity, cond, def_of, sink_regs, sink_keys, inv_ret=None) 
                 sender_cache.popitem(last=False)
         else:
             sender_cache.move_to_end(key)
-        return sender_cache[key][1]
+        authority = sender_cache[key][1]
+        authorities.add(authority)
+        return authority.preserved
 
     def _every_leaf_pins_sender(src, connective, sense) -> bool:
         """``src`` is a ``connective`` tree (``||`` under a required-True
@@ -780,9 +784,19 @@ def _classify(kind, polarity, cond, def_of, sink_regs, sink_keys, inv_ret=None) 
         return (ci, cs)
 
     ci, cs = visit(cond, True, True, polarity != "false", False)
+    evidence = []
+    if ci:
+        evidence.append(GuardEvidence(str(cond), 'constraint-dependency',
+                        scope=('sink input',)))
+    if cs:
+        evidence.append(GuardEvidence('txn Sender', 'member-of-authority-set', str(cond),
+            scope=('successful paths through this guard',), basis='must-predicate',
+            assumptions=tuple(sorted({premise for result in authorities
+                                      for premise in result.assumptions}))))
+    evidence = tuple(evidence)
     if cache_key is not None:
-        def_of.remember(cache_key, cond, (ci, cs))
-    return Guard(kind, polarity, ci, cs)
+        def_of.remember(cache_key, cond, (ci, cs, evidence))
+    return Guard(kind, polarity, ci, cs, evidence)
 
 
 def _blocks_reaching(by_id, target) -> set:

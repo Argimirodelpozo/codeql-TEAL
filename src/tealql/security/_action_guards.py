@@ -47,37 +47,12 @@ def _is_txn_field_var(var, field: str) -> bool:
     return is_field_var(var, "txn", field)
 
 
-#: State reads that yield an address the CONTRACT controls, not the caller.
-_STATE_READ_OPS = frozenset({
-    "app_global_get", "app_global_get_ex", "app_local_get", "app_local_get_ex",
-})
-
-
 def _is_trusted_address(prog: Optional[SSAProgram], var) -> bool:
-    """``var`` holds an address the caller cannot choose, so pinning ``txn Sender``
-    against it is a real authorisation check: ``global CreatorAddress``, an ``addr``
-    literal, or an ``app_global_get``/``app_local_get`` read (rotatable admin).
-
-    HAZARD: anything the CALLER supplies must NOT qualify — ``Sender == <attacker's
-    own value>`` authorises nothing. The trust line is drawn against the single
-    :func:`avm.attacker_input_label` table so it cannot drift from a second list."""
-    from tealql.tealtools.language.avm import attacker_input_label
-    if prog is not None:
-        constant = _constant_facts_cached(prog).constant(var)
-        if constant is not None:
-            return constant.kind == "bytes"
-    a = getattr(var, "defined_by", None)
-    if a is None:
-        return False
-    if a.op == "global" and a.immediates.strip() == "CreatorAddress":
-        return True
-    if attacker_input_label(a.op, a.immediates or "") is not None:
-        return False                      # caller-supplied: authorises nothing
-    if a.op in _STATE_READ_OPS:
-        return True
-    # A hardcoded address literal: `addr AAAA...` (the parser records the
-    # decoded bytes as a const), or a pushbytes of one.
-    return False
+    """Shared writer provenance; stored authority retains explicit premises."""
+    if prog is None:
+        return is_field_var(var, 'global', 'CreatorAddress')
+    from tealql.tealtools.analysis.authority import authority_for
+    return authority_for(prog).address(var).preserved
 
 
 def _guard_operand(prog: Optional[SSAProgram], value):

@@ -11,7 +11,6 @@ the ONLY difference from the passing baseline is the degradation itself.
 from __future__ import annotations
 
 import json
-import shutil
 from pathlib import Path
 
 import pytest
@@ -34,11 +33,14 @@ LIFTED_POLICIES = {
 
 @pytest.fixture
 def contract(tmp_path) -> Path:
-    """A real mainnet contract, copied into a scan root of its own."""
-    probes = sorted((TESTS / "mainnet-random-probes").glob("*.teal"))
-    if not probes:
-        pytest.skip("mainnet probe corpus not present")
-    shutil.copy(probes[5], tmp_path / "prog.teal")
+    """A complete lift with an immutable guard and a harmless constant log.
+
+    Stored authority needs ledger-history premises independently of lifting;
+    keep this failure-isolation fixture free of those premises.
+    """
+    (tmp_path / "prog.teal").write_text(
+        '#pragma version 8\ntxn Sender\nglobal CreatorAddress\n==\nassert\n'
+        'byte "checked"\nlog\nint 1\nreturn\n')
     return tmp_path
 
 
@@ -173,6 +175,7 @@ def test_run_all_text_reports_degradation_without_inflating_the_count(
 
     clean_text, clean_n = run_all_findings(_prog(contract))
     assert "[DEGRADED]" not in clean_text
+    assert clean_n > 0, 'the count comparison must retain non-lifted findings'
 
     monkeypatch.setattr(lift_layer, "build_lifter", lambda prog, file=None: None)
     degraded_text, degraded_n = run_all_findings(_prog(contract))

@@ -1,0 +1,1398 @@
+{
+  "base_commit": "93fd8a57c9f2b7f432360e320277c6cac3db0412",
+  "changes": [
+    {
+      "after": "306,682,1111,1337,1429,1439,2923,3017",
+      "before": "306,682,1111,1429,1439,2923,3017",
+      "classification": [
+        "writer restriction unproved",
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "01565792ce736888",
+      "detector": "tainted-log",
+      "program": "app_2645463331.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "global writer at app_2645463331.teal:1897 has no proved authority restriction"
+      ],
+      "rejected_authority_sites": [
+        1630,
+        2100,
+        3859
+      ]
+    },
+    {
+      "after": "1401,1877",
+      "before": "1877",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "0af5902f20fc0646",
+      "detector": "tainted-log",
+      "program": "app_3450330087.teal",
+      "reasons": [
+        "every incoming address must preserve authority"
+      ],
+      "rejected_authority_sites": [
+        2015
+      ]
+    },
+    {
+      "after": "1678",
+      "before": "",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "0af5902f20fc0646",
+      "detector": "unprotected-deletable",
+      "program": "app_3450330087.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign"
+      ],
+      "rejected_authority_sites": [
+        2015
+      ]
+    },
+    {
+      "after": "670,1196",
+      "before": "1196",
+      "classification": [
+        "writer restriction unproved",
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "0bbfc7dd47944663",
+      "detector": "arbitrary-inner-asset",
+      "program": "app_1300367999.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "every incoming address must preserve authority",
+        "global writer at app_1300367999.teal:1579 has no proved authority restriction"
+      ],
+      "rejected_authority_sites": [
+        202,
+        485,
+        504,
+        559,
+        608,
+        1305,
+        1456,
+        2350,
+        2917,
+        2987
+      ]
+    },
+    {
+      "after": "672,674,694,732,1507,1664,1681",
+      "before": "1507,1664,1681",
+      "classification": [
+        "writer restriction unproved",
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "0bbfc7dd47944663",
+      "detector": "tainted-fund-flow",
+      "program": "app_1300367999.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "every incoming address must preserve authority",
+        "global writer at app_1300367999.teal:1579 has no proved authority restriction"
+      ],
+      "rejected_authority_sites": [
+        202,
+        485,
+        504,
+        559,
+        608,
+        1305,
+        1456,
+        2350,
+        2917,
+        2987
+      ]
+    },
+    {
+      "after": "550,600,603,930,938,948,1069,1077,1087,1253,2707",
+      "before": "930,938,948,1069,1077,1087,1253",
+      "classification": [
+        "writer restriction unproved",
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "0bbfc7dd47944663",
+      "detector": "tainted-state-write",
+      "program": "app_1300367999.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "every incoming address must preserve authority",
+        "global writer at app_1300367999.teal:1579 has no proved authority restriction"
+      ],
+      "rejected_authority_sites": [
+        202,
+        485,
+        504,
+        559,
+        608,
+        1305,
+        1456,
+        2350,
+        2917,
+        2987
+      ]
+    },
+    {
+      "after": "1309,1810,1814,1826,1830,1929,1933,1945,1949",
+      "before": "1810,1814,1826,1830,1929,1933,1945,1949",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "1b39ba79103e2752",
+      "detector": "tainted-fund-flow",
+      "program": "app_1100218544.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign"
+      ],
+      "rejected_authority_sites": [
+        1293
+      ]
+    },
+    {
+      "after": "1339,2053,2082",
+      "before": "2053,2082",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "1e54d169613370f3",
+      "detector": "arbitrary-inner-asset",
+      "program": "app_3200474904.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign"
+      ],
+      "rejected_authority_sites": [
+        301
+      ]
+    },
+    {
+      "after": "1323,1327,1333,1337,1653,1663",
+      "before": "1653,1663",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "1e54d169613370f3",
+      "detector": "tainted-fund-flow",
+      "program": "app_3200474904.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign"
+      ],
+      "rejected_authority_sites": [
+        301
+      ]
+    },
+    {
+      "after": "693,821,1113,1351,1705,1759,2014,2354",
+      "before": "693,821,1113,1705,1759,2014,2354",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "1e54d169613370f3",
+      "detector": "tainted-log",
+      "program": "app_3200474904.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign"
+      ],
+      "rejected_authority_sites": [
+        301
+      ]
+    },
+    {
+      "after": "43,95,122,316,813,1047",
+      "before": "43,95,122,316,813",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "240aeb1c93069e03",
+      "detector": "tainted-log",
+      "program": "app_1050006430.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign"
+      ],
+      "rejected_authority_sites": [
+        408,
+        1124
+      ]
+    },
+    {
+      "after": "674,1211",
+      "before": "1211",
+      "classification": [
+        "writer restriction unproved",
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "24760309cb6490aa",
+      "detector": "arbitrary-inner-asset",
+      "program": "app_1050217645.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "every incoming address must preserve authority",
+        "global writer at app_1050217645.teal:1594 has no proved authority restriction"
+      ],
+      "rejected_authority_sites": [
+        206,
+        489,
+        508,
+        563,
+        612,
+        1320,
+        1471,
+        2365,
+        2932,
+        3002
+      ]
+    },
+    {
+      "after": "676,678,698,736,1522,1679,1696",
+      "before": "1522,1679,1696",
+      "classification": [
+        "writer restriction unproved",
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "24760309cb6490aa",
+      "detector": "tainted-fund-flow",
+      "program": "app_1050217645.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "every incoming address must preserve authority",
+        "global writer at app_1050217645.teal:1594 has no proved authority restriction"
+      ],
+      "rejected_authority_sites": [
+        206,
+        489,
+        508,
+        563,
+        612,
+        1320,
+        1471,
+        2365,
+        2932,
+        3002
+      ]
+    },
+    {
+      "after": "554,604,607,934,942,952,1084,1092,1102,1268,2722",
+      "before": "934,942,952,1084,1092,1102,1268",
+      "classification": [
+        "writer restriction unproved",
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "24760309cb6490aa",
+      "detector": "tainted-state-write",
+      "program": "app_1050217645.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "every incoming address must preserve authority",
+        "global writer at app_1050217645.teal:1594 has no proved authority restriction"
+      ],
+      "rejected_authority_sites": [
+        206,
+        489,
+        508,
+        563,
+        612,
+        1320,
+        1471,
+        2365,
+        2932,
+        3002
+      ]
+    },
+    {
+      "after": "",
+      "before": "48",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "3086a611b8fbdd6e",
+      "detector": "timelock-upgrade",
+      "program": "app_3400287920.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign"
+      ],
+      "rejected_authority_sites": [
+        243,
+        1404
+      ]
+    },
+    {
+      "after": "48",
+      "before": "",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "3086a611b8fbdd6e",
+      "detector": "unprotected-updatable",
+      "program": "app_3400287920.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign"
+      ],
+      "rejected_authority_sites": [
+        243,
+        1404
+      ]
+    },
+    {
+      "after": "",
+      "before": "44",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "40953f7e6e9dee5c",
+      "detector": "timelock-upgrade",
+      "program": "app_3100220132.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign"
+      ],
+      "rejected_authority_sites": [
+        174
+      ]
+    },
+    {
+      "after": "44",
+      "before": "",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "40953f7e6e9dee5c",
+      "detector": "unprotected-updatable",
+      "program": "app_3100220132.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign"
+      ],
+      "rejected_authority_sites": [
+        174
+      ]
+    },
+    {
+      "after": "829,832,966,971,1161,1373",
+      "before": "829,832,966,971,1373",
+      "classification": [
+        "incomplete source evidence"
+      ],
+      "content_hash": "5d6f225e614757dd",
+      "detector": "tainted-state-write",
+      "program": "app_1850333786.teal",
+      "reasons": [
+        "source analysis is incomplete"
+      ],
+      "rejected_authority_sites": []
+    },
+    {
+      "after": "43,80,107,217,385,501,602",
+      "before": "43,80,107,217,501",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "5de51deb94c7a319",
+      "detector": "tainted-log",
+      "program": "app_2600186959.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign"
+      ],
+      "rejected_authority_sites": [
+        291,
+        367,
+        624
+      ]
+    },
+    {
+      "after": "",
+      "before": "48",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "6193ff8f30c26a5b",
+      "detector": "timelock-upgrade",
+      "program": "app_3550212060.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign"
+      ],
+      "rejected_authority_sites": [
+        243,
+        1365,
+        1474
+      ]
+    },
+    {
+      "after": "48",
+      "before": "",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "6193ff8f30c26a5b",
+      "detector": "unprotected-updatable",
+      "program": "app_3550212060.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign"
+      ],
+      "rejected_authority_sites": [
+        243,
+        1365,
+        1474
+      ]
+    },
+    {
+      "after": "1079",
+      "before": "",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "61bfeed2b4a66494",
+      "detector": "arbitrary-inner-asset",
+      "program": "app_2750067654.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign"
+      ],
+      "rejected_authority_sites": [
+        258,
+        1062,
+        2172,
+        2224,
+        2230
+      ]
+    },
+    {
+      "after": "615,664,1081,1083",
+      "before": "615,664",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "61bfeed2b4a66494",
+      "detector": "tainted-fund-flow",
+      "program": "app_2750067654.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign"
+      ],
+      "rejected_authority_sites": [
+        258,
+        1062,
+        2172,
+        2224,
+        2230
+      ]
+    },
+    {
+      "after": "306,682,1111,1337,1429,1437,2881,2975",
+      "before": "306,682,1111,1429,1437,2881,2975",
+      "classification": [
+        "writer restriction unproved",
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "674d981b82b5d967",
+      "detector": "tainted-log",
+      "program": "app_2300200702.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "global writer at app_2300200702.teal:1876 has no proved authority restriction"
+      ],
+      "rejected_authority_sites": [
+        1609,
+        2079,
+        3817
+      ]
+    },
+    {
+      "after": "1263,1924",
+      "before": "1924",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "6cc8501816807fbc",
+      "detector": "arbitrary-inner-asset",
+      "program": "app_1100197957.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign"
+      ],
+      "rejected_authority_sites": [
+        299
+      ]
+    },
+    {
+      "after": "627,751,1247,1251,1257,1261,1552,1562",
+      "before": "627,751,1552,1562",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "6cc8501816807fbc",
+      "detector": "tainted-fund-flow",
+      "program": "app_1100197957.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign"
+      ],
+      "rejected_authority_sites": [
+        299
+      ]
+    },
+    {
+      "after": "670,794,1060,1275,1604,1654,1896,2198",
+      "before": "670,794,1060,1604,1654,1896,2198",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "6cc8501816807fbc",
+      "detector": "tainted-log",
+      "program": "app_1100197957.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign"
+      ],
+      "rejected_authority_sites": [
+        299
+      ]
+    },
+    {
+      "after": "300,676,1105,1331,1423,1433,2912,3006",
+      "before": "300,676,1105,1423,1433,2912,3006",
+      "classification": [
+        "writer restriction unproved",
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "930dc9a9b91a890a",
+      "detector": "tainted-log",
+      "program": "app_2694165644.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "global writer at app_2694165644.teal:1891 has no proved authority restriction"
+      ],
+      "rejected_authority_sites": [
+        1624,
+        2094,
+        3856
+      ]
+    },
+    {
+      "after": "746",
+      "before": "",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "95ff8430d668996d",
+      "detector": "arbitrary-inner-asset",
+      "program": "app_1300664826.teal",
+      "reasons": [
+        "every incoming address must preserve authority"
+      ],
+      "rejected_authority_sites": [
+        754
+      ]
+    },
+    {
+      "after": "744,748",
+      "before": "744",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "95ff8430d668996d",
+      "detector": "tainted-fund-flow",
+      "program": "app_1300664826.teal",
+      "reasons": [
+        "every incoming address must preserve authority"
+      ],
+      "rejected_authority_sites": [
+        754
+      ]
+    },
+    {
+      "after": "305,309,322",
+      "before": "305,309",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "9cdaf64d1b7a59f9",
+      "detector": "tainted-fund-flow",
+      "program": "app_2900347606.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "every incoming address must preserve authority"
+      ],
+      "rejected_authority_sites": [
+        270,
+        519,
+        544,
+        1378
+      ]
+    },
+    {
+      "after": "337,341,354",
+      "before": "337,341",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "a22a0b825a86ce29",
+      "detector": "tainted-fund-flow",
+      "program": "app_3450716942.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "every incoming address must preserve authority"
+      ],
+      "rejected_authority_sites": [
+        302,
+        551,
+        576,
+        1377,
+        1384,
+        1462,
+        1550
+      ]
+    },
+    {
+      "after": "1355,1398,1401,1404,1516,1520,1524,1526,1530,2117,2119,2121,2123,2125,2127,2129,2131,2137,2517,2526,2535,2538,2541,2544,2547",
+      "before": "1355,1516,1520,1524,1526,1530",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "a795000c32e221be",
+      "detector": "tainted-log",
+      "program": "app_2450526014.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "every incoming address must preserve authority"
+      ],
+      "rejected_authority_sites": [
+        587,
+        595,
+        602,
+        1277,
+        3006
+      ]
+    },
+    {
+      "after": "957,962,2725,2729,2888,2892,3122,3127,3131,3637,3641,3669,3676",
+      "before": "3122,3127,3131",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "a795000c32e221be",
+      "detector": "tainted-state-write",
+      "program": "app_2450526014.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "every incoming address must preserve authority"
+      ],
+      "rejected_authority_sites": [
+        587,
+        595,
+        602,
+        1277,
+        3006
+      ]
+    },
+    {
+      "after": "",
+      "before": "620",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "a795000c32e221be",
+      "detector": "timelock-upgrade",
+      "program": "app_2450526014.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign"
+      ],
+      "rejected_authority_sites": [
+        587,
+        595,
+        602,
+        3006
+      ]
+    },
+    {
+      "after": "612",
+      "before": "",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "a795000c32e221be",
+      "detector": "unprotected-deletable",
+      "program": "app_2450526014.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign"
+      ],
+      "rejected_authority_sites": [
+        587,
+        595,
+        602,
+        3006
+      ]
+    },
+    {
+      "after": "620",
+      "before": "",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "a795000c32e221be",
+      "detector": "unprotected-updatable",
+      "program": "app_2450526014.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign"
+      ],
+      "rejected_authority_sites": [
+        587,
+        595,
+        602,
+        3006
+      ]
+    },
+    {
+      "after": "",
+      "before": "138,1952,2439",
+      "classification": [
+        "writer restriction unproved",
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "ab4e9c4f469d6954",
+      "detector": "timelock-upgrade",
+      "program": "app_3550180073.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "global writer at app_3550180073.teal:419 has no proved authority restriction"
+      ],
+      "rejected_authority_sites": [
+        902,
+        960,
+        2899,
+        3436
+      ]
+    },
+    {
+      "after": "138,1952,2439",
+      "before": "",
+      "classification": [
+        "writer restriction unproved",
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "ab4e9c4f469d6954",
+      "detector": "unprotected-deletable",
+      "program": "app_3550180073.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "global writer at app_3550180073.teal:419 has no proved authority restriction"
+      ],
+      "rejected_authority_sites": [
+        902,
+        960,
+        2899,
+        3436
+      ]
+    },
+    {
+      "after": "138,1952,2439",
+      "before": "",
+      "classification": [
+        "writer restriction unproved",
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "ab4e9c4f469d6954",
+      "detector": "unprotected-updatable",
+      "program": "app_3550180073.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "global writer at app_3550180073.teal:419 has no proved authority restriction"
+      ],
+      "rejected_authority_sites": [
+        902,
+        960,
+        2899,
+        3436
+      ]
+    },
+    {
+      "after": "305,309,322",
+      "before": "305,309",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "afd001f14db2f41f",
+      "detector": "tainted-fund-flow",
+      "program": "app_3300249044.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "every incoming address must preserve authority"
+      ],
+      "rejected_authority_sites": [
+        270,
+        512,
+        537,
+        1371
+      ]
+    },
+    {
+      "after": "122",
+      "before": "",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "b015d3ea6d621e53",
+      "detector": "arbitrary-inner-asset",
+      "program": "app_1300664991.teal",
+      "reasons": [
+        "every incoming address must preserve authority"
+      ],
+      "rejected_authority_sites": [
+        130
+      ]
+    },
+    {
+      "after": "120,124",
+      "before": "",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "b015d3ea6d621e53",
+      "detector": "tainted-fund-flow",
+      "program": "app_1300664991.teal",
+      "reasons": [
+        "every incoming address must preserve authority"
+      ],
+      "rejected_authority_sites": [
+        130
+      ]
+    },
+    {
+      "after": "141,143,154,159,223,236",
+      "before": "223,236",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "b0385c72fd03627d",
+      "detector": "tainted-fund-flow",
+      "program": "app_2200406603.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "every incoming address must preserve authority"
+      ],
+      "rejected_authority_sites": [
+        173,
+        432
+      ]
+    },
+    {
+      "after": "84",
+      "before": "",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "b0385c72fd03627d",
+      "detector": "tainted-state-write",
+      "program": "app_2200406603.teal",
+      "reasons": [
+        "every incoming address must preserve authority"
+      ],
+      "rejected_authority_sites": [
+        432
+      ]
+    },
+    {
+      "after": "337,341,354",
+      "before": "337,341",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "b08ce6faeb11912c",
+      "detector": "tainted-fund-flow",
+      "program": "app_3300251509.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "every incoming address must preserve authority"
+      ],
+      "rejected_authority_sites": [
+        302,
+        551,
+        576,
+        1377,
+        1384,
+        1462,
+        1550
+      ]
+    },
+    {
+      "after": "826,829,963,968,1158,1371",
+      "before": "826,829,963,968,1371",
+      "classification": [
+        "incomplete source evidence"
+      ],
+      "content_hash": "b24577052209c568",
+      "detector": "tainted-state-write",
+      "program": "app_2500525325.teal",
+      "reasons": [
+        "source analysis is incomplete"
+      ],
+      "rejected_authority_sites": []
+    },
+    {
+      "after": "159,161,172,177,241,254",
+      "before": "241,254",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "b6324fabd28600e4",
+      "detector": "tainted-fund-flow",
+      "program": "app_900381763.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "every incoming address must preserve authority"
+      ],
+      "rejected_authority_sites": [
+        191,
+        450
+      ]
+    },
+    {
+      "after": "84",
+      "before": "",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "b6324fabd28600e4",
+      "detector": "tainted-state-write",
+      "program": "app_900381763.teal",
+      "reasons": [
+        "every incoming address must preserve authority"
+      ],
+      "rejected_authority_sites": [
+        450
+      ]
+    },
+    {
+      "after": "128,156,167",
+      "before": "156,167",
+      "classification": [
+        "writer restriction unproved",
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "be3a3d58433b7a44",
+      "detector": "arbitrary-inner-asset",
+      "program": "app_2001600350.teal",
+      "reasons": [
+        "global writer at app_2001600350.teal:310 has no proved authority restriction"
+      ],
+      "rejected_authority_sites": [
+        197,
+        268,
+        316
+      ]
+    },
+    {
+      "after": "124,126,173",
+      "before": "124,173",
+      "classification": [
+        "writer restriction unproved",
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "be3a3d58433b7a44",
+      "detector": "tainted-fund-flow",
+      "program": "app_2001600350.teal",
+      "reasons": [
+        "global writer at app_2001600350.teal:310 has no proved authority restriction"
+      ],
+      "rejected_authority_sites": [
+        197,
+        268,
+        316
+      ]
+    },
+    {
+      "after": "44",
+      "before": "",
+      "classification": [
+        "writer restriction unproved",
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "be3a3d58433b7a44",
+      "detector": "unprotected-deletable",
+      "program": "app_2001600350.teal",
+      "reasons": [
+        "global writer at app_2001600350.teal:310 has no proved authority restriction"
+      ],
+      "rejected_authority_sites": [
+        197,
+        268,
+        316
+      ]
+    },
+    {
+      "after": "337,341,354",
+      "before": "337,341",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "c7705660efc98486",
+      "detector": "tainted-fund-flow",
+      "program": "app_3100029128.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "every incoming address must preserve authority"
+      ],
+      "rejected_authority_sites": [
+        302,
+        551,
+        576,
+        1377,
+        1384,
+        1462,
+        1550
+      ]
+    },
+    {
+      "after": "826,829,963,968,1158,1370",
+      "before": "826,829,963,968,1370",
+      "classification": [
+        "incomplete source evidence"
+      ],
+      "content_hash": "d02b5deda4d587ac",
+      "detector": "tainted-state-write",
+      "program": "app_1050051479.teal",
+      "reasons": [
+        "source analysis is incomplete"
+      ],
+      "rejected_authority_sites": []
+    },
+    {
+      "after": "92",
+      "before": "92,203,426,436",
+      "classification": [
+        "writer restriction unproved",
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "d605414bf36e02aa",
+      "detector": "timelock-upgrade",
+      "program": "app_250268159.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "global writer at app_250268159.teal:392 has no proved authority restriction"
+      ],
+      "rejected_authority_sites": [
+        175,
+        185,
+        400
+      ]
+    },
+    {
+      "after": "182,203,350,426,436,544",
+      "before": "182,350,544",
+      "classification": [
+        "writer restriction unproved",
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "d605414bf36e02aa",
+      "detector": "unprotected-deletable",
+      "program": "app_250268159.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "global writer at app_250268159.teal:392 has no proved authority restriction"
+      ],
+      "rejected_authority_sites": [
+        175,
+        185,
+        400
+      ]
+    },
+    {
+      "after": "182,203,350,426,436,544",
+      "before": "182,350,544",
+      "classification": [
+        "writer restriction unproved",
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "d605414bf36e02aa",
+      "detector": "unprotected-updatable",
+      "program": "app_250268159.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "global writer at app_250268159.teal:392 has no proved authority restriction"
+      ],
+      "rejected_authority_sites": [
+        175,
+        185,
+        400
+      ]
+    },
+    {
+      "after": "337,341,354",
+      "before": "337,341",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "db42cf8f69ebe450",
+      "detector": "tainted-fund-flow",
+      "program": "app_3600216923.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "every incoming address must preserve authority"
+      ],
+      "rejected_authority_sites": [
+        302,
+        551,
+        576,
+        1377,
+        1384,
+        1462,
+        1550
+      ]
+    },
+    {
+      "after": "845",
+      "before": "",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "dfaefa24552b1b21",
+      "detector": "tainted-fund-flow",
+      "program": "app_2450560800.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "every incoming address must preserve authority"
+      ],
+      "rejected_authority_sites": [
+        326,
+        337,
+        344,
+        385,
+        1109
+      ]
+    },
+    {
+      "after": "301,605,610,614,887,891",
+      "before": "301,605,610,614",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "dfaefa24552b1b21",
+      "detector": "tainted-state-write",
+      "program": "app_2450560800.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "every incoming address must preserve authority"
+      ],
+      "rejected_authority_sites": [
+        326,
+        337,
+        344,
+        385,
+        1109
+      ]
+    },
+    {
+      "after": "",
+      "before": "362",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "dfaefa24552b1b21",
+      "detector": "timelock-upgrade",
+      "program": "app_2450560800.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign"
+      ],
+      "rejected_authority_sites": [
+        326,
+        337,
+        344
+      ]
+    },
+    {
+      "after": "354",
+      "before": "",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "dfaefa24552b1b21",
+      "detector": "unprotected-deletable",
+      "program": "app_2450560800.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign"
+      ],
+      "rejected_authority_sites": [
+        326,
+        337,
+        344
+      ]
+    },
+    {
+      "after": "362",
+      "before": "",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "dfaefa24552b1b21",
+      "detector": "unprotected-updatable",
+      "program": "app_2450560800.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign"
+      ],
+      "rejected_authority_sites": [
+        326,
+        337,
+        344
+      ]
+    },
+    {
+      "after": "337,341,354",
+      "before": "337,341",
+      "classification": [
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "e6f94168809f19f7",
+      "detector": "tainted-fund-flow",
+      "program": "app_3050303365.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "every incoming address must preserve authority"
+      ],
+      "rejected_authority_sites": [
+        302,
+        551,
+        576,
+        1377,
+        1384,
+        1462,
+        1550
+      ]
+    },
+    {
+      "after": "95",
+      "before": "95,206,429,439",
+      "classification": [
+        "writer restriction unproved",
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "ec579efeae941776",
+      "detector": "timelock-upgrade",
+      "program": "app_280710630.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "global writer at app_280710630.teal:395 has no proved authority restriction"
+      ],
+      "rejected_authority_sites": [
+        178,
+        188,
+        403
+      ]
+    },
+    {
+      "after": "185,206,353,429,439,553",
+      "before": "185,353,553",
+      "classification": [
+        "writer restriction unproved",
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "ec579efeae941776",
+      "detector": "unprotected-deletable",
+      "program": "app_280710630.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "global writer at app_280710630.teal:395 has no proved authority restriction"
+      ],
+      "rejected_authority_sites": [
+        178,
+        188,
+        403
+      ]
+    },
+    {
+      "after": "185,206,353,429,439,553",
+      "before": "185,353,553",
+      "classification": [
+        "writer restriction unproved",
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "ec579efeae941776",
+      "detector": "unprotected-updatable",
+      "program": "app_280710630.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "global writer at app_280710630.teal:395 has no proved authority restriction"
+      ],
+      "rejected_authority_sites": [
+        178,
+        188,
+        403
+      ]
+    },
+    {
+      "after": "92,173",
+      "before": "",
+      "classification": [
+        "writer restriction unproved",
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "fdebc35de3f92437",
+      "detector": "tainted-fund-flow",
+      "program": "app_900170865.teal",
+      "reasons": [
+        "global writer at app_900170865.teal:126 has no proved authority restriction",
+        "global writer at app_900170865.teal:216 has no proved authority restriction"
+      ],
+      "rejected_authority_sites": [
+        261,
+        269
+      ]
+    },
+    {
+      "after": "92",
+      "before": "92,203,426,436",
+      "classification": [
+        "writer restriction unproved",
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "fdfd5c7a54483a76",
+      "detector": "timelock-upgrade",
+      "program": "app_251932073.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "global writer at app_251932073.teal:392 has no proved authority restriction"
+      ],
+      "rejected_authority_sites": [
+        175,
+        185,
+        400
+      ]
+    },
+    {
+      "after": "182,203,350,426,436,550",
+      "before": "182,350,550",
+      "classification": [
+        "writer restriction unproved",
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "fdfd5c7a54483a76",
+      "detector": "unprotected-deletable",
+      "program": "app_251932073.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "global writer at app_251932073.teal:392 has no proved authority restriction"
+      ],
+      "rejected_authority_sites": [
+        175,
+        185,
+        400
+      ]
+    },
+    {
+      "after": "182,203,350,426,436,550",
+      "before": "182,350,550",
+      "classification": [
+        "writer restriction unproved",
+        "address provenance outside supported fragment"
+      ],
+      "content_hash": "fdfd5c7a54483a76",
+      "detector": "unprotected-updatable",
+      "program": "app_251932073.teal",
+      "reasons": [
+        "address provenance is unsupported, dynamic, or foreign",
+        "global writer at app_251932073.teal:392 has no proved authority restriction"
+      ],
+      "rejected_authority_sites": [
+        175,
+        185,
+        400
+      ]
+    }
+  ],
+  "meaning": "Candidate finding changes caused by withdrawing unproved authority credit. These are not confirmed vulnerabilities. Authority sites include all queried guards in the program, not a minimal explanation of each sink."
+}

@@ -50,10 +50,12 @@ def test_authority_requires_all_writers_and_initial_state(guard, initial, expect
     assert result.assumptions
 
 
-def test_dynamic_writer_prevents_authority_proof():
-    c = context('txn Sender\nglobal CreatorAddress\n==\nassert\n'
+@pytest.mark.parametrize('guard, expected', [
+    ('txn Sender\nglobal CreatorAddress\n==\nassert\n', 'PROVED'), ('', 'UNKNOWN')])
+def test_dynamic_writer_requires_authority_proof(guard, expected):
+    c = context(guard +
                 'txna ApplicationArgs 0\nint 1\napp_global_put\nint 1\nreturn')
-    assert authority_provenance(c, ['owner'], initial_keys=['owner'])[0].status == 'UNKNOWN'
+    assert authority_provenance(c, ['owner'], initial_keys=['owner'])[0].status == expected
 
 
 def test_group_relation_binds_amount_with_offset():

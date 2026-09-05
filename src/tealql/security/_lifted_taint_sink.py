@@ -65,6 +65,8 @@ class _LiftedTaintSinkDetector:
         self.file = file
         self.trusted_args = frozenset(trusted_args)
         self.degraded: Optional[str] = None
+        self.authority_evidence = ()
+        self.guard_evidence = ()
 
     def _raw_findings(self, lifter) -> list:
         from tealql.tealtools.lift import fund_flow
@@ -104,10 +106,19 @@ class _LiftedTaintSinkDetector:
             )
             return []
 
+        raw_findings = self._raw_findings(lifter)
+        self.guard_evidence = tuple(dict.fromkeys(
+            evidence for finding in raw_findings for guard in finding.guards
+            for evidence in guard.evidence))
         findings = [
-            finding for finding in self._raw_findings(lifter)
+            finding for finding in raw_findings
             if not finding.guarded and not finding.param_derived
         ]
+        from tealql.tealtools.analysis.authority import authority_health
+        from tealql.tealtools.lift.fund_flow import authority_evidence
+        self.authority_evidence = authority_evidence(lifter)
+        health = authority_health(self.authority_evidence)
+        self.degraded = '; '.join(health.messages()) if not health.complete else None
         findings = self._suppress(lifter, findings)
         source = getattr(self.prog, "source_path", None)
         files = getattr(self.prog, "source_files", ())
@@ -133,4 +144,3 @@ class _LiftedTaintSinkDetector:
                 message,
             ))
         return out
-

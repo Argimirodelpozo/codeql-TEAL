@@ -71,6 +71,8 @@ class _ApprovalActionGuardDetector:
         self.prog = prog
         self.file = file
         self.pp = path_predicates or cached_path_predicates(prog)
+        self.degraded = None
+        self.authority_evidence = ()
 
     def applies(self) -> bool:
         """Program-level precondition gate; default always-on."""
@@ -89,6 +91,18 @@ class _ApprovalActionGuardDetector:
         return False
 
     def detect(self) -> list:
+        if self.creator_guard == 'ignore':
+            return self._detect()
+        from tealql.tealtools.analysis.authority import authority_for, authority_health
+        authority = authority_for(self.prog, paths=self.pp)
+        with authority.capture() as used:
+            result = self._detect()
+        self.authority_evidence = tuple(used.values())
+        health = authority_health(self.authority_evidence)
+        self.degraded = '; '.join(health.messages()) if not health.complete else None
+        return result
+
+    def _detect(self) -> list:
         if not self.applies():
             return []
         out = []

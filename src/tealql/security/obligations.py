@@ -14,7 +14,6 @@ from tealql.tealtools.analysis.relations import DifferenceConstraints, affine
 from tealql.tealtools.cfg.path_predicates import PathPredicateAnalysis
 from tealql.tealtools.diagnostics.evidence import GuardEvidence
 from tealql.tealtools.diagnostics.health import health_for, AnalysisDegradation, AnalysisHealth
-from tealql.tealtools.language.effects import STATE_EFFECTS
 from tealql.tealtools.language.spec import opcode_spec
 from tealql.tealtools.ssa import Const, SSAVar
 
@@ -124,32 +123,20 @@ class ObligationContext:
 
 
 def authority_provenance(context, keys, *, initial_keys=()):
-    """Constant global-key writers, with an explicit trusted initial-state premise.
+    """Use the same writer invariant as default SSA and lifted detectors.
 
-    Creator-only writers establish preservation; an unguarded or dynamic-key
-    writer prevents that conclusion. Deletion counts as a writer too. This
-    first fragment does not infer trusted initialization or authority cycles.
+    PROVED is conditional on the returned initialization/history premises;
+    these are obligations about preservation, not assertions about ledger data.
     """
+    from tealql.tealtools.analysis.authority import authority_for
+    analysis = authority_for(context.program, paths=context.paths)
     out = []
-    writes = [a for a in context.program.assignments if a.op in {'app_global_put', 'app_global_del'}]
     for key in keys:
-        normalized = 'bytes:0x' + key.encode().hex()
-        matching, dynamic = [], False
-        for assignment in writes:
-            role = STATE_EFFECTS[assignment.op].key_index
-            value = context.expression(assignment.inputs[role]) if len(assignment.inputs) > role else None
-            if value is None or not isinstance(value, str) or not value.startswith('bytes:'):
-                dynamic = True
-            elif value == normalized:
-                matching.append(assignment)
-        guarded = all(context.proves(a.location.line, 'txn Sender', 'eq', 'global CreatorAddress')
-                      for a in matching)
-        ok = key in initial_keys and not dynamic and guarded
-        assumptions = (f'initial global key {key!r} contains the intended authority',
-                       'all code that can write this global state is included; upgrades preserve this contract')
-        out.append(context.result('authority', key, matching[0].location.line if matching else 1,
-                   ok, f'{len(matching)} static writers; dynamic-key alias={dynamic}; creator-guarded={guarded}',
-                   assumptions))
+        result = analysis.state_key(context.file, 'global', key.encode())
+        ok = key in initial_keys and result.preserved and context.health.complete
+        assumptions = result.assumptions or (f'initial global key {key!r} contains the intended authority',)
+        out.append(ObligationResult('authority', key, 'PROVED' if ok else 'UNKNOWN',
+                   result.reason, result.evidence, assumptions))
     return out
 
 
