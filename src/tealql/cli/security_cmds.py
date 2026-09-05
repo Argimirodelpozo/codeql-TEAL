@@ -28,6 +28,7 @@ def _cmd_audit(args) -> int:
     from tealql.tealtools.intercontract.analysis import _DEFAULT_CALLEE_CACHE, XContractGraph
     from tealql.security import DETECTORS
     from tealql.security.scan import default_detection_names
+    from tealql.tealtools.diagnostics.health import AnalysisDegradation, AnalysisHealth, health_for
 
     app_id = args.app_id
     cache = Path(args.cache_dir) if args.cache_dir else _DEFAULT_CALLEE_CACHE
@@ -47,6 +48,7 @@ def _cmd_audit(args) -> int:
     # The same preparation `_load` does; see its comments for why both are needed.
     caller.propagate_constants()
     _check_parse_health(caller, args)
+    notes = list(health_for(caller, deep=True).degradations)
 
     # App-mode detectors, supersession-deduped, each guarded so one crash
     # doesn't sink the run.
@@ -56,9 +58,15 @@ def _cmd_audit(args) -> int:
     own: "dict[str, list]" = {}
     for name in app_names:
         try:
-            vs = DETECTORS[name](caller, file=teal_path.name).detect()
+            detector = DETECTORS[name](caller, file=teal_path.name)
+            vs = list(detector.detect())
+            if getattr(detector, 'degraded', None):
+                notes.append(AnalysisDegradation('detector-degraded', str(detector.degraded),
+                                                str(teal_path), detector=name))
         except Exception as e:                       # a detector fault ≠ audit fault
             logger.warning("detector %s failed on app %s: %s", name, app_id, e)
+            notes.append(AnalysisDegradation('detector-failed', str(e),
+                                            str(teal_path), detector=name))
             continue
         if vs:
             own[name] = vs
@@ -69,10 +77,13 @@ def _cmd_audit(args) -> int:
     cross: list = []
     try:
         graph = XContractGraph.from_chain(caller, cache_dir=str(cache))
-        from tealql.security.xcontract import cross_detection_findings
-        cross = cross_detection_findings(graph, detector_names=default_detection_names())
+        from tealql.security.xcontract import cross_detection_result
+        result = cross_detection_result(graph, detector_names=default_detection_names())
+        cross = result.value
+        notes.extend(result.degradations)
     except Exception as e:
         logger.warning("cross-contract analysis unavailable for app %s: %s", app_id, e)
+        notes.append(AnalysisDegradation('cross-analysis-failed', str(e), str(teal_path)))
 
     # ABI method table (empty on raw/non-ABI bytecode). An audit report enumerates
     # ATTACK SURFACE, so drop the table entries that are not entry points — logged
@@ -90,9 +101,11 @@ def _cmd_audit(args) -> int:
         # Degrade VISIBLY, matching the neighbouring sections: silently
         # dropping the ABI-methods table hid e.g. an undecodable cached .teal.
         logger.warning("method table unavailable for %s: %s", teal_path, exc)
+        notes.append(AnalysisDegradation('method-table-failed', str(exc), str(teal_path)))
 
     callees = sorted(graph.callees) if graph is not None else []
     n_own = sum(len(v) for v in own.values())
+    health = AnalysisHealth(tuple(dict.fromkeys(notes)))
 
     # Order by SEVERITY (worst first), then name. A group's severity is the MAX
     # of its findings' own `.severity` (the IR sink family carries per-finding
@@ -117,6 +130,7 @@ def _cmd_audit(args) -> int:
     if args.json_out:
         from tealql.tealtools._utils.serialize import finding_to_dict
         print(_json.dumps({
+            **health.to_dict(),
             "app_id": app_id,
             "approval_program": str(teal_path),
             "callees": callees,
@@ -131,7 +145,7 @@ def _cmd_audit(args) -> int:
                 {"app_id": f.app_id, "detector": f.detector_name,
                  "message": f.violation.pretty()} for f in cross],
         }, indent=2))
-        return 1 if (n_own or cross) else 0
+        return 2 if not health.complete else 1 if (n_own or cross) else 0
 
     print(f"═══ tealql audit — app {app_id} ═══")
     print(f"  approval program : {teal_path}")
@@ -161,10 +175,14 @@ def _cmd_audit(args) -> int:
     else:
         from tealql.security.xcontract import render_findings as _render_sg
         print(_render_sg(graph, cross))
+    if not health.complete:
+        print('\nAnalysis INCOMPLETE:\n' + '\n'.join(health.messages()))
+        return 2
     return 1 if (n_own or cross) else 0
 
 
 def _cmd_xcontract(args) -> int:
+    from tealql.tealtools.intercontract.health import call_graph_health
     from tealql.tealtools.intercontract.analysis import (
         XContractGraph,
         cross_auth_findings,
@@ -180,6 +198,7 @@ def _cmd_xcontract(args) -> int:
     else:
         graph = XContractGraph.build(caller, load_registry(args.registry))
     auth = cross_auth_findings(graph)
+    health = call_graph_health(graph)
 
     # --detections/--detector also runs the detector suite against each callee
     # across the boundary with caller context (trusted_args pins + seeded
@@ -187,7 +206,7 @@ def _cmd_xcontract(args) -> int:
     sg_findings = []
     if args.detections or args.detector:
         from tealql.security.xcontract import (
-            cross_detection_findings,
+            cross_detection_result,
             render_findings as render_sg,
         )
         if args.detector:
@@ -200,11 +219,13 @@ def _cmd_xcontract(args) -> int:
         else:
             from tealql.security.scan import default_detection_names
             names = default_detection_names()
-        sg_findings = cross_detection_findings(graph, detector_names=names)
+        result = cross_detection_result(graph, detector_names=names)
+        sg_findings, health = result.value, result.health
 
     if args.json_out:
         from tealql.tealtools._utils.serialize import finding_to_dict
         payload = {
+            **health.to_dict(),
             "sites": [s.to_dict() for s in graph.sites],
             "cross_auth_findings": [finding_to_dict(f) for f in auth],
         }
@@ -223,6 +244,10 @@ def _cmd_xcontract(args) -> int:
         if args.detections or args.detector:
             print("\ncross-contract security findings:")
             print(render_sg(graph, sg_findings, relative_to=Path.cwd()))
+        if not health.complete:
+            print('\nAnalysis INCOMPLETE:\n' + '\n'.join(health.messages()))
+    if not health.complete:
+        return 2
     return 1 if (auth or sg_findings) else 0
 
 

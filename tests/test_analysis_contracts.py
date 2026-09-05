@@ -116,6 +116,7 @@ def test_shared_semantic_modules_keep_one_dependency_direction():
 
 def test_guard_queries_share_work_without_merging_different_subjects(monkeypatch):
     from tealql.tealtools.lift import fund_flow as flow
+    from tealql.tealtools.lift import guards
     p = SSAProgram.from_text('#pragma version 8\ntxn Fee\nint 10\n<=\nassert\nint 1\nreturn', name='guards.teal')
     lifter = build_lifter(p)
     defs = flow._def_map(lifter)
@@ -125,12 +126,12 @@ def test_guard_queries_share_work_without_merging_different_subjects(monkeypatch
     condition = comparison.targets[0]
     subject = {id(comparison.source.args[1])}
     visits = 0
-    intrinsic = flow._intr
+    intrinsic = guards._intr
     def count_intrinsic(op):
         nonlocal visits
         visits += 1
         return intrinsic(op)
-    monkeypatch.setattr(flow, '_intr', count_intrinsic)
+    monkeypatch.setattr(guards, '_intr', count_intrinsic)
     assert flow._classify('assert', None, condition, defs, subject, set()).checks_input
     first = visits
     again = flow._classify('assert-after', None, condition, defs, subject, set())

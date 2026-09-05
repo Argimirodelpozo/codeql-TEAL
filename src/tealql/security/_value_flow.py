@@ -151,42 +151,13 @@ def _operand_flows_from_field_var(
 
 
 
-def resolve_through_copies(prog: SSAProgram, value, _seen=None):
-    """Follow ``value`` back through VALUE-PRESERVING copies — a ``load N`` whose
-    every may-influencing store wrote the SAME SSAVar, or a phi whose every arg
-    resolves to the same one — else return it unchanged. MUST-semantics: an
-    unprovable step stops the walk.
+def resolve_through_copies(prog: SSAProgram, value):
+    """Resolve only proven identities through the shared immutable fact layer.
 
-    HAZARD: any consumer inspecting ``value.defined_by`` for a comparison must go
-    through this. Path predicates record the operand the branch actually consumed,
-    so ``<cmp>; store 0; load 0; assert`` leaves the predicate on the LOAD output
-    and a joined ``<cmp>`` leaves it on the PHI — reading either directly finds no
-    comparison and declares a present guard absent."""
-    if _seen is None:
-        _seen = set()
-    if isinstance(value, SSAVar):
-        if value in _seen:
-            return value
-        _seen.add(value)
-        d = value.defined_by
-        if d is not None and d.op == "load":
-            stores = _scratch_stores_for(prog, value)
-            if stores:
-                sources = [prog.var(*s) for s in stores]
-                first = sources[0]
-                if (first is not None and first is not value
-                        and all(s is first for s in sources)):
-                    return resolve_through_copies(prog, first, _seen)
-        return value
-    if isinstance(value, Phi):
-        if value in _seen or not value.args:
-            return value
-        _seen.add(value)
-        resolved = [resolve_through_copies(prog, a, _seen) for a in value.args]
-        first = resolved[0]
-        if first is not value and all(r is first for r in resolved):
-            return first
-    return value
+    Branches and assertions consume scratch/phi/copy outputs. Their producers
+    must be inspected after resolving these identities, without rewriting SSA.
+    """
+    return _constant_facts_cached(prog).resolve(value)
 
 
 def _scratch_stores_index(prog: SSAProgram) -> dict:

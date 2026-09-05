@@ -3,8 +3,7 @@
 contributing ``itxn_field`` op with its consumed operand and, where statically
 known, that operand's literal value.
 
-Runs on default SSA; ``propagate_constants`` / ``propagate_scratch_constants``
-only ADD ``const_value``, so they sharpen values without changing structure.
+Runs on canonical SSA and requests immutable constant facts without modifying it.
 Operand resolution keys on the consumed value's ``(file, line, idx)`` identity —
 it needs the phis and original SSAVars INTACT, so a pass that rewrites or
 eliminates them leaves fields unresolved.
@@ -21,6 +20,7 @@ from ..ssa import (
     SSAVar,
 )
 from ..ssa.relations import frame_gap_sources
+from ..analysis import FactDomain
 
 
 # Inner-txn field operands: a produced value, a join, or a const literal.
@@ -53,6 +53,7 @@ class InnerTxnField:
     # ``{frame_dig output -> {caller args}}``, set by InnerTxnReport, so a
     # param-fed value resolves to caller args, not a symbolic frame_dig.
     frame_src: Optional[dict] = None
+    _program: Optional[SSAProgram] = dc_field(default=None, repr=False, compare=False)
 
     def possible_values(self) -> list[str]:
         """Flatten ``operand`` to value descriptions, in order of preference:
@@ -62,7 +63,8 @@ class InnerTxnField:
 
         Phis expand to one entry per arg, deduplicated; a ``frame_dig`` param
         read expands the same way over its caller args (``frame_src``)."""
-        return _operand_possible_values(self.operand, frame_src=self.frame_src)
+        facts = self._program.facts(FactDomain.CONSTANTS) if self._program else None
+        return _operand_possible_values(self.operand, frame_src=self.frame_src, facts=facts)
 
     def value_str(self) -> str:
         vals = self.possible_values()
@@ -82,6 +84,7 @@ class InnerTxnField:
 def _operand_possible_values(
     op: Optional[Operand], _seen: Optional[set] = None,
     frame_src: Optional[dict] = None,
+    facts=None,
 ) -> list[str]:
     """Shared operand resolver; ``_seen`` breaks cycles, which are legitimate
     around recursive subroutines."""
@@ -89,11 +92,11 @@ def _operand_possible_values(
         return ["?<unresolved>"]
     if isinstance(op, Const):
         return [op.value]
-    cv = getattr(op, "const_value", None)
+    cv = facts.constant(op) if facts is not None else getattr(op, "const_value", None)
     if cv is not None:
         return [cv.value]
     if isinstance(op, Phi):
-        return _phi_possible_values(op, _seen, frame_src)
+        return _phi_possible_values(op, _seen, frame_src, facts)
     if isinstance(op, SSAVar):
         # A `frame_dig` param read: expand over the caller args bound at every
         # call site — interprocedural, like a phi over the call-site values.
@@ -105,7 +108,7 @@ def _operand_possible_values(
             out: list[str] = []
             seen_strs: set[str] = set()
             for arg in sorted(frame_src[op], key=repr):
-                for v in _operand_possible_values(arg, seen, frame_src):
+                for v in _operand_possible_values(arg, seen, frame_src, facts):
                     if v not in seen_strs:
                         seen_strs.add(v)
                         out.append(v)
@@ -124,7 +127,7 @@ def _operand_possible_values(
                 if op in seen:
                     return [f"?{op!r}"]
                 return _operand_possible_values(
-                    a.inputs[0], seen | {op}, frame_src
+                    a.inputs[0], seen | {op}, frame_src, facts
                 )
             return [_describe_assignment(a)]
     # ``defined_by`` cleared (const inlined into every consumer) — fall back to
@@ -147,6 +150,7 @@ def _describe_assignment(a) -> str:
 
 def _phi_possible_values(
     phi: Phi, _seen: Optional[set] = None, frame_src: Optional[dict] = None,
+    facts=None,
 ) -> list[str]:
     """Expand a phi's args to value descriptions, deduplicated so two paths
     pushing the same value show once; ``_seen`` breaks phi-of-phi cycles."""
@@ -160,7 +164,7 @@ def _phi_possible_values(
     out: list[str] = []
     seen_strs: set[str] = set()
     for arg in phi.args:
-        for v in _operand_possible_values(arg, _seen, frame_src):
+        for v in _operand_possible_values(arg, _seen, frame_src, facts):
             if v not in seen_strs:
                 seen_strs.add(v)
                 out.append(v)
@@ -224,9 +228,8 @@ class InnerTxnGroup:
 
 
 class InnerTxnReport:
-    """Aggregates inner-transaction-field rows into per-submit groups; operands
-    stay live references into the SSA layer, so a ``const_value`` set by a later
-    propagation pass shows up on the next :meth:`possible_values` call."""
+    """Group field rows by submit, preserving operand identity. Value queries
+    use the program's current fact revision, including after a legacy pass."""
 
     def __init__(self, prog: SSAProgram):
         self.prog = prog
@@ -269,6 +272,7 @@ class InnerTxnReport:
                 line=r["field_line"],
                 operand=self._resolve_operand(r),
                 frame_src=frame_src,
+                _program=self.prog,
             ))
 
         # Order each txn's fields by source line for stable rendering.

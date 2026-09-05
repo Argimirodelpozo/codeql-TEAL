@@ -20,7 +20,8 @@ logger = logging.getLogger("tealql.tealtools.intercontract.analysis")
 from ..reporting.inner_transactions import InnerTxn, InnerTxnReport
 from ..cfg.path_predicates import BranchCondition, PathPredicateAnalysis
 from ..ast.literals import render_byte_constant
-from ..ssa import Const, SSAProgram, const_bytes as _const_bytes, const_int
+from ..ssa import Const, SSAProgram
+from .state_targets import resolve_state_app_id
 
 # TypeEnum for appl: the assembler folds `int appl` to the literal 6 pre-SSA.
 TYPEENUM_APPL = "6"
@@ -107,146 +108,6 @@ def _is_appcall(txn: InnerTxn) -> bool:
     return True
 
 
-def _state_key(inputs) -> Optional[str]:
-    """The constant bytes KEY of a state READ, or ``None`` if the key isn't const.
-
-    HAZARD: SSA inputs are TOP-FIRST, so the key is ``inputs[0]``
-    (``[key, account?, app?]``). Scanning ALL inputs for the first bytes const
-    instead takes a constant ACCOUNT address as the key when the key is dynamic —
-    a wrong AppID resolution."""
-    return _const_bytes(inputs[0]) if inputs else None
-
-
-# State scope -> its write op. An AppID stashed in any persistent store and read
-# back to drive an inner appcall resolves the same way: EVERY write of the key
-# must agree on one int constant.
-_PUT_OP = {"global": "app_global_put", "local": "app_local_put", "box": "box_put"}
-
-#: Ops that MUTATE or REMOVE stored state without being a full ``*_put``.
-#: HAZARD: the "every write agrees on one constant" proof must see these. A box
-#: put with ``itob(123)`` and later ``box_replace``d to 456 otherwise resolves to
-#: the stale 123, and the ENTIRE callee analysis — auth findings, summaries,
-#: caller pins — runs against the wrong program. Any of these on the key makes
-#: the value unprovable.
-_MUTATE_OPS = {
-    "global": frozenset({"app_global_del"}),
-    "local": frozenset({"app_local_del"}),
-    "box": frozenset({"box_replace", "box_splice", "box_resize", "box_del"}),
-}
-
-
-def _state_read(operand) -> Optional[tuple[str, str]]:
-    """``(scope, key)`` if ``operand`` reads THIS app's own persistent state under
-    a constant key (``scope`` in ``{"global", "local", "box"}``), else ``None``.
-
-    Only unambiguously own-app reads qualify: ``app_global_get`` /
-    ``app_local_get``, the ``*_get_ex`` forms with foreign-app index 0 (= self),
-    and ``btoi (box_get KEY)`` — box values are bytes, and only the whole-value
-    ``box_get`` is matched (a ``box_extract`` sub-slice can't be matched against
-    a whole ``box_put``).
-    """
-    a = getattr(operand, "defined_by", None)
-    if a is None:
-        return None
-    op = a.op
-    if op == "app_global_get":
-        key = _state_key(a.inputs)
-        return ("global", key) if key is not None else None
-    if op == "app_local_get":
-        key = _state_key(a.inputs)
-        return ("local", key) if key is not None else None
-    # *_get_ex takes a foreign-apps index; index 0 is the running app's own state.
-    # HAZARD: TOP-FIRST inputs — the app-reference is specifically inputs[1]
-    # ([key, app] for global, [key, app, account] for local). Scanning ALL inputs
-    # mis-classifies a FOREIGN app read whose account operand happens to be 0.
-    if (op in ("app_global_get_ex", "app_local_get_ex") and len(a.inputs) >= 2
-            and const_int(a.inputs[1]) == 0):
-        scope = "global" if op == "app_global_get_ex" else "local"
-        key = _state_key(a.inputs)
-        return (scope, key) if key is not None else None
-    if op == "btoi" and len(a.inputs) == 1:
-        src = getattr(a.inputs[0], "defined_by", None)
-        if src is not None and src.op == "box_get":
-            key = _state_key(src.inputs)
-            return ("box", key) if key is not None else None
-    return None
-
-
-def _bytes_const_to_int(operand) -> Optional[int]:
-    """A bytes-constant ``operand`` as the big-endian uint64 a ``btoi`` would read
-    from it. Wider than 8 bytes is rejected — ``btoi`` panics on those."""
-    vb = _const_bytes(operand)
-    if vb is None or not vb.startswith("0x"):
-        return None
-    if (len(vb) - 2) // 2 > 8:                # btoi panics on >8 bytes
-        return None
-    try:
-        return int(vb, 16)                    # 0x-hex is big-endian, like btoi
-    except ValueError:
-        return None
-
-
-def _itob_int(operand) -> Optional[int]:
-    """The int a ``box_put KEY, (itob X)`` stores — ``X`` when it's a constant."""
-    d = getattr(operand, "defined_by", None)
-    if d is not None and d.op == "itob" and len(d.inputs) == 1:
-        return const_int(d.inputs[0])
-    return None
-
-
-def _put_int_value(scope: str, inputs, key: str) -> Optional[int]:
-    """The int constant a write op stores under ``key``, else ``None``. A ``box``
-    value is bytes — a raw <=8-byte constant or an ``itob`` of a constant.
-
-    HAZARD: a ``global``/``local`` value is a uint64 pushed LAST, so with
-    TOP-FIRST SSA inputs it is ``inputs[0]``; the key (and, for local, the
-    account) are lower operands."""
-    if scope == "box":
-        for inp in inputs:
-            if _const_bytes(inp) == key:
-                continue                      # the key operand, not the value
-            iv = _bytes_const_to_int(inp)
-            if iv is None:
-                iv = _itob_int(inp)
-            if iv is not None:
-                return iv
-        return None
-    return const_int(inputs[0]) if inputs else None
-
-
-def _resolve_state_app_id(prog: SSAProgram, operand) -> Optional[int]:
-    """Resolve an ApplicationID read back from THIS app's own state (global, local
-    or box) when EVERY write of the key stores the SAME int constant.
-
-    Errs unresolved: one non-constant or disagreeing write yields ``None`` rather
-    than an invented target."""
-    read = _state_read(operand)
-    if read is None:
-        return None
-    scope, key = read
-    put_op = _PUT_OP[scope]
-    mutate_ops = _MUTATE_OPS[scope]
-    vals: set[int] = set()
-    for w in prog.assignments:
-        if w.op in mutate_ops:
-            # A partial update / delete of this key — or of an unresolvable key,
-            # which MAY be this one — defeats the all-writes-agree proof.
-            if any(_const_bytes(inp) == key for inp in w.inputs):
-                return None
-            if all(_const_bytes(inp) is None for inp in w.inputs):
-                return None                   # dynamic key: can't rule it out
-            continue
-        if w.op != put_op:
-            continue
-        if all(_const_bytes(inp) != key for inp in w.inputs):
-            continue                          # writes a different (or dynamic) key
-        iv = _put_int_value(scope, w.inputs, key)
-        if iv is None:
-            return None                       # non-constant write: can't prove it
-        vals.add(iv)
-    return next(iter(vals)) if len(vals) == 1 else None
-
-
 def _const_app_id(txn: InnerTxn, prog: Optional[SSAProgram] = None) -> Optional[int]:
     fields = txn.fields_by_name().get("ApplicationID") or []
     if not fields:
@@ -260,7 +121,7 @@ def _const_app_id(txn: InnerTxn, prog: Optional[SSAProgram] = None) -> Optional[
             except ValueError:
                 return None
         else:                                 # dynamic: trace through persistent state
-            rid = _resolve_state_app_id(prog, f.operand) if prog is not None else None
+            rid = resolve_state_app_id(prog, f.operand) if prog is not None else None
             if rid is None:
                 return None
             seen.add(rid)
@@ -427,7 +288,6 @@ def discover_registry(
                 continue
             try:
                 callee = SSAProgram(str(teal_path))
-                callee.propagate_constants()
             except Exception:
                 continue                   # unparseable callee -> registered, not walked
             frontier.append((callee, depth + 1))
@@ -601,11 +461,6 @@ class XContractGraph:
                     edges.append(AppcallEdge(prog_id, site, depth))
                 if site.app_id not in callees:
                     callee = SSAProgram(str(site.callee_source))
-                    # Resolve constants BEFORE walking the callee's own appcall
-                    # sites: construction only tags direct pushes, so a callee
-                    # whose target AppID needs propagation (folded arithmetic,
-                    # dup/cover flow, phi) has ITS callees silently omitted.
-                    callee.propagate_constants()
                     callees[site.app_id] = callee
                     callee_sources[site.app_id] = site.callee_source
                     merged_pins[site.app_id] = dict(site.const_args)

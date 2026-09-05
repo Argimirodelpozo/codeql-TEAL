@@ -77,7 +77,6 @@ class XContractTaintGraph(NxGraphView):
                 if site.app_id in callees:
                     continue            # already graphed (dedup + cycle guard)
                 cp = SSAProgram(str(site.callee_source))
-                cp.propagate_constants()
                 tg = TaintGraph.of(cp)
                 callees[site.app_id] = tg
                 tg_by_id[site.app_id] = tg
@@ -306,8 +305,10 @@ def _caller_field_nodes(
     HAZARD: fields are buffered and only yielded once the group's submit matches
     ``site.submit_line``, or an EARLIER submit's fields leak into a later site."""
     from ..ssa.operands import const_int
+    from ..analysis import FactDomain
 
     prog = caller_tg.prog
+    facts = prog.facts(FactDomain.CONSTANTS)
     in_block = False
     push_index = 0
     # Buffered PER INNER TXN, not per group: `itxn_next` starts a new txn that
@@ -348,7 +349,7 @@ def _caller_field_nodes(
         if a.op == "itxn_field":
             imm = a.immediates.strip()
             if imm == "ApplicationID" and a.inputs:
-                txn_app_ids[-1] = const_int(a.inputs[0])
+                txn_app_ids[-1] = const_int(facts.constant(a.inputs[0]))
             if imm == field:
                 for n in caller_tg.nodes():
                     if n.file == site.file and n.line == a.location.line:

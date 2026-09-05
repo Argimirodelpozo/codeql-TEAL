@@ -175,7 +175,7 @@ def _base_snapshot(prog: "SSAProgram", domains: frozenset[FactDomain]) -> "SSAPr
 
 
 def _alias_map(prog: "SSAProgram") -> dict[ValueKey, AliasTarget]:
-    """Pure equivalence relation for stable inputs, shuffles, and scratch loads."""
+    """Pure equivalence relation for stable inputs, shuffles, joins, and scratch."""
     from ._input_aliases import _input_key
     from ..ssa import _STACK_SHUFFLE_OPS, _shuffle_mapping
 
@@ -221,6 +221,14 @@ def _alias_map(prog: "SSAProgram") -> dict[ValueKey, AliasTarget]:
     changed = True
     while changed:
         changed = False
+        for phi in prog.phis.values():
+            key = _value_key(phi)
+            sources = [resolve(_value_key(arg)) for arg in phi.args]
+            if (sources and sources[0] is not None and sources[0] != key
+                    and all(source == sources[0] for source in sources)
+                    and redirects.get(key) != sources[0]):
+                redirects[key] = sources[0]
+                changed = True
         for node in prog._graph.nodes:
             stores = prog._graph.nodes[node].get("scratch_stores")
             if not stores:

@@ -135,14 +135,12 @@ def test_approval_exit_misclassification_is_caught(monkeypatch):
 
 
 def test_copy_resolution_collapse_is_caught(monkeypatch):
-    """`resolve_through_copies` is what makes a guard visible through a scratch
-    round-trip or a phi. Making it a no-op restores the exact FP this review
-    fixed in the OnCompletion family."""
-    _assert_caught(
-        monkeypatch, "tealql.security._value_flow", "resolve_through_copies",
-        lambda prog, value, *a, **k: value,
-        "value-preserving copies are no longer followed",
-    )
+    """All consumers now share fact aliases, including predicates themselves.
+    Mutate the common identity relation so a surviving compatibility wrapper
+    cannot mask the lost scratch/phi semantics."""
+    from tealql.tealtools.analysis.context import ValueFacts
+    monkeypatch.setattr(ValueFacts, 'resolve', lambda self, value: value)
+    assert _scores() != _BASELINE, 'benchmark did not detect lost value identities'
 
 
 def test_sender_guard_always_present_is_caught(monkeypatch):

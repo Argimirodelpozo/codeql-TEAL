@@ -7,7 +7,7 @@ its validation remain recorded in `REVIEW_IMPLEMENTATION.md`.
 
 - [x] Connect storage-authority provenance and explicit guard evidence to existing detectors.
 - [x] Fix or precisely classify the 7 unresolved return slots, 13 missing operands, and 10 shared execution blocks in the corpus census.
-- [ ] Consolidate guard/fact consumers, retire redundant paths, and reduce oversized modules.
+- [x] Consolidate guard/fact consumers, retire redundant paths, and reduce oversized modules.
 - [ ] Expand independent behavioral fixtures, add an unseen family evaluation, and improve taint/callee-effect coverage.
 - [ ] Deepen authority, box permissions, relational groups, crypto/replay, lifecycle, conservation, resource sufficiency/recoverability, and revision compatibility analyses.
 - [ ] Secondary priority: loop invariants, numeric call summaries, relational intervals, and divisibility/bit integration.
@@ -77,3 +77,39 @@ regenerated census covers all 857 parse and 231 representation inputs, with
 97,077 consuming instructions and zero declared-return gaps. All 231 default
 finding rows are unchanged from the authority milestone, with no crashes.
 Core-only validation adds 43 passing checks and one expected backend skip.
+
+Fact and guard consumers
+------------------------
+
+Taint graphs, transaction-field reports, call discovery, and state target
+resolution now request immutable facts. Querying them does not invalidate a
+caller's existing fact view or rewrite its operands. Reports retained across a
+legacy propagation pass refresh their fact revision. Proven phi identities join
+the shared alias relation; the detector-specific recursive copy resolver is
+retired. Its mutation gate now breaks the shared relation and still detects a
+benchmark regression.
+
+Guard classification, evidence, and bounded definition walks live in
+`lift/guards.py`, with compatibility imports retained. `fund_flow.py` shrinks
+from 1,379 to 967 lines. Constant state-target resolution is separate from call
+traversal, reducing `intercontract/analysis.py` from 802 to 657 lines.
+
+State targets require a dominating initialization in the current invocation,
+the correct local account, and agreement of all potentially aliasing writers.
+Dynamic keys, partial mutations, foreign box writes, and existence flags cannot
+silently produce a constant target. Historical initialization alone is
+insufficient. Box initialization is currently limited to the same basic block
+with no intervening inner submit. Global/local initialization can cross inner
+submits: AVM writes address the running app and app re-entry is forbidden by
+the [pinned evaluator](https://github.com/algorand/go-algorand/blob/da5946a14568c0cbaa2c9daf4241882de12f3c16/data/transactions/logic/eval.go#L5595).
+
+`cross_detection_result` retains standard health metadata. Its legacy list
+projection remains available. Missing, dynamic, and depth-limited call edges,
+detector crashes, and authority premises now reach `xcontract` and `audit` JSON,
+text, and exit status 2. Incomplete execution does not inflate finding counts.
+
+Validation: 422 integration checks, 65 core-only checks (two backend skips),
+and 34 checks with the Puya backend enabled passed. The 231-program offline
+finding comparison has no changed cells and no crashes. Four report lines now
+render source-established `itob(0)` values as eight zero bytes; the reviewed
+snapshot records that precision change. Ruff and diff whitespace checks pass.

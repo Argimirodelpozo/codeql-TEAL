@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from tealql.tealtools.intercontract.analysis import XContractGraph
+from tealql.tealtools.intercontract.health import call_graph_health
+from tealql.tealtools.diagnostics.health import AnalysisDegradation, AnalysisHealth, AnalysisResult
 from . import DETECTORS
 
 logger = logging.getLogger("tealql.security.xcontract")
@@ -65,12 +67,12 @@ def _construct_detector(cls, callee, callee_analysis):
     return cls(callee, **kwargs)
 
 
-def cross_detection_findings(
+def cross_detection_result(
     graph: XContractGraph,
     *,
     detector_names: Optional[Iterable[str]] = None,
     strict: bool = False,
-) -> list[CrossSecGuideFinding]:
+) -> AnalysisResult[list[CrossSecGuideFinding]]:
     """Run the detectors named by ``detector_names`` (default: all) against every
     callee in ``graph``.
 
@@ -78,7 +80,11 @@ def cross_detection_findings(
     callee is logged and skipped rather than sinking every other callee's findings.
     ``strict=True`` re-raises."""
     names = list(detector_names) if detector_names is not None else list(DETECTORS)
+    for name in names:
+        if name not in DETECTORS:
+            raise KeyError(f"unknown sec-guide detector: {name!r}")
     out: list[CrossSecGuideFinding] = []
+    notes = list(call_graph_health(graph).degradations)
     for app_id, callee in graph.callees.items():
         ca = graph.analyses[app_id]
         # A callee reached through an appcall itxn is by construction a stateful
@@ -93,12 +99,20 @@ def cross_detection_findings(
             if "app" not in applies:
                 continue
             try:
-                violations = list(_construct_detector(cls, callee, ca).detect())
+                detector = _construct_detector(cls, callee, ca)
+                violations = list(detector.detect())
+                if getattr(detector, 'degraded', None):
+                    notes.append(AnalysisDegradation('detector-degraded',
+                        f'app{app_id}: {detector.degraded}', str(graph.callee_sources[app_id]),
+                        detector=name))
             except Exception as e:
                 if strict:
                     raise
                 logger.error("detector %s crashed on callee app%s (skipped): %s",
                              name, app_id, e)
+                notes.append(AnalysisDegradation('detector-failed',
+                    f'app{app_id}: {type(e).__name__}: {e}', str(graph.callee_sources[app_id]),
+                    detector=name))
                 continue
             for v in violations:
                 out.append(CrossSecGuideFinding(
@@ -106,7 +120,16 @@ def cross_detection_findings(
                     detector_name=f"sec-guide/{name}",
                     violation=v,
                 ))
-    return out
+    health = AnalysisHealth(tuple(dict.fromkeys(notes)))
+    if strict and not health.complete:
+        from tealql.tealtools.diagnostics.errors import TealQLError
+        raise TealQLError('; '.join(health.messages()))
+    return AnalysisResult(out, health)
+
+
+def cross_detection_findings(graph, *, detector_names=None, strict=False):
+    """Compatibility list projection; new consumers should retain result health."""
+    return cross_detection_result(graph, detector_names=detector_names, strict=strict).value
 
 
 def render_findings(

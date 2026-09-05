@@ -15,6 +15,7 @@ import networkx as nx
 from ._nx_view import NxGraphView
 
 from ..ssa import SSAProgram
+from ..analysis import FactDomain
 
 
 @dataclass(frozen=True)
@@ -45,7 +46,7 @@ class TaintGraph(NxGraphView):
         ``node_class`` is sometimes a parent class (``ZeroArgumentOpcode`` for
         ``box_create``) and cannot identify the op."""
         # So node-level value annotations include phi unification and folds.
-        prog.propagate_constants()
+        facts = prog.facts(FactDomain.CONSTANTS)
 
         # (file, line) → (op, immediates, const_values), each const_value a
         # ``(kind, value)`` with ``kind`` ∈ ``{"int", "bytes"}``.
@@ -56,7 +57,7 @@ class TaintGraph(NxGraphView):
         for a in prog.assignments:
             cvs: list[tuple[str, str]] = []
             for out in a.outputs:
-                cv = getattr(out, "const_value", None)
+                cv = facts.constant(out)
                 if cv is not None:
                     cvs.append((cv.kind, cv.value))
             meta_by_loc[(a.location.file, a.location.line)] = (
