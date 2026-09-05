@@ -1,9 +1,10 @@
 Follow-up implementation
 ========================
 
-Work continues on `rev`, starting from `93fd8a57`. Validated changes are committed
-and pushed to `origin/rev` as requested. The earlier review implementation and
-its validation remain recorded in `REVIEW_IMPLEMENTATION.md`.
+All six follow-up milestones and final validation are complete on `rev`, building
+on `93fd8a57`. Validated changes are committed and pushed to `origin/rev` as
+requested. The earlier review implementation and its validation are recorded in
+`REVIEW_IMPLEMENTATION.md`.
 
 - [x] Connect storage-authority provenance and explicit guard evidence to existing detectors.
 - [x] Fix or precisely classify the 7 unresolved return slots, 13 missing operands, and 10 shared execution blocks in the corpus census.
@@ -11,9 +12,9 @@ its validation remain recorded in `REVIEW_IMPLEMENTATION.md`.
 - [x] Expand independent behavioral fixtures, add an unseen family evaluation, and improve taint/callee-effect coverage.
 - [x] Deepen authority, box permissions, relational groups, crypto/replay, lifecycle, conservation, resource sufficiency/recoverability, and revision compatibility analyses.
 - [x] Secondary priority: loop invariants, numeric call summaries, relational intervals, and divisibility/bit integration.
-- [ ] Validate the final core/backend/node behavior and full suite; record classified baseline changes and remaining limits.
+- [x] Validate the final core/backend/node behavior and full suite; record classified baseline changes and remaining limits.
 
-Progress is recorded below with each implementation. A checked milestone requires
+Results are recorded below with each implementation. A checked milestone requires
 an implemented capability and meaningful validation, not merely an API or a test
 that reproduces its own implementation. Unsupported cases retain explicit limits.
 
@@ -52,8 +53,8 @@ unprotected lifecycle policies; they do not assert an improved time delay.
 
 The corpus comparison caught a shared-helper self-rotation precision regression;
 the final implementation handles it inductively and keeps its history premises.
-Ruff and the finding-digest manifest check pass. Broader architecture, behavioral,
-SAST-fragment, interval, and final full-suite work remains below this milestone.
+Ruff and the finding-digest manifest check pass. Subsequent sections record the
+architecture, behavioral, SAST, numeric and final full-suite results.
 
 Representation census
 ---------------------
@@ -127,8 +128,8 @@ branching/recursive callees, and incomplete representations retain unknowns.
 
 Validation includes 228 integration checks, 97 core-only checks, and independent
 integer oracles over loops and uint64 arithmetic. The 231-program offline finding
-comparison remains unchanged without crashes. Expanded node observations and the
-remaining SAST inference work continue below these completed numeric fragments.
+comparison remains unchanged without crashes. Subsequent sections record
+expanded node observations and deeper SAST inference.
 
 Behavioral and independent evaluation
 -------------------------------------
@@ -161,8 +162,8 @@ run is 78% for the taint graph and 82% for callee effects. Core-only validation
 passed 111 tests with six external skips. All 25 private runtime/assembler tests
 passed; the external gate and observation tests add 34 passes. All 15 external
 provenance/evaluation/assembly checks also passed against the private node. The 231-program
-finding comparison remains unchanged with no crashes. Final full-suite validation
-and the deeper eight-direction SAST work remain outstanding.
+finding comparison remains unchanged with no crashes. Deeper SAST inference and
+final full-suite validation are recorded below.
 
 Deeper SAST inference
 ---------------------
@@ -194,13 +195,13 @@ environment without Puya. An additional 113 numeric/state/resource integration
 checks passed after the last resource changes. All five new private runtime
 controls passed. The complete 231-program offline finding comparison has zero
 changed cells and no crashes. Ruff and whitespace checks pass. The final full
-suite, core suite and combined backend/private-node gates remain outstanding.
+suite, core suite and combined backend/private-node results are recorded below.
 
 The final semantic review also restricted removable scalar reads to a whitelist
 of total fields. Timestamp lookups and current-transaction effect reads can
 fail even when their values are discarded. All 38 revision tests pass, and three
 additional private controls confirm those interpreter failures. The first full
-run was deliberately interrupted so the complete gate can include this fix.
+run was deliberately interrupted to include this fix in the complete gate.
 
 The visualization inventory then identified nine modules added during these
 milestones that still needed catalog decisions. New scalar views expose
@@ -215,3 +216,58 @@ through `fund_flow`. The guard behavior assertion passed, but the compatibility
 export was missing after extraction. Restoring that one export fixes both
 unchanged tests; all 52 tests in the two review modules and the lifted fund-flow
 module pass. No guard depth or detector verdict was changed by this repair.
+That third run was interrupted and superseded by the complete final run below.
+
+Final validation
+----------------
+
+The final source implementation is `563b4425`; subsequent edits only record
+validation. The complete final run used that source without further edits.
+
+| Gate | Result |
+| --- | --- |
+| Full suite with compiler corpus, backend and branch coverage | 6,249 passed, 47 intentional skips in 1,334.90 seconds. Combined statement/branch coverage is 88.68%, above the 68% gate. |
+| Full core-only suite, with Puya absent | 4,748 passed, 328 intentional skips in 712.96 seconds. |
+| Combined private-node, assembler and external-example gate | 48 passed in 210.98 seconds at `d18e0caf`; the later source repair only restores a compatibility export. |
+| Guard regression modules after the compatibility repair | 52 passed in 7.55 seconds, including both originally failing tests unchanged. |
+| Fresh non-editable wheel with lockfile-pinned core dependencies | CLI, spec data, policy/box/resource/revision APIs, catalog views and the compatibility export pass; Puya is absent. |
+| Offline default finding comparison | All 231 rows unchanged from the reviewed authority baseline; zero crashes. |
+| Static checks | Ruff and diff whitespace checks pass. |
+
+The full-run skips comprise 24 private runtime tests, nine private assembler
+tests, twelve external-example tests, opt-in digest regeneration, and one known
+lifting refusal. The latter is the benchmark's non-AVM `sha512` fixture: its
+taint behavior is tested, but it is not claimed to be a runnable AVM program.
+The private/external gate separately exercises the infrastructure-dependent
+checks. Core skips additionally reflect the deliberately absent compiler.
+
+Final coverage is 90.71% of statements and 84.60% of branches. Combined coverage
+is 87.80% in the analysis package, 93.00% in the taint graph and 82.28% in callee
+effects. These are execution-coverage measures, not accuracy or security proofs.
+
+Reproduction commands used the locked development environments:
+
+```sh
+LIFT_SEMANTICS_CORPUS=1 LIFT_SEMANTICS_BACKEND=1 \
+  .venv/bin/python -m pytest tests/ -v -ra -n 3 --dist=worksteal --cov
+/tmp/tealql-review-core-env/bin/python -m pytest tests/ -q -ra -n 2 --dist=worksteal
+TEALQL_LOCALNET=1 TEALQL_EXTERNAL_FIXTURES=/tmp/tealql-external-evaluation \
+  ALGOD_ADDRESS=http://127.0.0.1:41980 TEAL_ALGOD_LOCAL=http://127.0.0.1:41980 \
+  .venv/bin/python -m pytest tests/test_behavioral_localnet.py \
+  tests/test_assembler_differential.py tests/test_external_evaluation.py -q -ra
+```
+
+The local full-suite log and coverage JSON are
+`/tmp/tealql-followup-full-tests4.log` and
+`/tmp/tealql-followup-full-coverage4.json`. Core and private logs are
+`/tmp/tealql-followup-core-tests.log` and
+`/tmp/tealql-followup-combined-node2.log`. The verified wheel is
+`/tmp/tealql-followup-dist/tealql-0.1.0-py3-none-any.whl`, SHA-256
+`2bc34c613d3c422c88379fe28e01df83c6006d650a351b31cf046deef82ff04d`.
+The final source SHA-256 is
+`702190c0c3d4e0c39452e78f0a35d411693aaa9e686ecfb80ffe959609c1ba37`,
+hashing each sorted `src/**/*.py` path, NUL, contents, NUL in sequence.
+
+The private node was stopped and removed after its gate. Behavioral fixtures use
+read-only simulation; no transaction was submitted. Known limits remain in
+`REPRESENTATION_GAPS.md`, `NUMERIC_ANALYSIS.md` and `SAST_INFERENCE.md`.
