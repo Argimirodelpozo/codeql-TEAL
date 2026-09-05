@@ -959,9 +959,12 @@ def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
         cont = return_point.get(b) if return_point is not None else None
         # `npred` is keyed on THIS routine's blocks, so membership doubles as the
         # in-body test — a continuation belonging to another routine has no
-        # entry slot of ours to hold the merge.
-        can_merge = cont is not None and npred is not None and \
-            cont in npred and npred[cont] <= 1
+        # entry slot of ours to hold the merge. A continuation may also be a
+        # branch target: the factory allocates distinct identities for the
+        # call-result merge and the subsequent control-flow join. Withdrawing
+        # the call value here caused that join to keep only the direct branch
+        # arm, sometimes folding an unknown returned value to a constant.
+        can_merge = cont is not None and npred is not None and cont in npred
         if callee in unsafe_callees:
             # The callee reached below its own band with a PLAIN stack op, so
             # what sits underneath is whatever IT left — not what this routine
@@ -1127,10 +1130,8 @@ def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
                 res.phis.setdefault(cont, []).append((slot, ph))
                 pushes.append(ph)
             else:
-                # No continuation, or one that is ALSO a branch target — where a
-                # slot-`slot` phi would collide with the join's own. Measured at
-                # 1 call site in 1439 over 60 probes, so refusing costs almost
-                # nothing and inventing a home for the phi would cost identity.
+                # No caller-owned continuation or no returned values: there
+                # is no valid home/evidence for a return merge.
                 pushes.append(None)
         if shifted and not pending_rets and can_merge and stack:
             # The residual TRAIL. Below the pushed window the paths stay

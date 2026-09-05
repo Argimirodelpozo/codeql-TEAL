@@ -3442,7 +3442,7 @@
    "missing": 0,
    "path": "mainnet-random-probes/app_3350348253.teal",
    "shared": 0,
-   "unresolved": 1
+   "unresolved": 0
   },
   "03cc9d66e58fef97": {
    "examined": 162,
@@ -3603,7 +3603,7 @@
    "missing": 0,
    "path": "mainnet-random-probes/app_1850858495.teal",
    "shared": 0,
-   "unresolved": 2
+   "unresolved": 0
   },
   "1b39ba79103e2752": {
    "examined": 1118,
@@ -3988,7 +3988,7 @@
    "missing": 0,
    "path": "mainnet-random-probes/app_1850904282.teal",
    "shared": 0,
-   "unresolved": 2
+   "unresolved": 0
   },
   "602a0914654aceea": {
    "examined": 319,
@@ -4422,7 +4422,7 @@
    "missing": 0,
    "path": "mainnet-random-probes/app_2450526014.teal",
    "shared": 0,
-   "unresolved": 1
+   "unresolved": 0
   },
   "a8b077399987e4b2": {
    "examined": 88,
@@ -4450,7 +4450,7 @@
    "missing": 0,
    "path": "mainnet-random-probes/app_3550180073.teal",
    "shared": 0,
-   "unresolved": 1
+   "unresolved": 0
   },
   "abcc69e12b3faf00": {
    "examined": 170,

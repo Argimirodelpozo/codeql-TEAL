@@ -38,11 +38,20 @@ def unresolved_call_results(prog: SSAProgram) -> list:
     MAY analysis. Legacy routines are skipped because they declare no count.
     """
     from ..cfg.structure import analyze_structure
+    from ..cfg.subroutines import is_retsub_block
 
     out: list = []
-    for call_site in analyze_structure(prog).call_sites:
+    structure = analyze_structure(prog)
+    bodies = {sub.entry_bb: sub.body for sub in structure.subroutines}
+    for call_site in structure.call_sites:
         entry = call_site.target_entry
         if entry is None:
+            continue
+        body = bodies.get(entry)
+        if (call_site.continuation_bb is None and body
+                and not any(is_retsub_block(block) for block in body)):
+            # `proto A R` constrains a retsub, not a whole-program return.
+            # A callee that only halts has no result consumed by its caller.
             continue
         nret = _proto_nret(entry)
         if not nret:
