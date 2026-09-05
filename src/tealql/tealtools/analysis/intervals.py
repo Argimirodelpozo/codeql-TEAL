@@ -32,6 +32,7 @@ class IntervalQuery:
         self.predicates = PathPredicateAnalysis(facts._prog)
         self.budget = budget
         self.cache = {}
+        self.relational = {}
         self.visits = self.widenings = 0
 
     def _key(self, value):
@@ -42,7 +43,20 @@ class IntervalQuery:
         n = const_int(self.facts.constant(value))
         if n is not None:
             return IntRange(n, n)
-        return self.facts.int_range(value)
+        bounds = self.facts.int_range(value)
+        if bounds is None:
+            value = self.facts.resolve(value)
+            source = getattr(value, 'defined_by', None)
+            if source is not None:
+                from ..language.avm import _field_type
+                kind = result_type(source.op, value.index - 1)
+                if kind not in {'uint64', 'bool', 'bytes'}:
+                    kind = _field_type(source.op, source.immediates)
+                if kind == 'uint64':
+                    bounds = TOP
+                elif kind == 'bool':
+                    bounds = IntRange(0, 1)
+        return bounds
 
     def _refine(self, value, current, file, line):
         key = self._key(value)
@@ -69,7 +83,57 @@ class IntervalQuery:
             if lo > hi:
                 return None, False
             current = IntRange(lo, hi)
+        relational = self._relational_bounds(value, file, line)
+        if relational is not None:
+            current = _meet(current, relational)
         return current, True
+
+    def _expression(self, value, atoms, active=frozenset(), work=None):
+        work = [64] if work is None else work
+        work[0] -= 1
+        n = const_int(self.facts.constant(value))
+        if n is not None:
+            return n
+        value = self.facts.resolve(value)
+        key = self._key(value)
+        if key is None:
+            return None
+        source = getattr(value, 'defined_by', None)
+        if (source and source.op in {'+', '-'} and len(source.inputs) == 2
+                and key not in active and len(active) < 16 and work[0] > 0):
+            args = [self._expression(v, atoms, active | {key}, work) for v in reversed(source.inputs)]
+            if all(v is not None for v in args):
+                return source.op, *args
+        atom = repr(key)
+        atoms[atom] = self._bounds(value)
+        return atom
+
+    def _relational_bounds(self, value, file, line):
+        from .relations import DifferenceConstraints
+        target = self._expression(value, {})
+        if target is None:
+            return None
+        location = file, line
+        if location not in self.relational:
+            atoms, premises = {}, []
+            for p in self.predicates.predicates_at(file, line):
+                if (p.kind not in {'eq', 'lt', 'le', 'gt', 'ge'} or not p.args
+                        or self._bounds(p.value) is None or self._bounds(p.args[0]) is None):
+                    continue  # relational closure requires integer type evidence
+                left, right = [self._expression(v, atoms) for v in (p.value, p.args[0])]
+                if left is not None and right is not None:
+                    premises.append((left, p.kind, right))
+                if len(atoms) > 24:
+                    break
+            for atom, bounds in atoms.items():
+                if bounds is not None:
+                    premises.extend(((atom, 'ge', bounds.lo), (atom, 'le', bounds.hi)))
+            self.relational[location] = DifferenceConstraints(premises, max_atoms=24)
+        result = self.relational[location].interval(target)
+        if result is None:
+            return None
+        lo, hi = _clamp_uint64(*result)
+        return IntRange(lo, hi) if lo <= hi else None
 
     def range_at(self, value, target):
         if hasattr(target, 'location'):
@@ -102,6 +166,7 @@ class IntervalQuery:
             self.widenings += 1
             return base
         active.add(key)
+        widenings = self.widenings
         derived = None
         try:
             if isinstance(value, Phi) and value.args:
@@ -125,8 +190,11 @@ class IntervalQuery:
                         derived = IntRange(lo, hi)
                 elif result_type(assignment.op, value.index - 1) in {'uint64', 'bool'}:
                     derived = TOP
-            result = _meet(base, derived)
-            self.cache[cache_key] = result
+            result = self.facts.congruence(value).reduce(_meet(base, derived))
+            # A traversal cut depends on its active ancestors. Do not retain
+            # that answer for an unrelated root with a different cycle context.
+            if self.widenings == widenings:
+                self.cache[cache_key] = result
             return result
         finally:
             active.remove(key)

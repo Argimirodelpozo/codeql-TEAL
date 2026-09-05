@@ -10,7 +10,7 @@ its validation remain recorded in `REVIEW_IMPLEMENTATION.md`.
 - [x] Consolidate guard/fact consumers, retire redundant paths, and reduce oversized modules.
 - [ ] Expand independent behavioral fixtures, add an unseen family evaluation, and improve taint/callee-effect coverage.
 - [ ] Deepen authority, box permissions, relational groups, crypto/replay, lifecycle, conservation, resource sufficiency/recoverability, and revision compatibility analyses.
-- [ ] Secondary priority: loop invariants, numeric call summaries, relational intervals, and divisibility/bit integration.
+- [x] Secondary priority: loop invariants, numeric call summaries, relational intervals, and divisibility/bit integration.
 - [ ] Validate the final core/backend/node behavior and full suite; record classified baseline changes and remaining limits.
 
 Progress is recorded below with each implementation. A checked milestone requires
@@ -113,3 +113,19 @@ and 34 checks with the Puya backend enabled passed. The 231-program offline
 finding comparison has no changed cells and no crashes. Four report lines now
 render source-established `itob(0)` values as eight zero bytes; the reviewed
 snapshot records that precision change. Ruff and diff whitespace checks pass.
+
+Numeric facts
+-------------
+
+`NUMERIC_ANALYSIS.md` documents the implemented fragments and their bounds.
+Congruences now establish inductive loop residues and reduce interval endpoints;
+integer difference constraints close transitive guard relations. Numeric call
+summaries compose straight-line proto helpers while retaining call identity,
+argument order, multiple returns, and frame replacement. The rounding obligation
+uses divisibility facts for variable expressions. Exhaustion, unsupported effects,
+branching/recursive callees, and incomplete representations retain unknowns.
+
+Validation includes 228 integration checks, 97 core-only checks, and independent
+integer oracles over loops and uint64 arithmetic. The 231-program offline finding
+comparison remains unchanged without crashes. Expanded node observations and the
+remaining SAST inference work continue below these completed numeric fragments.

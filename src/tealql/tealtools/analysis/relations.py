@@ -99,3 +99,15 @@ class DifferenceConstraints:
         if x == y:
             return 0 <= c
         return self.bounds.get((x, y), float('inf')) <= c
+
+    def interval(self, expression):
+        """Finite bounds on a supported difference, or None when unproved."""
+        if not self.consistent or self.truncated:
+            return None
+        upper, lower = _bound(expression, 0), _bound(0, expression)
+        if upper is None or lower is None:
+            return None
+        x, y, offset = upper
+        hi = self.bounds.get((x, y))
+        lo = self.bounds.get((lower[0], lower[1]))
+        return (lower[2] - lo, hi - offset) if lo is not None and hi is not None else None

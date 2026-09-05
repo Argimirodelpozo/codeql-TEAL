@@ -245,8 +245,9 @@ def conservation_obligation(context, policy):
         divisor, dividend = assignment.inputs
         d = context.facts.range_at(divisor, assignment)
         n = context.facts.range_at(dividend, assignment)
-        exact = bool(d and n and d.lo == d.hi and d.lo > 0 and
-                     (d.lo == 1 or n.lo == n.hi and n.lo % d.lo == 0))
+        exact = bool(d and d.lo == d.hi and d.lo > 0 and (
+            context.facts.congruence(dividend).divisible_by(d.lo)
+            or n and n.lo == n.hi and n.lo % d.lo == 0))
         rounding.append(context.result('rounding', str(assignment.location.line), assignment.location.line,
             exact, 'exact integer division' if exact else 'floor division; remainder lies in [0, divisor - 1] when divisor > 0',
             ('beneficiary and unit interpretation require application policy',)))

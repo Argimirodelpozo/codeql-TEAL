@@ -271,6 +271,8 @@ class ValueFacts:
         self.domains = domains
         self.revision = getattr(prog, "_revision", 0)
         self._intervals = None
+        self._congruences = None
+        self._numeric_calls = None
 
     @classmethod
     def build(
@@ -373,6 +375,20 @@ class ValueFacts:
 
     def int_range(self, value) -> Optional[IntRange]:
         return self.fact(value).int_range
+
+    def congruence(self, value):
+        """Inductive divisibility/residue facts, including loop-carried values."""
+        from .congruences import CongruenceQuery
+        if self._congruences is None:
+            self._congruences = CongruenceQuery(self)
+        return self._congruences.query(value)
+
+    def call_result(self, call, slot=0):
+        """Numeric result of one call site; slots are bottom-first ABI returns."""
+        from .numeric_calls import NumericCalls
+        if self._numeric_calls is None:
+            self._numeric_calls = NumericCalls(self)
+        return self._numeric_calls.query(call, slot)
 
     def range_at(
         self,
