@@ -114,3 +114,90 @@ def test_simulation_missing_transaction_body_cannot_report_faithful():
 def test_assembler_directives_and_pseudos_do_not_look_unknown():
     from tests.behavioral_lift.observations import required_effects
     assert 'unsupported-semantics' not in required_effects('#pragma version 10\n#pragma typetrack false\nbyte "x"\nlog\nint 1\nreturn')
+
+
+def test_group_observes_each_transaction_and_keeps_scratch_banks_separate():
+    from copy import deepcopy
+    import json
+    from tests.behavioral_lift.observations import observe_simulate
+    response = _simulation([{'scratch-changes': [{'slot': 4, 'new-value': {'type': 2, 'uint': 9}}]}])
+    rows = response['txn-groups'][0]['txn-results']
+    second = deepcopy(rows[0])
+    second['exec-trace']['approval-program-trace'][0]['scratch-changes'][0]['new-value']['uint'] = 7
+    rows.append(second)
+    observation = observe_simulate(response)
+    effects = json.loads(observation.effects)
+    assert len(effects['transactions']) == 2
+    assert effects['scratch']['(0,)'][0][1]['uint'] == 9
+    assert effects['scratch']['(1,)'][0][1]['uint'] == 7
+    assert {'transaction-groups', 'existing-app-state', 'exported-scratch'} <= observation.available
+    second['txn-result']['logs'] = ['changed']
+    assert observation.effects != observe_simulate(response).effects
+
+
+def test_group_compares_final_state_in_execution_order():
+    from tests.behavioral_lift.observations import observe_simulate
+    import json
+    def step(value):
+        return {'state-changes': [{'app-state-type': 'b', 'key': 'eA==', 'operation': 'w',
+                                   'new-value': {'type': 1, 'bytes': value}}]}
+    response = _simulation([step('YQ==')])
+    response['txn-groups'][0]['txn-results'].extend(_simulation([step('Yg==')])['txn-groups'][0]['txn-results'])
+    states = json.loads(observe_simulate(response).effects)['states']
+    assert len(states) == 1 and states[0][1]['bytes'] == 'Yg=='
+
+
+def test_update_installed_program_is_an_observable_effect():
+    from tests.behavioral_lift.observations import observe_simulate
+    response = _simulation([])
+    body = response['txn-groups'][0]['txn-results'][0]['txn-result']['txn']['txn']
+    body.update(apan=4, apap='old', apsu='clear')
+    original = observe_simulate(response)
+    body['apap'] = 'new'
+    assert original.effects != observe_simulate(response).effects
+
+
+@pytest.mark.parametrize('indices', [[-1], [1], ['0'], [0, 0]])
+def test_invalid_inner_trace_indices_are_errors(indices):
+    from tests.behavioral_lift.observations import observe_simulate
+    response = _simulation([{'spawned-inners': indices}], [{'txn': {'txn': {'type': 'pay'}}}])
+    with pytest.raises(ValueError, match='inner trace index'):
+        observe_simulate(response)
+
+
+def test_missing_group_member_and_clear_rollback_cannot_pass():
+    from tests.behavioral_lift.observations import observe_simulate
+    response = _simulation([])
+    response['txn-groups'][0]['txn-results'].append({})
+    with pytest.raises(ValueError, match='transaction result'):
+        observe_simulate(response)
+    response['txn-groups'][0]['txn-results'].pop()
+    response['txn-groups'][0]['txn-results'][0]['exec-trace']['clear-state-rollback'] = True
+    observation = observe_simulate(response)
+    assert compare_cases([0], lambda _: (observation, observation), required=frozenset({'boxes'}))['status'] == 'INCONCLUSIVE'
+
+
+def test_groups_and_lifecycle_need_a_simulation_fixture():
+    assert {'transaction-groups', 'lifecycle'} <= required_effects('txn OnCompletion\ngtxn 1 Amount')
+
+
+def test_outer_payment_fields_are_compared():
+    from tests.behavioral_lift.observations import observe_simulate
+    response = _simulation([])
+    body = response['txn-groups'][0]['txn-results'][0]['txn-result']['txn']['txn']
+    body.clear()
+    body.update(type='pay', amt=7)
+    original = observe_simulate(response)
+    body['amt'] = 8
+    assert original.effects != observe_simulate(response).effects
+
+
+def test_mismatched_group_inputs_are_rejected_before_execution():
+    from types import SimpleNamespace
+    from tests.behavioral_lift.simulate import compare_groups
+    def txn(body):
+        return SimpleNamespace(dictify=lambda: body)
+    original = [txn({'type': 'appl', 'apap': b'original'}), txn({'type': 'pay', 'amt': 7})]
+    lifted = [txn({'type': 'appl', 'apap': b'lifted'}), txn({'type': 'pay', 'amt': 8})]
+    with pytest.raises(ValueError, match='different inputs'):
+        compare_groups(None, original, lifted, round=0)

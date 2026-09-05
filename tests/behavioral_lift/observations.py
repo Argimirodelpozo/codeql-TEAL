@@ -81,30 +81,34 @@ def required_effects(*programs: str) -> frozenset[str]:
                 required.add('exported-scratch')
             if op == 'app_params_set':
                 required.add('app-parameters')
+            if op.startswith(('gtxn', 'gload')):
+                required.add('transaction-groups')
+            if op == 'txn' and len(words) > 1 and words[1] in {'ApplicationID', 'OnCompletion'}:
+                required.add('lifecycle')
     return frozenset(required)
 
 
 def observe_simulate(response):
-    """One app transaction, including recursive inner effects and final scratch.
+    """One atomic group, including recursive inner effects and final scratch.
 
     AVM 13 foreign-box owner identity is not encoded in the state-change row;
     those programs require a ledger snapshot adapter and remain inconclusive.
     """
     groups = response.get('txn-groups', ())
-    if 'version' not in response or len(groups) != 1 or len(groups[0].get('txn-results', ())) != 1:
-        raise ValueError('simulation did not return one complete transaction result')
+    if 'version' not in response or len(groups) != 1 or not groups[0].get('txn-results'):
+        raise ValueError('simulation did not return one complete transaction group')
     group = groups[0]
     approved = not group.get('failure-message') and not group.get('failed-at')
     config = response.get('exec-trace-config') or {}
-    available = {'logs', 'global', 'local', 'inner-transactions'}
+    available = {'logs', 'global', 'local', 'inner-transactions', 'transaction-groups', 'lifecycle'}
     trace_complete = config.get('enable') and config.get('scratch-change') and config.get('state-change')
     states, scratch = {}, {}
 
-    def transaction(result, trace, path):
+    def transaction(result, trace, path, *, root=False):
         nonlocal trace_complete
         body = (result.get('txn') or {}).get('txn', {})
-        if not body.get('type') or (not path and body['type'] != 'appl'):
-            raise ValueError('simulation omitted the application transaction body')
+        if not body.get('type') or (root and body['type'] not in {'appl', 'pay'}):
+            raise ValueError('simulation omitted a supported transaction body')
         app = body.get('apid') or result.get('application-index')
         inners = result.get('inner-txns') or ()
         inner_traces = trace.get('inner-trace') or ()
@@ -136,16 +140,31 @@ def observe_simulate(response):
         # exported scratch state. Paths keep distinct transaction scratch banks.
         scratch[str(path)] = sorted((slot, value) for slot, value in slots.items()
                                    if value.get('type') != 2 or value.get('uint', 0) != 0)
-        return {'txn': body if path else None, 'logs': result.get('logs') or [],
+        lifecycle = None
+        if body['type'] == 'appl':
+            lifecycle = {'app': app, 'action': body.get('apan', 0)}
+            if body.get('apan') == 4:
+                lifecycle.update(approval=body.get('apap'), clear=body.get('apsu'))
+            if root and body.get('apid'):
+                available.add('existing-app-state')
+        observed_body = dict(body)
+        if root:
+            # Group hashes change with approval code even when all inputs match.
+            observed_body.pop('grp', None)
+            if body['type'] == 'appl' and not body.get('apid'):
+                observed_body.pop('apap', None)
+        return {'txn': observed_body, 'logs': result.get('logs') or [],
                 'global': _delta(result.get('global-state-delta')),
                 'local': sorted((d['address'], _delta(d['delta'])) for d in result.get('local-state-delta', ())),
                 'inner': inner_effects, 'created-app': result.get('application-index'),
-                'created-asset': result.get('asset-index')}
+                'created-asset': result.get('asset-index'), 'lifecycle': lifecycle}
 
-    root = group['txn-results'][0]
-    if 'txn-result' not in root:
-        raise ValueError('simulation omitted transaction result')
-    effects = transaction(root['txn-result'], root.get('exec-trace') or {}, ())
+    roots = []
+    for index, root in enumerate(group['txn-results']):
+        if 'txn-result' not in root:
+            raise ValueError('simulation omitted transaction result')
+        roots.append(transaction(root['txn-result'], root.get('exec-trace') or {}, (index,), root=True))
+    effects = roots[0] if len(roots) == 1 else {'transactions': roots}
     if trace_complete:
         available.update(('boxes', 'exported-scratch'))
         effects['states'] = sorted((str(k), v) for k, v in states.items())

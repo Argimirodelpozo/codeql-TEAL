@@ -372,6 +372,23 @@ def _fold_logical(op: str, operands: list[Const]) -> Optional[Const]:
 # --- Dispatch --------------------------------------------------------------
 
 
+def try_fold_outputs(a: Assignment) -> Optional[tuple[Const, ...]]:
+    """All constant outputs in SSA top-first order, or no complete fold."""
+    if len(a.outputs) == 1:
+        value = try_fold_assignment(a)
+        return (value,) if value is not None else None
+    if a.op not in {'addw', 'mulw'} or len(a.inputs) != 2 or len(a.outputs) != 2:
+        return None
+    values = [_int_from_const(item if isinstance(item, Const) else getattr(item, 'const_value', None))
+              for item in a.inputs]
+    if any(value is None or not 0 <= value <= _UINT64_MAX for value in values):
+        return None
+    right, left = values
+    wide = left + right if a.op == 'addw' else left * right
+    high, low = divmod(wide, 1 << 64)
+    return _int_const(low), _int_const(high)
+
+
 def try_fold_assignment(a: Assignment) -> Optional[Const]:
     """The :class:`Const` computed for a foldable single-output opcode whose every
     input is statically known, else ``None``."""

@@ -8,7 +8,7 @@ its validation remain recorded in `REVIEW_IMPLEMENTATION.md`.
 - [x] Connect storage-authority provenance and explicit guard evidence to existing detectors.
 - [x] Fix or precisely classify the 7 unresolved return slots, 13 missing operands, and 10 shared execution blocks in the corpus census.
 - [x] Consolidate guard/fact consumers, retire redundant paths, and reduce oversized modules.
-- [ ] Expand independent behavioral fixtures, add an unseen family evaluation, and improve taint/callee-effect coverage.
+- [x] Expand independent behavioral fixtures, add an unseen family evaluation, and improve taint/callee-effect coverage.
 - [ ] Deepen authority, box permissions, relational groups, crypto/replay, lifecycle, conservation, resource sufficiency/recoverability, and revision compatibility analyses.
 - [x] Secondary priority: loop invariants, numeric call summaries, relational intervals, and divisibility/bit integration.
 - [ ] Validate the final core/backend/node behavior and full suite; record classified baseline changes and remaining limits.
@@ -129,3 +129,37 @@ Validation includes 228 integration checks, 97 core-only checks, and independent
 integer oracles over loops and uint64 arithmetic. The 231-program offline finding
 comparison remains unchanged without crashes. Expanded node observations and the
 remaining SAST inference work continue below these completed numeric fragments.
+
+Behavioral and independent evaluation
+-------------------------------------
+
+The simulator compares full atomic groups established by a creation prefix at
+one pinned ledger round. Original and lifted transaction inputs must match
+apart from the initial approval code. Six group fixtures exercise existing
+global/local state, boxes, inner payments, scratch sharing, group fields, and
+lifecycle transitions. Five numeric fixtures compare known concrete outputs;
+the earlier creation and deliberate-state-change fixtures remain in the gate.
+Foreign-box ownership, application-parameter changes, and clear-state rollback
+still require richer observations and remain inconclusive.
+
+The concrete callee oracle found reversed multi-output identities in residual
+summaries. Wide arithmetic now retains stack order, and constant `addw`/`mulw`
+outputs can be rematerialized across the call. A private interpreter regression
+first diverged and now matches the original's expected values. The taint graph's
+capped path queries now select the shortest paths before truncation, including
+across source/sink pairs; exhaustive permutation oracles check the result.
+
+Six upstream examples were frozen before evaluation and have distinct syntax
+families absent from the existing corpus. `EXTERNAL_EVALUATION.md` preserves the
+first adapter failure and the completed evaluation without claiming a reused
+holdout. All six parse and recompile without representation gaps or backend
+diagnostics, and all 24 default app detectors complete. Exact policy finding
+locations are recorded without treating them as verified vulnerabilities.
+
+Validation: 173 focused tests passed; combined statement/branch coverage in that
+run is 78% for the taint graph and 82% for callee effects. Core-only validation
+passed 111 tests with six external skips. All 25 private runtime/assembler tests
+passed; the external gate and observation tests add 34 passes. All 15 external
+provenance/evaluation/assembly checks also passed against the private node. The 231-program
+finding comparison remains unchanged with no crashes. Final full-suite validation
+and the deeper eight-direction SAST work remain outstanding.

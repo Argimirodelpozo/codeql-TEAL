@@ -94,6 +94,31 @@ def _assign(op: str, *const_inputs: Const) -> Assignment:
     )
 
 
+def test_wide_constant_outputs_match_uint128_arithmetic():
+    from itertools import product
+    from tealql.tealtools.ssa.const_fold import try_fold_outputs
+    values = [0, 1, 3, 2 ** 32 - 1, 2 ** 32, 2 ** 63, UMAX]
+    for op, left, right in product(('addw', 'mulw'), values, values):
+        assignment = _assign(op, _c(left), _c(right))
+        assignment.outputs.append(SSAVar('f.teal', 1, 2))
+        low, high = map(_val, try_fold_outputs(assignment))
+        assert high * 2 ** 64 + low == (left + right if op == 'addw' else left * right)
+        assert 0 <= low <= UMAX and 0 <= high <= UMAX
+        assert try_fold_assignment(assignment) is None  # single-output API remains unambiguous
+
+
+def test_wide_folding_refuses_invalid_or_unknown_inputs_and_output_layouts():
+    from tealql.tealtools.ssa.const_fold import try_fold_outputs
+    for bad in (_c(-1), _c(2 ** 64), Const('bytes', '0x00'), SSAVar('f.teal', 2, 1)):
+        assignment = _assign('mulw', bad, _c(3))
+        assignment.outputs.append(SSAVar('f.teal', 1, 2))
+        assert try_fold_outputs(assignment) is None
+    for inputs, outputs in ((1, 2), (2, 1), (2, 3)):
+        assignment = _assign('mulw', *[_c(3)] * inputs)
+        assignment.outputs = [SSAVar('f.teal', 1, index + 1) for index in range(outputs)]
+        assert try_fold_outputs(assignment) is None
+
+
 class TestDispatch:
     def test_bitwise_routed(self):
         assert _val(try_fold_assignment(_assign("&", _c(0xFF), _c(0x0F)))) == 0x0F

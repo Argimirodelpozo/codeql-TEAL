@@ -205,7 +205,10 @@ def summarize(callee, body, proto) -> "Summary | None":
                 refused = True
                 return
             del virtual[len(virtual) - n_in:]
-            virtual.extend(o.outputs)
+            # Output identities are top-first; the virtual stack is bottom-first.
+            # Wide arithmetic and existence/value pairs must retain their order
+            # when a later shuffle moves an output into the caller's residual.
+            virtual.extend(reversed(o.outputs))
 
         last = b.ops[-1].op if b.ops else None
         if last == "retsub":

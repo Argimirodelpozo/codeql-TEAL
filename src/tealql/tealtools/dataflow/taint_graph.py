@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
+from heapq import merge
+from itertools import islice
 from typing import Callable, Iterable, Iterator, Optional
 
 import networkx as nx
@@ -162,16 +164,18 @@ class TaintGraph(NxGraphView):
         max_length: Optional[int] = None,
     ) -> list[list[Node]]:
         """Simple paths ``src`` to ``dst``, shortest-first, capped at ``max_paths``."""
+        return list(islice(self._shortest_paths(src, dst, max_length), max(0, max_paths)))
+
+    def _shortest_paths(self, src, dst, max_length):
         if src not in self.g or dst not in self.g:
-            return []
-        out: list[list[Node]] = []
-        cutoff = max_length if max_length is not None else None
-        for path in nx.all_simple_paths(self.g, src, dst, cutoff=cutoff):
-            out.append(list(path))
-            if len(out) >= max_paths:
-                break
-        out.sort(key=len)
-        return out
+            return
+        try:
+            for path in nx.shortest_simple_paths(self.g, src, dst):
+                if max_length is not None and len(path) - 1 > max_length:
+                    break
+                yield path
+        except nx.NetworkXNoPath:
+            return
 
     def find(
         self,
@@ -230,18 +234,11 @@ class TaintGraph(NxGraphView):
     ) -> list[list[Node]]:
         """Simple paths from any ``srcs`` node to any ``dsts`` node, shortest-first,
         capped at ``max_paths`` across ALL pairs."""
-        out: list[list[Node]] = []
-        srcs_list = [s for s in srcs if s in self.g]
-        dsts_set = {d for d in dsts if d in self.g}
-        for s in srcs_list:
-            for d in dsts_set:
-                for path in self.paths(s, d, max_paths=max_paths, max_length=max_length):
-                    out.append(path)
-                    if len(out) >= max_paths:
-                        out.sort(key=len)
-                        return out
-        out.sort(key=len)
-        return out
+        srcs_list = dict.fromkeys(s for s in srcs if s in self.g)
+        dsts_list = dict.fromkeys(d for d in dsts if d in self.g)
+        paths = merge(*(self._shortest_paths(s, d, max_length)
+                        for s in srcs_list for d in dsts_list), key=len)
+        return list(islice(paths, max(0, max_paths)))
 
     # --- refinement ---------------------------------------------------
 

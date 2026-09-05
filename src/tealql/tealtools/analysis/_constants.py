@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from ..ssa import Const, Phi, SSAProgram, SSAVar
-from ..ssa.const_fold import try_fold_assignment
+from ..ssa.const_fold import try_fold_outputs
 
 
 def propagate_constants(prog: SSAProgram) -> None:
@@ -55,12 +55,11 @@ def propagate_constants(prog: SSAProgram) -> None:
                 snk.const_value = src.const_value
                 changed = True
         for a in prog.assignments:
-            if len(a.outputs) != 1:
+            if not a.outputs or all(out.const_value is not None for out in a.outputs):
                 continue
-            out = a.outputs[0]
-            if not isinstance(out, SSAVar) or out.const_value is not None:
-                continue
-            folded = try_fold_assignment(a)
+            folded = try_fold_outputs(a)
             if folded is not None:
-                out.const_value = folded
-                changed = True
+                for out, value in zip(a.outputs, folded, strict=True):
+                    if out.const_value is None:
+                        out.const_value = value
+                        changed = True

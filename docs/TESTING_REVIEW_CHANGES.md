@@ -4,7 +4,7 @@ The corpus completion manifest contains 857 distinct parser inputs and 231
 distinct representation inputs. Every input has a named pytest case. Unexpected
 load failures fail the case; regeneration rejects parse diagnostics and failed
 construction. Per-program ceilings prevent an improvement elsewhere from hiding
-a regression. The representation census is 7 unresolved return slots, 13 missing
+a regression. The follow-up representation census is 0 unresolved return slots, 13 missing
 operands, 10 shared execution blocks, and 97,077 examined operations. These are
 measured limits, not claims that the representation is complete.
 
@@ -20,6 +20,11 @@ split for future work, **not an independent holdout**: the existing corpus has
 already influenced development. Accuracy claims require separately reviewed,
 unseen families. The current curated benchmark and mutation gates retain their
 original scope.
+
+`EXTERNAL_EVALUATION.md` records a separately acquired six-family evaluation,
+including pinned provenance, the first attempt's adapter failure, the corrected
+result, and its limits. Those inputs are now regression fixtures, not a reusable
+claim of unseen evaluation.
 
 Interval kernel properties use independent Python mathematical semantics for
 successful uint64 operations. CFG tests cover guards, joins, loop backedges,
@@ -50,18 +55,25 @@ read-only simulation against the same ledger round for both programs. It compare
 ordered logs, global/local deltas, recursive inner-transaction fields, box changes,
 and final exported scratch when the trace exposes them. Foreign-box owner
 identity and application-parameter changes remain unobserved and therefore
-inconclusive. It compares successful **creation** behavior only; arbitrary
-existing-app behavior needs a separately supplied ledger fixture. Approve/clear
-versions must match, and the current backend emits at least AVM 10.
+inconclusive. One atomic group establishes an app, its funded account, and state
+before subsequent calls. Both variants use identical inputs apart from initial
+approval code; repeated calls have distinct matching transaction notes. Group
+hashes and the initial approval bytes are excluded from effect comparison,
+while other transaction fields and installed update code remain observable.
+The current backend emits at least AVM 10.
 
 The scheduled/manual workflow pins the official go-algorand 5.0 image by digest,
 uses a disposable private network bound to localhost, and installs the locked
-`behavioral` SDK extra. Its five initial tests cover arithmetic (including uint64
-shift wraparound), logs, global/local writes, and detection of a changed state
-value. They passed against the pinned image locally. This does not establish
-behavioral equivalence for the full corpus.
-The workflow also runs the nine existing assembler differential checks; the
-combined 14-test command passed locally.
+`behavioral` SDK extra. Its 16 runtime tests cover creation, global state across
+calls, box write/read/delete, inner payments, group fields, exported scratch,
+opt-in/close-out/clear/update/delete transitions, and numeric loops/calls. Expected
+logs independently check concrete values, including stride 12, multiple returns,
+frame replacement, and wide-arithmetic caller residuals. Deliberately changed
+state must diverge. The fixtures never submit a transaction.
+The workflow also runs nine assembler differential checks; the combined 25-test
+command passed locally. The external evaluation adds six original/lifted
+assembly checks. This does not establish equivalence for arbitrary initial
+ledger state, unsupported effects, or unexecuted input paths.
 
 ```sh
 uv sync --locked --extra dev --extra lift --extra behavioral
@@ -71,5 +83,5 @@ TEALQL_LOCALNET=1 ALGOD_ADDRESS=http://127.0.0.1:41980 \
 ```
 
 When the gate is explicitly enabled, unavailable infrastructure is a failure.
-Normal hermetic runs skip these five tests. The workflow supplies the node setup
+Normal hermetic runs skip the runtime tests. The workflow supplies the node setup
 and cleanup; existing public networks and accounts are not used.

@@ -1,0 +1,46 @@
+{
+  "repository": "https://github.com/algorandfoundation/puya",
+  "revision": "27751c364229ae3cd0334fe4071e61690b6879e4",
+  "frozen_at": "2026-09-05T17:45:17.660507+00:00",
+  "analyzer_base_commit": "fd9c2813b07b7c7513619d28218bdaebaa51a2e0",
+  "analyzer_worktree_modified": true,
+  "selection": "One default compiled example from six semantic categories, selected by path before running analysis.",
+  "programs": [
+    {
+      "upstream_path": "examples/arc_28/out/EventEmitter.approval.teal",
+      "filename": "EventEmitter.approval.teal",
+      "sha256": "b7b8c481f06d15effb2b8d3eb7d373114d3b006a02771ca21a89d9573b7624a2",
+      "url": "https://raw.githubusercontent.com/algorandfoundation/puya/27751c364229ae3cd0334fe4071e61690b6879e4/examples/arc_28/out/EventEmitter.approval.teal"
+    },
+    {
+      "upstream_path": "examples/local_state/out/LocalStateWithOffsets.approval.teal",
+      "filename": "LocalStateWithOffsets.approval.teal",
+      "sha256": "51fd80e1e4a35ebaa68a0654df5c521b5b2a403ac2b722dea1bee8464332571a",
+      "url": "https://raw.githubusercontent.com/algorandfoundation/puya/27751c364229ae3cd0334fe4071e61690b6879e4/examples/local_state/out/LocalStateWithOffsets.approval.teal"
+    },
+    {
+      "upstream_path": "examples/merkle/out/MerkleTree.approval.teal",
+      "filename": "MerkleTree.approval.teal",
+      "sha256": "050a84a9c226b5cc4d0ac137abd83cefb190eecef7e7fc42ca2e024b90270c48",
+      "url": "https://raw.githubusercontent.com/algorandfoundation/puya/27751c364229ae3cd0334fe4071e61690b6879e4/examples/merkle/out/MerkleTree.approval.teal"
+    },
+    {
+      "upstream_path": "examples/struct_in_box/out/ExampleContract.approval.teal",
+      "filename": "ExampleContract.approval.teal",
+      "sha256": "eeb26852453755a1d2ed7ba5b48eedbaf1be902ae1de82d6365c2ec4b976a715",
+      "url": "https://raw.githubusercontent.com/algorandfoundation/puya/27751c364229ae3cd0334fe4071e61690b6879e4/examples/struct_in_box/out/ExampleContract.approval.teal"
+    },
+    {
+      "upstream_path": "examples/tictactoe/out/TicTacToeContract.approval.teal",
+      "filename": "TicTacToeContract.approval.teal",
+      "sha256": "36b67605a8285bc32f974f9893d4cdb28b08eee7331127d076fd2e6af7161fa2",
+      "url": "https://raw.githubusercontent.com/algorandfoundation/puya/27751c364229ae3cd0334fe4071e61690b6879e4/examples/tictactoe/out/TicTacToeContract.approval.teal"
+    },
+    {
+      "upstream_path": "examples/voting/out/VotingRoundApp.approval.teal",
+      "filename": "VotingRoundApp.approval.teal",
+      "sha256": "a484508e59c411e0625c14da9b94183cc3007f98c02fea0d1f5fc4bb575f06f2",
+      "url": "https://raw.githubusercontent.com/algorandfoundation/puya/27751c364229ae3cd0334fe4071e61690b6879e4/examples/voting/out/VotingRoundApp.approval.teal"
+    }
+  ]
+}

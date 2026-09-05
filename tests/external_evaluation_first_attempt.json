@@ -1,0 +1,685 @@
+{
+  "profiles": {
+    "EventEmitter.approval.teal": {
+      "calls": "none",
+      "family": "b71d7e4c487a6782",
+      "frame": false,
+      "partition": "development",
+      "router": "match",
+      "scratch": false,
+      "unseen_syntax_family": true,
+      "version": 11
+    },
+    "ExampleContract.approval.teal": {
+      "calls": "none",
+      "family": "b839bfce5c0f76c0",
+      "frame": false,
+      "partition": "reserved",
+      "router": "match",
+      "scratch": false,
+      "unseen_syntax_family": true,
+      "version": 11
+    },
+    "LocalStateWithOffsets.approval.teal": {
+      "calls": "none",
+      "family": "b15b8e573fbef63f",
+      "frame": false,
+      "partition": "development",
+      "router": "branch",
+      "scratch": false,
+      "unseen_syntax_family": true,
+      "version": 11
+    },
+    "MerkleTree.approval.teal": {
+      "calls": "none",
+      "family": "6ba92ba40add19d2",
+      "frame": false,
+      "partition": "development",
+      "router": "match",
+      "scratch": false,
+      "unseen_syntax_family": true,
+      "version": 11
+    },
+    "TicTacToeContract.approval.teal": {
+      "calls": "proto",
+      "family": "887211936be4b813",
+      "frame": true,
+      "partition": "development",
+      "router": "match",
+      "scratch": false,
+      "unseen_syntax_family": true,
+      "version": 11
+    },
+    "VotingRoundApp.approval.teal": {
+      "calls": "proto",
+      "family": "fa59e25688b14494",
+      "frame": true,
+      "partition": "reserved",
+      "router": "switch",
+      "scratch": false,
+      "unseen_syntax_family": true,
+      "version": 11
+    }
+  },
+  "programs": {
+    "EventEmitter.approval.teal": {
+      "backend": {
+        "diagnostics": [],
+        "emitted": true,
+        "lines": 98
+      },
+      "detectors": {
+        "abi-method-selector": {
+          "degraded": [],
+          "findings": "27"
+        },
+        "arbitrary-inner-appcall": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "arbitrary-inner-asset": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "box-key": {
+          "degraded": [],
+          "findings": ""
+        },
+        "constant-condition": {
+          "degraded": [],
+          "findings": ""
+        },
+        "delete-funds-check": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "group-size-check": {
+          "degraded": [],
+          "findings": ""
+        },
+        "hardcoded-min-balance": {
+          "degraded": [],
+          "findings": ""
+        },
+        "inner-txn-close-rekey": {
+          "degraded": [],
+          "findings": ""
+        },
+        "inner-txn-fee": {
+          "degraded": [],
+          "findings": ""
+        },
+        "is-deletable": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "is-updatable": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "partial-tainted-fund-flow": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-asset-admin": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-fee": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-freeze": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-fund-flow": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-log": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-state-write": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "timelock-upgrade": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "unprotected-deletable": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "unprotected-updatable": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "unsafe-division-order": {
+          "degraded": [],
+          "findings": ""
+        },
+        "unvalidated-group-sibling": {
+          "degraded": [],
+          "findings": ""
+        }
+      },
+      "health": {
+        "complete": true,
+        "notifications": []
+      },
+      "parse": {
+        "diagnostics": []
+      },
+      "representation": {
+        "examined": 54,
+        "missing": 0,
+        "shared": 0,
+        "unresolved": 0
+      }
+    },
+    "ExampleContract.approval.teal": {
+      "backend": {
+        "diagnostics": [],
+        "emitted": true,
+        "lines": 105
+      },
+      "detectors": {
+        "abi-method-selector": {
+          "degraded": [],
+          "findings": "27"
+        },
+        "arbitrary-inner-appcall": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "arbitrary-inner-asset": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "box-key": {
+          "degraded": [],
+          "findings": ""
+        },
+        "constant-condition": {
+          "degraded": [],
+          "findings": ""
+        },
+        "delete-funds-check": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "group-size-check": {
+          "degraded": [],
+          "findings": ""
+        },
+        "hardcoded-min-balance": {
+          "degraded": [],
+          "findings": ""
+        },
+        "inner-txn-close-rekey": {
+          "degraded": [],
+          "findings": ""
+        },
+        "inner-txn-fee": {
+          "degraded": [],
+          "findings": ""
+        },
+        "is-deletable": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "is-updatable": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "partial-tainted-fund-flow": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-asset-admin": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-fee": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-freeze": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-fund-flow": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-log": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-state-write": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "timelock-upgrade": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "unprotected-deletable": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "unprotected-updatable": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "unsafe-division-order": {
+          "degraded": [],
+          "findings": ""
+        },
+        "unvalidated-group-sibling": {
+          "degraded": [],
+          "findings": ""
+        }
+      },
+      "health": {
+        "complete": true,
+        "notifications": []
+      },
+      "parse": {
+        "diagnostics": []
+      },
+      "representation": {
+        "examined": 64,
+        "missing": 0,
+        "shared": 0,
+        "unresolved": 0
+      }
+    },
+    "LocalStateWithOffsets.approval.teal": {
+      "backend": {
+        "diagnostics": [],
+        "emitted": true,
+        "lines": 112
+      },
+      "detectors": {
+        "abi-method-selector": {
+          "degraded": [],
+          "findings": "16,79,151"
+        },
+        "arbitrary-inner-appcall": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "arbitrary-inner-asset": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "box-key": {
+          "degraded": [],
+          "findings": ""
+        },
+        "constant-condition": {
+          "degraded": [],
+          "findings": ""
+        },
+        "delete-funds-check": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "group-size-check": {
+          "degraded": [],
+          "findings": ""
+        },
+        "hardcoded-min-balance": {
+          "degraded": [],
+          "findings": ""
+        },
+        "inner-txn-close-rekey": {
+          "degraded": [],
+          "findings": ""
+        },
+        "inner-txn-fee": {
+          "degraded": [],
+          "findings": ""
+        },
+        "is-deletable": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "is-updatable": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "partial-tainted-fund-flow": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-asset-admin": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-fee": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-freeze": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-fund-flow": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-log": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-state-write": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "timelock-upgrade": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "unprotected-deletable": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "unprotected-updatable": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "unsafe-division-order": {
+          "degraded": [],
+          "findings": ""
+        },
+        "unvalidated-group-sibling": {
+          "degraded": [],
+          "findings": ""
+        }
+      },
+      "health": {
+        "complete": true,
+        "notifications": []
+      },
+      "parse": {
+        "diagnostics": []
+      },
+      "representation": {
+        "examined": 43,
+        "missing": 0,
+        "shared": 0,
+        "unresolved": 0
+      }
+    },
+    "MerkleTree.approval.teal": {
+      "backend": {
+        "diagnostics": [],
+        "emitted": true,
+        "lines": 120
+      },
+      "detectors": {
+        "abi-method-selector": {
+          "degraded": [],
+          "findings": ""
+        },
+        "arbitrary-inner-appcall": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "arbitrary-inner-asset": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "box-key": {
+          "degraded": [],
+          "findings": ""
+        },
+        "constant-condition": {
+          "degraded": [],
+          "findings": ""
+        },
+        "delete-funds-check": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "group-size-check": {
+          "degraded": [],
+          "findings": ""
+        },
+        "hardcoded-min-balance": {
+          "degraded": [],
+          "findings": ""
+        },
+        "inner-txn-close-rekey": {
+          "degraded": [],
+          "findings": ""
+        },
+        "inner-txn-fee": {
+          "degraded": [],
+          "findings": ""
+        },
+        "is-deletable": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "is-updatable": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "partial-tainted-fund-flow": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-asset-admin": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-fee": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-freeze": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-fund-flow": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-log": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-state-write": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "timelock-upgrade": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "unprotected-deletable": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "unprotected-updatable": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "unsafe-division-order": {
+          "degraded": [],
+          "findings": ""
+        },
+        "unvalidated-group-sibling": {
+          "degraded": [],
+          "findings": ""
+        }
+      },
+      "health": {
+        "complete": true,
+        "notifications": []
+      },
+      "parse": {
+        "diagnostics": []
+      },
+      "representation": {
+        "examined": 57,
+        "missing": 0,
+        "shared": 0,
+        "unresolved": 0
+      }
+    },
+    "TicTacToeContract.approval.teal": {
+      "backend": {
+        "diagnostics": [],
+        "emitted": true,
+        "lines": 380
+      },
+      "detectors": {
+        "abi-method-selector": {
+          "degraded": [],
+          "findings": ""
+        },
+        "arbitrary-inner-appcall": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "arbitrary-inner-asset": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "box-key": {
+          "degraded": [],
+          "findings": ""
+        },
+        "constant-condition": {
+          "degraded": [],
+          "findings": ""
+        },
+        "delete-funds-check": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "group-size-check": {
+          "degraded": [],
+          "findings": ""
+        },
+        "hardcoded-min-balance": {
+          "degraded": [],
+          "findings": ""
+        },
+        "inner-txn-close-rekey": {
+          "degraded": [],
+          "findings": ""
+        },
+        "inner-txn-fee": {
+          "degraded": [],
+          "findings": ""
+        },
+        "is-deletable": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "is-updatable": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "partial-tainted-fund-flow": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-asset-admin": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-fee": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-freeze": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-fund-flow": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-log": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-state-write": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "timelock-upgrade": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "unprotected-deletable": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "unprotected-updatable": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "unsafe-division-order": {
+          "degraded": [],
+          "findings": ""
+        },
+        "unvalidated-group-sibling": {
+          "degraded": [],
+          "findings": ""
+        }
+      },
+      "health": {
+        "complete": true,
+        "notifications": []
+      },
+      "parse": {
+        "diagnostics": []
+      },
+      "representation": {
+        "examined": 178,
+        "missing": 0,
+        "shared": 0,
+        "unresolved": 0
+      }
+    },
+    "VotingRoundApp.approval.teal": {
+      "backend": {
+        "diagnostics": [],
+        "emitted": true,
+        "lines": 762
+      },
+      "detectors": {
+        "abi-method-selector": {
+          "degraded": [],
+          "findings": "832"
+        },
+        "arbitrary-inner-appcall": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "arbitrary-inner-asset": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "box-key": {
+          "degraded": [],
+          "findings": ""
+        },
+        "constant-condition": {
+          "degraded": [],
+          "findings": ""
+        },
+        "delete-funds-check": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "group-size-check": {
+          "degraded": [],
+          "findings": ""
+        },
+        "hardcoded-min-balance": {
+          "degraded": [],
+          "findings": ""
+        },
+        "inner-txn-close-rekey": {
+          "degraded": [],
+          "findings": ""
+        },
+        "inner-txn-fee": {
+          "degraded": [],
+          "findings": ""
+        },
+        "is-deletable": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "is-updatable": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "partial-tainted-fund-flow": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-asset-admin": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-fee": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-freeze": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-fund-flow": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-log": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "tainted-state-write": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "timelock-upgrade": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "unprotected-deletable": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "unprotected-updatable": {
+          "error": "TypeError: 'NoneType' object is not iterable"
+        },
+        "unsafe-division-order": {
+          "degraded": [],
+          "findings": ""
+        },
+        "unvalidated-group-sibling": {
+          "degraded": [],
+          "findings": ""
+        }
+      },
+      "health": {
+        "complete": true,
+        "notifications": []
+      },
+      "parse": {
+        "diagnostics": []
+      },
+      "representation": {
+        "examined": 411,
+        "missing": 0,
+        "shared": 0,
+        "unresolved": 0
+      }
+    }
+  },
+  "source_digest": "e91c6e6830aeb93a59ee4745c6a11f65056d7f46bd68fa2b68d5c435e8eea776"
+}
