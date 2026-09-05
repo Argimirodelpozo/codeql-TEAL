@@ -124,6 +124,12 @@ box state. It cannot establish that a caller can obtain the extra credit or that
 the application will accept the retry. See [SAST_INFERENCE.md](SAST_INFERENCE.md)
 for the operation fragment and conservative accounting rules.
 
+`tealql dump --list-views` includes `analysis.authority`, `analysis.congruences`,
+`analysis.numeric_calls`, `analysis.resource_bounds` and
+`analysis.xcontract_health`. The resource view retains unknown environmental
+credit, and the call-health view requires an AppID registry. Neither invents a
+closed environment to turn an unknown into a proof.
+
 `tealql.security.compatibility.compare_contracts(before, after)` accepts normalized
 maps for `methods`, `storage`, `permissions`, and per-method `effects`. It checks
 preservation of old signatures, storage entries and permissions, and prevents

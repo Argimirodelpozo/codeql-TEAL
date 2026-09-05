@@ -201,3 +201,11 @@ of total fields. Timestamp lookups and current-transaction effect reads can
 fail even when their values are discarded. All 38 revision tests pass, and three
 additional private controls confirm those interpreter failures. The first full
 run was deliberately interrupted so the complete gate can include this fix.
+
+The visualization inventory then identified nine modules added during these
+milestones that still needed catalog decisions. New scalar views expose
+authority premises, congruences, numeric call results, resource bounds and
+cross-contract health; shared helpers have explicit support classifications.
+All ten catalog tests pass both with and without Puya, including rendering every
+view/graph and semantic checks of the new results. The second full run was
+interrupted to include this integration in the final gate.

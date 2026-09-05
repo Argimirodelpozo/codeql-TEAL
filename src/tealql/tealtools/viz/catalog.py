@@ -990,6 +990,15 @@ def _xcontract_text(ctx: VisualizationContext) -> str:
     )
 
 
+def _xcontract_health_text(ctx: VisualizationContext) -> str:
+    from ..intercontract.health import call_graph_health
+    graph = _xcontract_graph(ctx)
+    if graph is None:
+        return 'UNKNOWN: an AppID registry is required to check omitted and unresolved call edges'
+    health = call_graph_health(graph)
+    return '\n'.join(health.messages()) or 'complete: every identified call edge is resolved'
+
+
 def _cross_auth_text(ctx: VisualizationContext) -> str:
     from ..intercontract.analysis import cross_auth_findings
 
@@ -1090,6 +1099,7 @@ def _build_catalog() -> tuple[ViewSpec, ...]:
     from ..cfg import CFG
     from . import render as graph_render
     from .graphs import pre_ir_to_dot, pyssa_to_dot, structure_to_dot
+    from .policy_views import authority_text, congruences_text, numeric_calls_text, resource_bounds_text
 
     views: list[ViewSpec] = [
         ViewSpec("repr.source", "Source snapshot", ViewKind.REPRESENTATION,
@@ -1148,6 +1158,21 @@ def _build_catalog() -> tuple[ViewSpec, ...]:
         ))
 
     views.extend([
+        ViewSpec("analysis.authority", "Authority provenance", ViewKind.ANALYSIS,
+                 "Address and storage-writer evidence with initialization/history premises.",
+                 authority_text, graph_reason='Conditional proofs are attached to individual source values.'),
+        ViewSpec("analysis.congruences", "Inductive numeric residues", ViewKind.ANALYSIS,
+                 "Exact values and modular invariants on successful arithmetic.",
+                 congruences_text, graph_reason='Each SSA value has a scalar modulus/residue fact.'),
+        ViewSpec("analysis.numeric_calls", "Numeric call summaries", ViewKind.ANALYSIS,
+                 "Call-specific return bounds, congruences and explicit refusal reasons.",
+                 numeric_calls_text, graph_reason='Results are indexed by call instruction and ABI return slot.'),
+        ViewSpec("analysis.resource_bounds", "Quantitative resource bounds", ViewKind.ANALYSIS,
+                 "Conservative trace requirements with unknown environmental credit.",
+                 resource_bounds_text, graph_reason='Available credit and retry state must be supplied to the Python resource API.'),
+        ViewSpec("analysis.xcontract_health", "Call graph completeness", ViewKind.ANALYSIS,
+                 "Unresolved, omitted and depth-limited inner application calls.",
+                 _xcontract_health_text, graph_reason='Completeness diagnostics describe omitted call edges.', requires_registry=True),
         ViewSpec("analysis.scratch", "Scratch influence", ViewKind.ANALYSIS,
                  "MAY reaching values and dynamic selector influence.",
                  _scratch_text, _scratch_dot),

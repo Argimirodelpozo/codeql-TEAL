@@ -10,6 +10,10 @@ table fails immediately.
 MODULE_VIEW_COVERAGE: dict[str, tuple[str, ...]] = {
     "analysis._types": ("analysis.facts.ranges",),
     "analysis.intervals": ("analysis.facts.ranges",),
+    "analysis.authority": ("analysis.authority",),
+    "analysis.congruences": ("analysis.congruences",),
+    "analysis.numeric_calls": ("analysis.numeric_calls",),
+    "analysis.resource_sufficiency": ("analysis.resource_bounds",),
     "analysis.box_permissions": ("analysis.box_permissions",),
     "analysis.resource_requirements": ("analysis.resource_requirements",),
     "ast.protocol": ("repr.ast",),
@@ -66,6 +70,8 @@ MODULE_VIEW_COVERAGE: dict[str, tuple[str, ...]] = {
     "frontend.sources": ("repr.source",),
     "intercontract.analysis": ("analysis.xcontract_predicates",
                                "analysis.xcontract_auth", "repr.supercfg"),
+    "intercontract.health": ("analysis.xcontract_health",),
+    "intercontract.state_targets": ("analysis.xcontract_predicates", "repr.supercfg"),
     "language.constants": ("pass.ssa.constants",),
     "lift.arc4_recovery": ("analysis.abi",),
     "lift.backend": ("repr.puya_ir",),
@@ -105,6 +111,7 @@ MODULE_VIEW_COVERAGE: dict[str, tuple[str, ...]] = {
 
 
 NON_PRODUCT_MODULES: dict[str, str] = {
+    "analysis.execution_trace": "bounded physical-instruction walker shared by policy and resource consumers",
     "analysis.relations": "parameterized integer proof kernel consumed by security policy obligations",
     "language.spec": "pinned versioned metadata; consumed by represented analyses",
     "language.effects": "shared operand-role metadata; consumed by represented analyses",
@@ -115,6 +122,8 @@ NON_PRODUCT_MODULES: dict[str, str] = {
     "lift.__main__": "command wrapper around repr.pre_ir/repr.puya_ir",
     "lift._puya_compat": "dependency compatibility checks reported as analysis health",
     "lift.cache": "revision/file-keyed cache plumbing; no independent product",
+    "lift.authority": "lifted-value bridge to shared authority provenance; evidence belongs to its consumers",
+    "lift.guards": "guard classification and definition-walk helpers used by lifted findings and evidence",
     "lift.teal_const": "literal conversion plumbing; no independent product",
     "reporting.registry": "detector registration plumbing; findings are outside tealtools views",
 }

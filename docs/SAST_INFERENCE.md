@@ -51,6 +51,8 @@ The resource environment describes the invocation's remaining pooled credits
 and initial own-box inventory. The app and outer sender must already exist and
 meet their initial minimum balances. Missing credit yields `UNKNOWN`; an invalid
 inventory or unsupported effect makes every computed requirement unknown.
+Opcode operand validity (including types, indices and byte-result limits),
+signature validity and assertion success remain separate semantic obligations.
 The analysis admits fixed-cost scalar instructions, own `box_create`, `box_put`,
 `box_get`, `box_len`, `box_del`, `box_resize`, logs and constant inner payments.
 Inner payments require explicit zero fees, default app sender, no close/rekey

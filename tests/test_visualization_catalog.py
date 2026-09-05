@@ -186,6 +186,36 @@ def test_contextual_group_analysis_renders_when_ordered_members_are_supplied():
     assert "gload" in view.dot
 
 
+def test_policy_views_render_conditional_evidence_and_numeric_results():
+    source = {'policy.teal': '#pragma version 13\nbyte "owner"\napp_global_get\npop\n'
+              'global CreatorAddress\npop\ntxn Fee\nint 4\n*\npop\nint 3\ncallsub increment\nreturn\n'
+              'increment:\nproto 1 1\nframe_dig -1\nint 1\n+\nretsub'}
+    views = {v.spec.key: v for v in render_views(source, keys=[
+        'analysis.authority', 'analysis.congruences', 'analysis.numeric_calls'])}
+    assert all(v.text_error is None for v in views.values())
+    authority = views['analysis.authority'].text
+    assert 'PROVED' in authority and 'CONDITIONAL' in authority and 'assumptions=' in authority
+    assert 'modulus=4, residue=0' in views['analysis.congruences'].text
+    calls = views['analysis.numeric_calls'].text
+    assert 'slot=0' in calls and 'complete=True' in calls and 'residue=4' in calls
+
+
+def test_resource_view_and_call_health_keep_missing_environment_visible():
+    views = {v.spec.key: v for v in render_views(
+        {'simple.teal': '#pragma version 13\nint 1\nreturn'},
+        keys=['analysis.resource_bounds', 'analysis.xcontract_health'])}
+    assert all(v.text_error is None for v in views.values())
+    assert '"required": 4' in views['analysis.resource_bounds'].text
+    assert '"available": null' in views['analysis.resource_bounds'].text
+    assert '"status": "UNKNOWN"' in views['analysis.resource_bounds'].text
+    assert 'UNKNOWN' in views['analysis.xcontract_health'].text
+    unresolved = {'caller.teal': '#pragma version 13\nitxn_begin\nint appl\nitxn_field TypeEnum\n'
+                  'int 7\nitxn_field ApplicationID\nitxn_submit\nint 1\nreturn'}
+    view, = render_views(unresolved, keys=['analysis.xcontract_health'], registry={})
+    assert view.text_error is None
+    assert 'was not traversed' in view.text
+
+
 def test_dump_cli_lists_and_selects_views(tmp_path, capsys):
     assert main(["dump", "--list-views"]) == 0
     listing = capsys.readouterr().out

@@ -233,8 +233,10 @@ cannot satisfy the inventory check.
 | --- | --- |
 | `tealql.tealtools.ssa.SSAProgram` | SSA representation reconstructed from TEAL source. The foundation everything else consumes. |
 | `tealql.tealtools.cfg.path_predicates.PathPredicateAnalysis` | Per-BB path predicates from branch / assert outcomes. Supports `entry_seeds` and `bb_seeds` for cross-contract injection. |
-| `tealql.tealtools.analysis` | Revision-scoped immutable `ValueFacts` and read-only derived SSA normal forms. |
+| `tealql.tealtools.analysis` | Revision-scoped immutable `ValueFacts` and read-only derived SSA normal forms, including [inductive residues and numeric call summaries](docs/NUMERIC_ANALYSIS.md). |
 | `tealql.tealtools.analysis.resource_demand` | Versioned conservative resource-demand certificates for verifier handoff ([semantics and trust boundary](docs/RESOURCE_DEMAND.md)). |
+| `tealql.tealtools.analysis.resource_sufficiency` | Quantitative resource bounds and conditional retry credit witnesses for a [documented instruction fragment](docs/SAST_INFERENCE.md). |
+| `tealql.tealtools.analysis.box_permissions` | Closed-environment box permissions and family marks inferred across inner calls and matched returns. |
 | `tealql.tealtools.budget` | Version/mode-aware opcode-cost facts, reachable reducible and irreducible loops, minimum-cost reachability, method summaries, `OpcodeBudget` guard checks, and exhaustion review candidates. |
 | `tealql.tealtools.ast`, `tealql.tealtools.frontend.graph`, `tealql.tealtools.viz` | AST layer, the source→graph loader, and DOT/SVG rendering. |
 
@@ -245,6 +247,8 @@ cannot satisfy the inventory check.
 | `tealql.tealtools.analysis.auth.AuthDominationDetector` | State-mutating ops not dominated by a recognised sender check. |
 | `tealql.security.DETECTORS["box-key"]` | Non-unique external fields (e.g. `AssetName`) flowing into a box key. Run via `tealql detections --detector box-key`. |
 | `tealql.tealtools.reporting.inner_transactions.InnerTxnReport` | Per-`itxn_submit` group dump: each txn's fields and possible operand values. |
+| `tealql.security.obligations` | Opt-in [authority freshness, replay, proposal, funding and payment proofs](docs/OBLIGATIONS.md), with explicit premises and unknowns. |
+| `tealql.security.compatibility` | Declared revision contracts and bounded comparison of actual implementation traces. |
 | `tealql.tealtools.cfg.group.analyze` | Group shape the contract forces on every approving exit (`Global.GroupSize == 2`, `gtxn[0].Receiver == ...`, etc.). |
 | `tealql.tealtools.dataflow.box` | Box dataflow in three flavours: `detect_into_box_flows` (external → box write), `detect_out_of_box_flows` (box read → sensitive sink), `detect_correlated_flows` (end-to-end chain via syntactic key matching). |
 | `tealql.tealtools.intercontract.analysis.XContractGraph` | Cross-contract analysis: identifies appcall itxns with a constant `ApplicationID` resolvable in a registry, runs path predicates on each callee with seeded args, computes approving-exit summaries, feeds them back into the caller's BB. Includes `cross_auth_findings` for auth-domination across the boundary. |
