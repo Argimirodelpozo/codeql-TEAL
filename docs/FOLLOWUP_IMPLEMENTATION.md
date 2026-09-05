@@ -195,3 +195,9 @@ checks passed after the last resource changes. All five new private runtime
 controls passed. The complete 231-program offline finding comparison has zero
 changed cells and no crashes. Ruff and whitespace checks pass. The final full
 suite, core suite and combined backend/private-node gates remain outstanding.
+
+The final semantic review also restricted removable scalar reads to a whitelist
+of total fields. Timestamp lookups and current-transaction effect reads can
+fail even when their values are discarded. All 38 revision tests pass, and three
+additional private controls confirm those interpreter failures. The first full
+run was deliberately interrupted so the complete gate can include this fix.

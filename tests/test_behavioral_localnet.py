@@ -117,6 +117,20 @@ def test_revision_comparison_matches_private_constant_execution(node, body, equi
     assert (observations[0].effects == observations[1].effects) is equivalent
 
 
+@pytest.mark.parametrize('field', ['FirstValidTime', 'NumLogs', 'LastLog'])
+def test_revision_comparison_keeps_discarded_scalar_traps(node, field):
+    from tealql.security.compatibility import compare_programs
+    from tealql.tealtools.ssa import SSAProgram
+    client, sender, round = node
+    before = f'#pragma version 13\ntxn {field}\npop\nint 1\nreturn'
+    after = '#pragma version 13\nint 1\nreturn'
+    assert compare_programs(SSAProgram.from_text(before), SSAProgram.from_text(after)).status == 'UNKNOWN'
+    clear = _compile(client, '#pragma version 13\nint 1')
+    observations = [simulate_creation(client, _compile(client, source), clear, sender=sender, round=round)
+                    for source in (before, after)]
+    assert not observations[0].approved and observations[1].approved
+
+
 _EXISTING = {
     'global': '''
 txn ApplicationID

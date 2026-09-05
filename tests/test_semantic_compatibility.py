@@ -50,6 +50,13 @@ def test_fully_constant_difference_is_refuted(before, after):
     'int 1\nint 1\nb==\npop',
     'byte 0x' + '00' * 65 + '\nbyte 0x00\nb==\npop',
     'byte "k"\napp_global_get\npop',
+    'txn FirstValidTime\npop',
+    'txn NumLogs\npop',
+    'txn LastLog\npop',
+    'txn CreatedAssetID\npop',
+    'txn CreatedApplicationID\npop',
+    'global LatestTimestamp\npop',
+    'global CreatorAddress\npop',
     'int 9\nstore 0',
     'byte "k"\nint 9\napp_global_put',
 ])

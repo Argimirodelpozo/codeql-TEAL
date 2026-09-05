@@ -17,6 +17,17 @@ _SHUFFLES = {'dup', 'dup2', 'dupn', 'swap', 'cover', 'uncover', 'dig', 'bury'}
 _LITERALS = {'int', 'byte', 'addr', 'method', 'pushint', 'pushbytes', 'pushints', 'pushbytess',
              'intc', 'intc_0', 'intc_1', 'intc_2', 'intc_3', 'bytec', 'bytec_0', 'bytec_1', 'bytec_2', 'bytec_3'}
 _COMMUTATIVE = {'+', '*', '==', '!=', '&', '|', '^', '&&', '||'}
+# Only reads known to be total in the stated existing-app environment may be
+# discarded or reordered. FirstValidTime can fail a block lookup, current-txn
+# effect fields are forbidden, and ledger-backed globals can also fail.
+_TOTAL_FIELDS = {
+    'txn': {'Sender', 'Fee', 'FirstValid', 'LastValid', 'Receiver', 'Amount',
+            'CloseRemainderTo', 'TypeEnum', 'GroupIndex', 'ApplicationID', 'OnCompletion',
+            'RekeyTo', 'NumAppArgs', 'NumAccounts', 'NumAssets', 'NumApplications'},
+    'global': {'MinTxnFee', 'MinBalance', 'MaxTxnLife', 'ZeroAddress', 'GroupSize',
+               'LogicSigVersion', 'Round', 'CurrentApplicationID', 'CurrentApplicationAddress',
+               'CallerApplicationID', 'CallerApplicationAddress', 'GroupID'},
+}
 
 
 class _Symbols:
@@ -107,7 +118,7 @@ def _normal_form(program, symbols, max_steps):
                 folded = try_fold_outputs(replace(assignment, inputs=[symbols.constants[index] for index in operands]))
             if folded is not None:
                 stack.extend(symbols.literal(value) for value in reversed(folded))
-            elif op in {'txn', 'global'}:
+            elif immediate in _TOTAL_FIELDS.get(op, ()):
                 # Epochs conservatively distinguish reads across state/log changes.
                 stack.append(symbols.intern(('field', op, immediate, len(events))))
             else:

@@ -89,6 +89,12 @@ Constant tables must execute before their references; possible stack overflow
 is retained. A differing symbolic event trace is unknown, not automatically a
 behavioral counterexample.
 
+Only an explicit whitelist of scalar fields is treated as total. Timestamp
+lookups and transaction-effect fields remain events even when their outputs are
+discarded: a scalar read can itself fail. The pinned evaluator requires effect
+reads to reference a completed earlier transaction, and `FirstValidTime` needs
+an available historical block. Three private controls confirm these failures.
+
 `ed25519verify` includes the executing program hash in its signed message, as
 shown by the pinned [verification implementation](https://github.com/algorand/go-algorand/blob/da5946a14568c0cbaa2c9daf4241882de12f3c16/data/transactions/logic/crypto.go#L217).
 Matching explicit operands therefore cannot establish equivalence across
