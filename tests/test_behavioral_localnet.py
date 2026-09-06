@@ -551,3 +551,53 @@ retsub
             for row in json.loads(observations[0].effects)['transactions'] for value in row['logs']]
     assert logs == [1, 2]
     assert client.status()['last-round'] == round
+
+
+@pytest.mark.parametrize('kind', ['self', 'mutual', 'non-tail'])
+@pytest.mark.parametrize('depth', [0, 1, 3])
+@pytest.mark.parametrize('accepted', [False, True])
+def test_recursive_return_shapes_against_interpreter(node, kind, depth, accepted):
+    import base64
+    import json
+    from tealql.tealtools.analysis import FactDomain
+    from tealql.tealtools.ssa import SSAProgram
+    from tests.test_recursive_return_shapes import helper
+    from tests.behavioral_lift.simulate import creation, simulate_transactions
+    from tests.behavioral_lift.observations import observe_simulate
+
+    client, sender, round = node
+    if kind == 'mutual':
+        body = helper(callee='other') + helper('other', 'choose', value=77)
+    elif kind == 'non-tail':
+        body = helper(after='assert\nint 1\n+\nint 1\nretsub')
+    else:
+        body = helper()
+    body = body.replace('txn Fee', 'txna ApplicationArgs 1\nbtoi')
+    source = ('#pragma version 10\nint 55\ntxna ApplicationArgs 0\nbtoi\n'
+              'callsub choose\nassert\nitob\nlog\nitob\nlog\nint 1\nreturn\n' + body)
+    program = SSAProgram.from_text(source, name='recursive-runtime.teal')
+    values = [a.inputs[0] for a in program.assignments if a.op == 'itob']
+    facts = program.facts(FactDomain.CONSTANTS, FactDomain.RANGES)
+    assert int(facts.constant(values[1]).value) == 55
+    if kind == 'self':
+        assert int(facts.constant(values[0]).value) == 42
+    elif kind == 'mutual':
+        interval = facts.int_range(values[0])
+        assert (interval.lo, interval.hi) == (42, 77)
+    else:
+        assert facts.constant(values[0]) is None
+
+    clear = _compile(client, '#pragma version 10\nint 1')
+    txn = creation(client, _compile(client, source), clear, sender=sender, round=round)
+    txn.app_args = [depth.to_bytes(8, 'big'), int(accepted).to_bytes(8, 'big')]
+    observation = observe_simulate(simulate_transactions(client, [txn], round=round))
+    assert observation.approved is accepted, observation
+    if accepted:
+        logs = [int.from_bytes(base64.b64decode(value), 'big')
+                for value in json.loads(observation.effects)['logs']]
+        expected = (42 + depth if kind == 'non-tail'
+                    else 77 if kind == 'mutual' and depth % 2 else 42)
+        assert logs == [expected, 55]
+    else:
+        assert 'assert failed' in observation.detail
+    assert client.status()['last-round'] == round

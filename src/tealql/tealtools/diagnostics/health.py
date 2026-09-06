@@ -82,6 +82,14 @@ def health_for(prog, *, deep: bool = False) -> AnalysisHealth:
             'execution-context-budget',
             'routine execution-context enumeration exhausted its work bound',
         ))
+    recursive = getattr(stack_result, 'recursive_returns', None)
+    if recursive is not None:
+        for sub, reason in sorted(recursive.refused.items(), key=lambda item: item[0].key):
+            items.append(AnalysisDegradation(
+                'recursive-return-refinement',
+                f'recursive return stacks remain conservative: {reason}',
+                sub.key[0], sub.key[1],
+            ))
     # More than one `intcblock` / `bytecblock` in a file: the constant table
     # depends on WHICH one executed last, so `language.constants` resolves no
     # `intc_*`/`bytec_*` at all rather than guess (assembler-legal, compilers

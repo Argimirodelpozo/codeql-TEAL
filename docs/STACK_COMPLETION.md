@@ -2,6 +2,9 @@
 
 Implementation commit: `ff1d112c` on `rev`.
 
+The subsequent bounded recursive-return extension is described in
+[RECURSIVE_RETURNS.md](RECURSIVE_RETURNS.md).
+
 The remaining corpus operand gaps are resolved. All 231 distinct programs have
 zero missing ordinary operands and zero unresolved declared call results across
 97,077 consuming instructions. All 10 shared blocks have complete routine

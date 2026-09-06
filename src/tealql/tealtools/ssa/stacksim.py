@@ -261,7 +261,7 @@ class _Result:
 
     __slots__ = ("args", "phis", "exit", "unresolved", "divergent",
                  "frame_deferred", "frame_skewed", "return_shapes",
-                 "contexts", "contexts_complete")
+                 "contexts", "contexts_complete", "recursive_returns")
 
     def __init__(self):
         self.args: dict = {}
@@ -270,6 +270,7 @@ class _Result:
         self.unresolved: set = set()
         self.divergent: set = set()
         self.return_shapes = None
+        self.recursive_returns = None
         self.contexts = {}
         self.contexts_complete = True
         # (frame-slot phi, frame_bury PyOp) pairs whose arm the walk had not
@@ -308,7 +309,7 @@ def simulate(blocks, bb_to_sub, proto_io, return_point, phi_factory,
              *, bind_params: bool = True, unsafe_callees=frozenset(),
              frame_analysis=None, poisoned=frozenset(),
              effect_summaries=None, arity=None,
-             divergent_subs=None, edge_polarity=None) -> "_Result":
+             divergent_subs=None, edge_polarity=None, recursive_returns=None) -> "_Result":
     """Simulate every routine and return a :class:`_Result`.
 
     ``phi_factory(block, slot) -> phi`` mints the merge value, so the caller
@@ -346,13 +347,24 @@ def simulate(blocks, bb_to_sub, proto_io, return_point, phi_factory,
                               divergent=res.divergent)
     else:
         res.divergent.update(divergent_subs or ())
+    if recursive_returns is None:
+        from .recursive_returns import analyze
+        recursive_returns = analyze(blocks, bb_to_sub, proto_io, return_point,
+                                    arity, res.divergent, edge_polarity)
+    res.recursive_returns = recursive_returns
+    res.divergent.update(sub for sub, states in recursive_returns.returns.items()
+                         if len({len(state) for state in states}) > 1)
     if res.divergent:
         from .return_shapes import ReturnShapes
         res.return_shapes = ReturnShapes(blocks, edge_polarity)
     from .execution_contexts import execution_bodies, publish, snapshot
-    by_sub, res.contexts_complete = execution_bodies(
-        blocks, bb_to_sub,
-        lambda b: _isucc(b, (), return_point, owned_only=False))
+    if recursive_returns.bodies is None:
+        by_sub, res.contexts_complete = execution_bodies(
+            blocks, bb_to_sub,
+            lambda b: _isucc(b, (), return_point, owned_only=False))
+    else:
+        by_sub = recursive_returns.bodies
+        res.contexts_complete = recursive_returns.contexts_complete
     counts = {}
     for sub, body in by_sub.items():
         if sub is not None:
@@ -378,6 +390,7 @@ def simulate(blocks, bb_to_sub, proto_io, return_point, phi_factory,
         if shared:
             local.contexts = res.contexts
             local.divergent = res.divergent
+            local.recursive_returns = res.recursive_returns
             if res.return_shapes is not None:
                 local.return_shapes = res.return_shapes.fork()
         context_poison = poisoned | {
@@ -622,12 +635,10 @@ def _return_value(st, j, slot, proto):
 def _callee_first(by_sub, bb_to_sub):
     """Routine entries ordered so a callee precedes its callers.
 
-    Recursion has no such order, so a cycle is emitted in discovery order; the
-    calls inside it get a phi completed after every routine has run (see
-    ``deferred`` in :func:`simulate`). The historical note below described the
-    state before that existed — a cycle's call results stayed unresolved, which
-    was honest, and the only
-    thing a single pass can say."""
+    A cycle has no strict callee-first order. Deferred phis or complete return
+    alternatives close its dependencies. The traversal itself is iterative so
+    long call chains and large cycles do not exhaust Python's recursion limit.
+    """
     calls: dict = {}
     for sub, body in by_sub.items():
         if sub is None:
@@ -643,19 +654,21 @@ def _callee_first(by_sub, bb_to_sub):
     order: list = []
     state: dict = {}                        # 0 = visiting, 1 = done
 
-    def visit(s):
-        st = state.get(s)
-        if st is not None:
-            return                          # done, or a cycle we must not re-enter
-        state[s] = 0
-        for c in calls.get(s, ()):
-            if state.get(c) is None:
-                visit(c)
-        state[s] = 1
-        order.append(s)
-
-    for s in calls:
-        visit(s)
+    for root in calls:
+        if root in state:
+            continue
+        state[root] = 0
+        work = [(root, iter(calls[root]))]
+        while work:
+            sub, callees = work[-1]
+            callee = next(callees, None)
+            if callee is None:
+                state[sub] = 1
+                order.append(sub)
+                work.pop()
+            elif callee not in state:
+                state[callee] = 0
+                work.append((callee, iter(calls.get(callee, ()))))
     return order
 
 
@@ -1173,6 +1186,21 @@ def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
         # means that path is reading past everything this frame owns).
         shifted = a_proto is None and callee in divergent
         exits = [context.exit[rb] for rb in rets if rb in context.exit]
+        recovered = (res.recursive_returns.returns.get(callee)
+                     if res.recursive_returns is not None else None)
+        if recovered is not None:
+            # Every alternative in the cycle has been proved before this
+            # walk. Use the complete physical stacks even when their retsub
+            # blocks have not run; a partial fixed point never reaches here.
+            args = res.args[id(o)]
+            def bind_return(value):
+                if not isinstance(value, _Param):
+                    return value
+                position = a_in - 1 - value.index
+                return (args[position] if value.sub_key == callee.key
+                        and 0 <= position < len(args) else None)
+            exits = [tuple(bind_return(value) for value in state) for state in recovered]
+            pending_rets, shifted = [], True
         if (shifted and not pending_rets and can_merge and npred.get(cont) == 1
                 and res.return_shapes is not None):
             res.return_shapes.capture(cont, stack, exits)

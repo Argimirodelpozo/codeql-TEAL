@@ -219,6 +219,7 @@ class PySSA:
     # diagnostics; neither mutates the public SSA objects.
     _frame_analysis: object = None
     _stack_result: object = None
+    _recursive_return_analysis: object = None
     # callsub bb_key -> continuation bb_key (corrected policy), see
     # subroutines.corrected_return_points.
     _corrected_rp: dict = field(default_factory=dict)
@@ -349,7 +350,8 @@ class PySSA:
                                 effect_summaries=self._effect_summaries,
                                 arity=self._callsub_arities,
                                 divergent_subs=self._arity_divergent,
-                                edge_polarity=self._edge_polarity)
+                                edge_polarity=self._edge_polarity,
+                                recursive_returns=self._recursive_return_analysis)
         self._stack_result = res
         self._divergent_legacy = {b.key for b in res.divergent}
         for b in self.blocks:
@@ -424,6 +426,15 @@ class PySSA:
         self._callsub_arities = stacksim.infer_arities(
             self.blocks, self._bb_to_sub, self._proto_io, return_point,
             divergent=divergent)
+        from . import recursive_returns
+        self._recursive_return_analysis = recursive_returns.analyze(
+            self.blocks, self._bb_to_sub, self._proto_io, return_point,
+            self._callsub_arities, divergent, self._edge_polarity)
+        # A member with one physical retsub can still forward several depths
+        # from its recursive peers. Discover this BEFORE promising exact call
+        # crossings to the frame analysis; the proven maximum width is unchanged.
+        divergent.update(sub for sub, states in self._recursive_return_analysis.returns.items()
+                         if len({len(state) for state in states}) > 1)
         self._arity_divergent = divergent
         self._call_pairs = {}
         self._pair_by_cs = {}
