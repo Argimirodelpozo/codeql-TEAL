@@ -1,5 +1,7 @@
 # Recursive return refinement
 
+Implementation commit: `dd13d3d1` on `rev`.
+
 Legacy recursive helpers can now retain their different physical return stacks
 through an immediate flag guard. For example, a helper returning `[value, 1]`
 on success and `[0]` on failure lets its caller recover `value` after `assert`.
@@ -93,16 +95,30 @@ all 18 cases passed in 7.20 seconds.
 | Benchmark, graph, visualization and pass-inventory checks | 173 passed in 52.51 seconds. |
 | Corpus and representation regression checks | 616 passed, 1 opt-in digest-regeneration skip in 426.93 seconds. All 231 default detector rows match the existing baseline. |
 | Combined private-node, assembler and external gate | 75 passed in 77.83 seconds. The disposable node was stopped and removed afterward. |
-| Full backend/corpus suite with coverage | Running. |
-| Complete core-only suite | Running. |
+| Full backend/corpus suite with coverage | 6,295 passed, 74 intentional skips in 1,178.65 seconds. Combined statement/branch coverage is 88.71%, above the 68% gate. |
+| Complete core-only suite | 4,794 passed, 355 intentional skips in 521.10 seconds, with Puya absent. |
 | Fresh non-editable wheel | Passed in an isolated core-only environment without Puya, including CLI, public analysis APIs, guarded returns, shared contexts and recursive return refinement. |
+
+Coverage is 90.72% of statements and 84.66% of branches. The new recursive-return
+module has 89.33% combined coverage. The full run also passed the absolute-cost,
+SSA construction scaling and scratch lookup scaling checks. Full and core runs
+overlapped; their wall times do not isolate performance changes.
+
+The 74 full-run skips comprise 51 private runtime tests, nine assembler tests,
+twelve external-example tests, opt-in digest regeneration and the known lifting
+refusal for the non-AVM `sha512_digest_recipient.teal` taint fixture. The combined
+private gate separately passed the infrastructure-dependent checks. Core skips
+additionally reflect the deliberately absent compiler. Ruff and diff whitespace
+checks also pass.
 
 Validation source SHA-256:
 `c5107d72fada33c65848d98861c74f6c9194324eacbc840b15f9f4c0805a1412`.
 The hash concatenates sorted `src/**/*.py` paths, NUL, contents and NUL.
 Local evidence uses the `/tmp/tealql-recursive-` prefix, including
 `controls.log`, `baselines.log`, `corpus-final.log`, `private.log`,
-`interpreter.log` and `interpreter-final.log`.
+`interpreter.log`, `interpreter-final.log`, `full.log`, `core.log` and
+`coverage.json`. Both complete suites, the private gate and the wheel used the
+same source hash, verified again after the full run finished.
 
 The verified wheel is `/tmp/tealql-recursive-dist/tealql-0.1.0-py3-none-any.whl`,
 SHA-256 `3cbd023f18d31a1449bab11bd52be1f1bfc7132f6cecd2898d1e8c53e0d26a6a`.
