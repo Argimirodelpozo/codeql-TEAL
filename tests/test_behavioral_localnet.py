@@ -442,3 +442,112 @@ def test_numeric_fragments_against_interpreter(node, tmp_path, body, expected):
     result = compare_cases([0], lambda _: observations, required=required_effects(source, lifted))
     assert result['status'] == 'FAITHFUL', (result, observations)
     assert [int.from_bytes(base64.b64decode(value), 'big') for value in json.loads(observations[0].effects)['logs']] == expected
+
+
+@pytest.mark.parametrize('argument', [0, 1])
+@pytest.mark.parametrize('guard', ['assert', 'bz', 'bnz', 'minimum-depth'])
+def test_return_shapes_and_minimum_depth_against_interpreter(node, tmp_path, argument, guard):
+    import base64
+    import json
+    from tests.behavioral_lift.simulate import creation, simulate_transactions
+    from tests.behavioral_lift.observations import observe_simulate
+    client, sender, round = node
+    if guard == 'minimum-depth':
+        body = ('int 55\ncallsub outer\nitob\nlog\nint 1\nreturn\n'
+                'outer:\nproto 0 0\ncallsub inner\nretsub\n'
+                'inner:\nproto 0 0\ntxna ApplicationArgs 0\nbtoi\nbz two\n'
+                'int 7\nb join\ntwo:\nint 7\nint 8\njoin:\npop\nretsub')
+        expected = [55]
+    else:
+        suffix = '\nchoose:\nbnz yes\nint 0\nretsub\nyes:\nint 42\nint 1\nretsub'
+        entry = 'int 55\ntxna ApplicationArgs 0\nbtoi\ncallsub choose\n'
+        success = 'itob\nlog\nitob\nlog\nint 1\nreturn'
+        failure = 'itob\nlog\nint 1\nreturn'
+        if guard == 'assert':
+            body = entry + 'assert\n' + success + suffix
+        elif guard == 'bz':
+            body = entry + 'bz failure\n' + success + '\nfailure:\n' + failure + suffix
+        else:
+            body = entry + 'bnz success\n' + failure + '\nsuccess:\n' + success + suffix
+        expected = [42, 55] if argument else [55]
+    source = '#pragma version 10\n' + body + '\n'
+    path = tmp_path / 'return-shape.teal'
+    path.write_text(source)
+    lifted = lift_to_teal(str(path))
+    clear = _compile(client, '#pragma version 10\nint 1')
+    observations = []
+    for code in (source, lifted):
+        txn = creation(client, _compile(client, code), clear, sender=sender, round=round)
+        txn.app_args = [argument.to_bytes(8, 'big')]
+        observations.append(observe_simulate(simulate_transactions(client, [txn], round=round)))
+    accepted = guard != 'assert' or argument != 0
+    assert all(item.approved is accepted for item in observations), observations
+    if accepted:
+        result = compare_cases([argument], lambda _: observations, required=required_effects(source, lifted))
+        assert result['status'] == 'FAITHFUL', (result, observations)
+        logs = [int.from_bytes(base64.b64decode(value), 'big')
+                for value in json.loads(observations[0].effects)['logs']]
+        assert logs == expected
+    else:
+        assert all('assert failed' in item.detail for item in observations), observations
+    assert client.status()['last-round'] == round
+
+
+def test_shared_inner_effect_tail_against_interpreter(node, tmp_path):
+    import base64
+    import json
+    from algosdk import logic, transaction as t
+    client, sender, round = node
+    source = '''#pragma version 10
+txn ApplicationID
+bz create
+itxn_begin
+int 1
+txn Sender
+callsub first
+itxn Amount
+itob
+log
+itxn_begin
+int 2
+txn Sender
+callsub second
+itxn Amount
+itob
+log
+int 1
+return
+create:
+int 1
+return
+first:
+b tail
+second:
+b tail
+tail:
+int 0
+itxn_field Fee
+int pay
+itxn_field TypeEnum
+itxn_field Receiver
+itxn_field Amount
+itxn_submit
+retsub
+'''
+    path = tmp_path / 'shared-effect.teal'
+    path.write_text(source)
+    lifted = lift_to_teal(str(path))
+    clear = _compile(client, '#pragma version 10\nint 1')
+    def steps(app):
+        return [t.PaymentTxn(sender, parameters(client, round), logic.get_application_address(app), 2_000_000),
+                t.ApplicationCallTxn(sender, parameters(client, round, fee=3000), app, 0)]
+    groups = [existing_app_group(client, _compile(client, code), clear, steps, sender=sender, round=round)
+              for code in (source, lifted)]
+    observations = compare_groups(client, *groups, round=round)
+    result = compare_cases([0], lambda _: observations,
+                           required=required_effects(source, lifted) | {'existing-app-state', 'transaction-groups'})
+    assert result['status'] == 'FAITHFUL', (result, observations)
+    logs = [int.from_bytes(base64.b64decode(value), 'big')
+            for row in json.loads(observations[0].effects)['transactions'] for value in row['logs']]
+    assert logs == [1, 2]
+    assert client.status()['last-round'] == round

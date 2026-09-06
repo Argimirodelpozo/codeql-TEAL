@@ -101,6 +101,66 @@ class HeightResult:
         self.conflicted = conflicted
 
 
+def minimum_entry_heights(blocks, bb_to_sub, arity, return_point,
+                          divergent=frozenset(), *, max_steps=100_000):
+    """Lower bounds on stack depth, independent of exact frame coordinates.
+
+    A height-conflicting join can still have a useful minimum. Local edges join
+    with ``min``; fixed-arity calls transfer ``-args + returns``. Descending
+    cycles, divergent legacy calls and exhausted work discard the entire
+    routine's answer. These bounds only establish that ordinary stack writes
+    stay above the caller's residual; they cannot locate a frame slot.
+    """
+    from collections import deque
+
+    bodies = {}
+    for block in blocks:
+        bodies.setdefault(bb_to_sub.get(block), set()).add(block)
+    result = {}
+    steps = 0
+    for sub, body in bodies.items():
+        if sub is None:
+            continue
+        depths = {sub: arity.get(sub, (0, 0))[0]}
+        work, queued = deque([sub]), {sub}
+        refused = False
+        while work and not refused:
+            block = work.popleft()
+            queued.remove(block)
+            depth = depths[block]
+            for op in block.ops:
+                steps += 1
+                if steps > max_steps:
+                    return {}          # no partial results after exhaustion
+                if op.op == 'callsub':
+                    callee = _callee_of(block, bb_to_sub)
+                    if callee not in arity or callee in divergent:
+                        refused = True
+                        break
+                    pop, push = arity[callee]
+                elif op.op == 'frame_dig':
+                    pop, push = 0, 1
+                elif op.op == 'frame_bury':
+                    pop, push = 1, 0
+                else:
+                    pop, push = _narrow(op)
+                depth += push - pop
+                if depth < 0:
+                    refused = True
+                    break
+            if refused:
+                break
+            for target in _isucc(block, body, return_point):
+                if target not in depths or depth < depths[target]:
+                    depths[target] = depth
+                    if target not in queued:
+                        queued.add(target)
+                        work.append(target)
+        if not refused:
+            result.update((block.key, depth) for block, depth in depths.items())
+    return result
+
+
 def entry_heights(blocks, bb_to_sub, proto_io, call_pairs,
                   arity=None) -> HeightResult:
     """Compute exact bottom-anchored entry depths for every routine block.
@@ -200,7 +260,8 @@ class _Result:
     """
 
     __slots__ = ("args", "phis", "exit", "unresolved", "divergent",
-                 "frame_deferred", "frame_skewed")
+                 "frame_deferred", "frame_skewed", "return_shapes",
+                 "contexts", "contexts_complete")
 
     def __init__(self):
         self.args: dict = {}
@@ -208,6 +269,9 @@ class _Result:
         self.exit: dict = {}
         self.unresolved: set = set()
         self.divergent: set = set()
+        self.return_shapes = None
+        self.contexts = {}
+        self.contexts_complete = True
         # (frame-slot phi, frame_bury PyOp) pairs whose arm the walk had not
         # recorded yet (a loop-carried write later in walk order); filled
         # once every routine has run, like `deferred` for recursion.
@@ -244,7 +308,7 @@ def simulate(blocks, bb_to_sub, proto_io, return_point, phi_factory,
              *, bind_params: bool = True, unsafe_callees=frozenset(),
              frame_analysis=None, poisoned=frozenset(),
              effect_summaries=None, arity=None,
-             divergent_subs=None) -> "_Result":
+             divergent_subs=None, edge_polarity=None) -> "_Result":
     """Simulate every routine and return a :class:`_Result`.
 
     ``phi_factory(block, slot) -> phi`` mints the merge value, so the caller
@@ -282,26 +346,56 @@ def simulate(blocks, bb_to_sub, proto_io, return_point, phi_factory,
                               divergent=res.divergent)
     else:
         res.divergent.update(divergent_subs or ())
-    by_sub: dict = {}
-    for b in blocks:
-        by_sub.setdefault(bb_to_sub.get(b), []).append(b)
+    if res.divergent:
+        from .return_shapes import ReturnShapes
+        res.return_shapes = ReturnShapes(blocks, edge_polarity)
+    from .execution_contexts import execution_bodies, publish, snapshot
+    by_sub, res.contexts_complete = execution_bodies(
+        blocks, bb_to_sub,
+        lambda b: _isucc(b, (), return_point, owned_only=False))
+    counts = {}
+    for sub, body in by_sub.items():
+        if sub is not None:
+            for b in body:
+                counts[b] = counts.get(b, 0) + 1
 
     # Callee entry -> the values its `retsub` blocks leave on top, so a call site
     # can push real results instead of threading the return edge.
-    retsubs: dict = {}
-    for b in blocks:
-        if b.ops and b.ops[-1].op == "retsub":
-            retsubs.setdefault(bb_to_sub.get(b), []).append(b)
+    retsubs = {sub: [b for b in body if b.ops and b.ops[-1].op == 'retsub']
+               for sub, body in by_sub.items() if sub is not None}
 
     # CALLEES FIRST. A call site pushes the values its callee's `retsub` blocks
     # leave, so simulating a caller before its callee makes every call result
     # None — and the ops consuming them then read as unresolved rather than
     # wrong, which is exactly the kind of hole a differential skips over.
     deferred: list = []
+    seen = set()
+    frame_pending = []
     for sub in _callee_first(by_sub, bb_to_sub):
-        _run_routine(sub, by_sub[sub], res, arity, bb_to_sub, return_point,
+        body = by_sub[sub]
+        shared = any(counts.get(b, 0) > 1 for b in body)
+        local = _Result() if shared else res
+        if shared:
+            local.contexts = res.contexts
+            local.divergent = res.divergent
+            if res.return_shapes is not None:
+                local.return_shapes = res.return_shapes.fork()
+        context_poison = poisoned | {
+            b.key for b in body if bb_to_sub.get(b) is not sub}
+        foreign_ops = {id(op) for b in body if bb_to_sub.get(b) is not sub for op in b.ops}
+        instructions = ({key: value for key, value in frame_instructions.items()
+                         if key not in foreign_ops} if foreign_ops else frame_instructions)
+        pending_start = len(local.frame_deferred)
+        _run_routine(sub, body, local, arity, bb_to_sub, return_point,
                      retsubs, phi_factory, unsafe_callees, deferred, proto_io,
-                     frame_instructions, poisoned, effect_summaries)
+                     instructions, context_poison, effect_summaries)
+        context = snapshot(local, body, context_poison)
+        res.contexts[sub] = context
+        frame_pending.extend((ph, op, context)
+                             for ph, op in local.frame_deferred[pending_start:])
+        if shared:
+            publish(res, local, body, seen, phi_factory)
+        seen.update(body)
     # Blocks NO root claims (``bb_to_sub`` misses them) never simulate, and
     # their ops kept EMPTY inputs with no refusal marker — silence, not
     # honesty. ``pyblock_partition`` now roots the program entry
@@ -319,24 +413,26 @@ def simulate(blocks, bb_to_sub, proto_io, return_point, phi_factory,
     # closes the cycle: `count_len`'s result becomes φ(0, φ+1), which is exactly
     # the inductive shape a prover needs. Pushing None instead cost avm-prover
     # the proof that `r == len(arg0)`.
-    for ph, slot, j, proto, rets in deferred:
+    for ph, slot, j, proto, rets, callee in deferred:
+        context = res.contexts[callee]
         for rb in rets:
-            if rb not in res.exit:
+            if rb not in context.exit:
                 continue
-            if proto is not None and rb.key in poisoned:
+            if proto is not None and rb.key in context.poisoned:
                 # Same gate as the call site: a poisoned retsub's frame-slot
                 # read goes through the frame-slot analysis; an unanswerable arm is
                 # MARKED rather than silently omitted.
-                ret = frame_instructions.get(id(rb.ops[-1]))
+                ret = (frame_instructions.get(id(rb.ops[-1]))
+                       if bb_to_sub.get(rb) is callee else None)
                 instr = _return_slot(ret, j)
-                v = _resolve_frame(instr, res)
+                v = _resolve_frame(instr, context)
                 if v is None:
                     ph.partial = True
             else:
                 skewed = (proto is not None
-                          and bb_to_sub.get(rb) in res.frame_skewed)
+                          and callee in context.frame_skewed)
                 v = (None if skewed
-                     else _return_value(res.exit[rb], j, slot, proto))
+                     else _return_value(context.exit[rb], j, slot, proto))
                 if v is None:
                     # An unanswerable non-poisoned arm was silently OMITTED
                     # here — the resolved subset then read as the whole
@@ -348,8 +444,8 @@ def simulate(blocks, bb_to_sub, proto_io, return_point, phi_factory,
     # ran, which for a write-after-read loop is after the reading dig. Every
     # routine has run now, so fill; an operand STILL unknown marks the phi
     # partial rather than silently narrowing it to the entry arm.
-    for ph, wop in res.frame_deferred:
-        wargs = res.args.get(id(wop))
+    for ph, wop, context in frame_pending:
+        wargs = context.args.get(id(wop))
         if wargs and wargs[0] is not None:
             if not any(a is wargs[0] for a in ph.args):
                 ph.args.append(wargs[0])
@@ -618,14 +714,15 @@ def _bind_params(blocks, res, arity, bb_to_sub, phi_factory):
         # touch ``.key()``/``.defined_by`` dies. Exhaustion is a refusal.
         return None if isinstance(v, _Param) else v
 
-    for k, ins in res.args.items():
-        for j, v in enumerate(ins):
-            if isinstance(v, _Param):
-                ins[j] = resolve(v)
-    for b, st in res.exit.items():
-        for j, v in enumerate(st):
-            if isinstance(v, _Param):
-                st[j] = resolve(v)
+    for context in [res, *res.contexts.values()]:
+        for ins in context.args.values():
+            for j, v in enumerate(ins):
+                if isinstance(v, _Param):
+                    ins[j] = resolve(v)
+        for st in context.exit.values():
+            for j, v in enumerate(st):
+                if isinstance(v, _Param):
+                    st[j] = resolve(v)
     for phis in res.phis.values():
         for _slot, ph in phis:
             ph.args = [resolve(a) if isinstance(a, _Param) else a for a in ph.args]
@@ -657,7 +754,7 @@ def _isucc(b, body, return_point, *, owned_only=True):
 
 def walk_routine(body_list, entry, *, successors, initial_stack, exit_stacks,
                  execute_block, merge_value, extend_backedge,
-                 orphan_stack=None, before_merge=None):
+                 orphan_stack=None, before_merge=None, edge_stack=None):
     """Run the shared CFG scheduler and top-aligned stack join for one routine.
 
     The stack *values* and phi representation deliberately stay caller-owned:
@@ -736,15 +833,19 @@ def walk_routine(body_list, entry, *, successors, initial_stack, exit_stacks,
 
     for block in order:
         preds = [p for p in fpred.get(block, ()) if p in exit_stacks]
+        incoming_stacks = {
+            p: edge_stack(p, block, exit_stacks[p]) if edge_stack else exit_stacks[p]
+            for p in preds
+        }
         if block is entry:
             values = list(initial_stack)
         elif not preds:
             values = list(orphan_stack(block))
         elif len(preds) == 1 and not (
                 block in back_targets and bpred.get(block)):
-            values = list(exit_stacks[preds[0]])
+            values = list(incoming_stacks[preds[0]])
         else:
-            depth = max(len(exit_stacks[p]) for p in preds)
+            depth = max(len(incoming_stacks[p]) for p in preds)
             is_loop = block in back_targets
             if before_merge is not None:
                 before_merge(block, preds, depth, is_loop)
@@ -752,9 +853,9 @@ def walk_routine(body_list, entry, *, successors, initial_stack, exit_stacks,
             for bottom_index in range(depth):
                 top_slot = depth - bottom_index
                 incoming = [
-                    (p, len(exit_stacks[p]) >= top_slot,
-                     exit_stacks[p][-top_slot]
-                     if len(exit_stacks[p]) >= top_slot else None)
+                    (p, len(incoming_stacks[p]) >= top_slot,
+                     incoming_stacks[p][-top_slot]
+                     if len(incoming_stacks[p]) >= top_slot else None)
                     for p in preds
                 ]
                 present = [value for _p, has_value, value in incoming
@@ -768,14 +869,16 @@ def walk_routine(body_list, entry, *, successors, initial_stack, exit_stacks,
                 values.append(value)
                 if is_loop:
                     for pred in bpred.get(block, ()):
-                        pending.append((token, top_slot, pred))
+                        pending.append((token, top_slot, pred, block))
         execute_block(block, values, npred)
         exit_stacks[block] = values
 
-    for token, top_slot, pred in pending:
+    for token, top_slot, pred, target in pending:
         if pred not in exit_stacks:
             continue
         ex = exit_stacks[pred]
+        if edge_stack is not None:
+            ex = edge_stack(pred, target, ex)
         present = len(ex) >= top_slot
         extend_backedge(token, pred, present,
                         ex[-top_slot] if present else None)
@@ -807,11 +910,30 @@ def _run_routine(sub, body_list, res, arity, bb_to_sub, return_point,
             ph.partial = True
 
     def execute_block(block, stack, npred):
-        for op in block.ops:
+        def merge_returns(stacks):
+            values = []
+            for slot in range(max(map(len, stacks)), 0, -1):
+                cells = [st[-slot] if len(st) >= slot else None for st in stacks]
+                if any(v is None for v in cells):
+                    values.append(None)
+                elif all(v is cells[0] for v in cells):
+                    values.append(cells[0])
+                else:
+                    ph = phi_factory(block, slot)
+                    ph.args.extend(cells)
+                    res.phis.setdefault(block, []).append((slot, ph))
+                    values.append(ph)
+            return values
+
+        for index, op in enumerate(block.ops):
             _exec(op, block, stack, nargs, res, bb_to_sub, retsubs, arity,
                   phi_factory, unsafe_callees, return_point, npred, deferred,
                   proto_io, divergent, frame_instructions, poisoned,
-                  effect_summaries)
+                  effect_summaries, routine=sub)
+            if index == 0 and res.return_shapes is not None:
+                refined = res.return_shapes.after_guard(block, op, merge_returns)
+                if refined is not None:
+                    stack[:] = refined
 
     walk_routine(
         body_list,
@@ -822,18 +944,22 @@ def _run_routine(sub, body_list, res, arity, bb_to_sub, return_point,
         execute_block=execute_block,
         merge_value=merge_value,
         extend_backedge=extend_backedge,
+        edge_stack=(lambda pred, target, default:
+                    res.return_shapes.edges.get((pred, target), default))
+        if res.return_shapes is not None else None,
     )
 
 
 def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
           unsafe_callees=frozenset(), return_point=None, npred=None,
           deferred=None, proto_io=None, divergent=frozenset(),
-          frame_instructions=None, poisoned=frozenset(), effect_summaries=None):
+          frame_instructions=None, poisoned=frozenset(), effect_summaries=None,
+          routine=None):
     """One op against the clean stack, recording its operands TOP-FIRST."""
     if o.op in ("frame_dig", "frame_bury"):
         n = _imm_int(o)
         pos = None if n is None else nargs + n
-        if bb_to_sub.get(b) in res.frame_skewed:
+        if routine in res.frame_skewed:
             # An earlier op in this routine dipped below the band; `stack[pos]`
             # would read/write a cell off by the underflow. Refuse honestly.
             if o.op == "frame_bury" and stack:
@@ -943,6 +1069,10 @@ def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
         return
     if o.op == "callsub":
         callee = _callee_of(b, bb_to_sub)
+        context = res.contexts.get(callee)
+        if context is None:
+            context = res if callee is routine else _Result()
+        callee_poisoned = getattr(context, 'poisoned', poisoned)
         a_in, r_out = arity.get(callee, (0, 0)) if callee is not None else (0, 0)
         take = min(a_in, len(stack))
         res.args[id(o)] = [stack.pop() for _ in range(take)]
@@ -1025,7 +1155,7 @@ def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
         # (callee-first ordering handles everything else). Its result is not
         # unknown — it is defined in terms of itself — so hand out a phi now and
         # fill it once every routine has run.
-        pending_rets = [rb for rb in rets if rb not in res.exit]
+        pending_rets = [rb for rb in rets if rb not in context.exit]
         # See `_return_value`: proto'd returns live in FRAME SLOTS, legacy
         # ones on the physical stack top, because only proto's retsub truncates.
         a_proto = proto_io.get(callee) if proto_io is not None else None
@@ -1042,7 +1172,10 @@ def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
         # cell BELOW a path's whole stack stays a refusal (consuming there
         # means that path is reading past everything this frame owns).
         shifted = a_proto is None and callee in divergent
-        exits = [res.exit[rb] for rb in rets if rb in res.exit]
+        exits = [context.exit[rb] for rb in rets if rb in context.exit]
+        if (shifted and not pending_rets and can_merge and npred.get(cont) == 1
+                and res.return_shapes is not None):
+            res.return_shapes.capture(cont, stack, exits)
         if shifted and (pending_rets or not can_merge):
             # The shift needs every exit depth and a phi home; without either,
             # the residual's per-path offsets are unknowable — withdraw it
@@ -1069,9 +1202,9 @@ def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
                 continue
             vals, band_refused = [], False
             for rb in rets:
-                if rb not in res.exit:
+                if rb not in context.exit:
                     continue
-                if a_proto is not None and rb.key in poisoned:
+                if a_proto is not None and rb.key in callee_poisoned:
                     # A poisoned retsub's frame-slot read has the same
                     # wrong-cell risk as a frame_dig there (bottom-indexed in
                     # a bottom-unanchored list): frame-slot analysis answers, or the
@@ -1081,22 +1214,22 @@ def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
                     # five depths is one poisoned block, not five unknowns);
                     # this call site's continuation phi is their home.
                     ret = (frame_instructions.get(id(rb.ops[-1]))
-                           if frame_instructions else None)
+                           if frame_instructions and bb_to_sub.get(rb) is callee else None)
                     instr = _return_slot(ret, j)
-                    got = _frame_cells(instr, res)
+                    got = _frame_cells(instr, context)
                     if got is None:
                         band_refused = True
                     else:
                         vals.extend(got[0])
                     continue
                 if (a_proto is not None
-                        and bb_to_sub.get(rb) in res.frame_skewed):
+                        and callee in context.frame_skewed):
                     # This callee dipped below its band: its exit list is no
                     # longer frame-anchored, so `res.exit[rb][proto[0]+j]` is
                     # a wrong CELL, not a missing value.
                     v = None
                 else:
-                    v = _return_value(res.exit[rb], j, slot, a_proto)
+                    v = _return_value(context.exit[rb], j, slot, a_proto)
                 if v is not None:
                     vals.append(v)
                 else:
@@ -1120,7 +1253,7 @@ def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
                 ph = phi_factory(cont, slot)
                 ph.args.extend(vals)
                 res.phis.setdefault(cont, []).append((slot, ph))
-                deferred.append((ph, slot, j, a_proto, tuple(pending_rets)))
+                deferred.append((ph, slot, j, a_proto, tuple(pending_rets), callee))
                 pushes.append(ph)
             elif len({id(v) for v in vals}) == 1:
                 pushes.append(vals[0])    # every retsub leaves the same value
@@ -1175,7 +1308,6 @@ def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
         # This op dipped below the model's bottom: the pad keeps the walk
         # alive, but the list bottom no longer equals the frame base, so the
         # routine's bottom-anchored coordinates are poisoned from here on.
-        routine = bb_to_sub.get(b)
         if routine is not None:
             res.frame_skewed.add(routine)
     if any(i is None for i in ins):

@@ -61,7 +61,11 @@ def test_external_example_matches_reviewed_evaluation(row):
     path = verified_path(directory, row)
     expected = json.loads((ROOT / 'external_evaluation_results.json').read_text())
     assert novelty(directory)[path.name] == expected['profiles'][path.name]
-    assert evaluate(path) == expected['programs'][path.name]
+    actual = evaluate(path)
+    # Check the added diagnostic separately; keep the original first-run
+    # evidence and its source identity unchanged.
+    assert actual['representation'].pop('shared_unresolved') == 0
+    assert actual == expected['programs'][path.name]
 
 
 @pytest.mark.skipif(os.environ.get('TEALQL_LOCALNET') != '1' or not os.environ.get('TEALQL_EXTERNAL_FIXTURES'),

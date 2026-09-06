@@ -76,6 +76,12 @@ def health_for(prog, *, deep: bool = False) -> AnalysisHealth:
             "unknown-opcode",
             "unknown opcode stack effects: " + ", ".join(unknown_ops),
         ))
+    stack_result = getattr(getattr(prog, '_pyssa', None), '_stack_result', None)
+    if stack_result is not None and not stack_result.contexts_complete:
+        items.append(AnalysisDegradation(
+            'execution-context-budget',
+            'routine execution-context enumeration exhausted its work bound',
+        ))
     # More than one `intcblock` / `bytecblock` in a file: the constant table
     # depends on WHICH one executed last, so `language.constants` resolves no
     # `intc_*`/`bytec_*` at all rather than guess (assembler-legal, compilers

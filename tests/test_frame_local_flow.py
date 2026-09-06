@@ -153,9 +153,11 @@ def test_may_consumers_use_the_gap_map_with_local_sources():
     """
     from tealql.tealtools.dataflow.byte_taint import byte_taint
 
-    probe = PROBES / "app_3300088574.teal"
+    # Minimum-depth preservation now resolves the former app_3300088574
+    # fixture completely. This program still needs a local compatibility edge.
+    probe = PROBES / "app_1850904282.teal"
     if not probe.exists():
-        pytest.skip("app_3300088574 not present")
+        pytest.skip("app_1850904282 not present")
     prog = SSAProgram(str(probe))
     locals_ = frame_local_sources(prog)
     assert locals_, "fixture no longer has local frame reads — pick another probe"
@@ -349,7 +351,7 @@ def test_corpus_representation_completes(content_hash, path):
     expected = load_manifest()["representation"][content_hash]
     actual = representation_metrics(SSAProgram(str(path), strict=False))
     assert actual["examined"] == expected["examined"]
-    for metric in ("unresolved", "missing", "shared"):
+    for metric in ("unresolved", "missing", "shared", "shared_unresolved"):
         assert actual[metric] <= expected[metric], (path.name, metric, actual, expected)
 
 

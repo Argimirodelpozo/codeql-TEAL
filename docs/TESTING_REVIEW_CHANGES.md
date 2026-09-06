@@ -4,9 +4,10 @@ The corpus completion manifest contains 857 distinct parser inputs and 231
 distinct representation inputs. Every input has a named pytest case. Unexpected
 load failures fail the case; regeneration rejects parse diagnostics and failed
 construction. Per-program ceilings prevent an improvement elsewhere from hiding
-a regression. The follow-up representation census is 0 unresolved return slots, 13 missing
-operands, 10 shared execution blocks, and 97,077 examined operations. These are
-measured limits, not claims that the representation is complete.
+a regression. The follow-up representation census is 0 unresolved return slots,
+0 missing operands, and 0 unresolved shared execution blocks across 97,077
+examined operations. Ten physical blocks have complete records in multiple
+routine contexts. These counts do not establish arbitrary behavioral equivalence.
 
 The recompilation sample is also parametrized by program. No aggregate loop can
 turn compilation failures into skips or hide them behind one timeout. Shared

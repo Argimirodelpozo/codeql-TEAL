@@ -293,7 +293,18 @@ def _build_ssa_pass_artifacts(ctx: VisualizationContext) -> dict:
 
 
 def _pyssa_text(ctx: VisualizationContext) -> str:
-    return ctx.prog._pyssa.render()
+    from ..ssa.relations import shared_execution_blocks
+    py = ctx.prog._pyssa
+    rows = [py.render()]
+    for block, entries in shared_execution_blocks(ctx.prog).items():
+        rows.append(f"# Shared block L{block.key[1]}-{block.key[2]} execution operands")
+        for entry in entries:
+            context = py._stack_result.contexts.get(entry)
+            rows.append(f"  routine L{entry.key[1]}")
+            for op in block.ops:
+                args = context.args.get(id(op), ()) if context else ()
+                rows.append(f"    L{op.line} {op.op}: {args!r}")
+    return '\n'.join(rows)
 
 
 def _pre_ir_text(ctx: VisualizationContext) -> str:

@@ -106,6 +106,8 @@ MODULE_VIEW_COVERAGE: dict[str, tuple[str, ...]] = {
     "ssa.scratch_influence": ("analysis.scratch",),
     "ssa.ssa": ("repr.pyssa", "repr.ssa.canonical"),
     "ssa.stacksim": ("repr.pyssa", "analysis.frame", "analysis.callee_effects"),
+    "ssa.return_shapes": ("repr.pyssa",),
+    "ssa.execution_contexts": ("repr.pyssa",),
     "ssa.value_rewrite": ("pass.ssa.stack_shuffles",),
 }
 

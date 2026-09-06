@@ -20,20 +20,20 @@
     }
   },
   "app_1050027991": {
-    "missing": {
-      "162": "divergent-return"
+    "resolved": {
+      "162": "guarded-return"
     }
   },
   "app_1050051479": {
-    "missing": {
-      "1478": "divergent-return",
-      "168": "divergent-return"
+    "resolved": {
+      "1478": "guarded-return",
+      "168": "guarded-return"
     }
   },
   "app_1850333786": {
-    "missing": {
-      "1481": "divergent-return",
-      "168": "divergent-return"
+    "resolved": {
+      "1481": "guarded-return",
+      "168": "guarded-return"
     }
   },
   "app_1850601905": {
@@ -53,15 +53,15 @@
     }
   },
   "app_2300200702": {
-    "missing": {
-      "2813": "caller-residual",
-      "2908": "caller-residual"
+    "resolved": {
+      "2813": "minimum-depth",
+      "2908": "minimum-depth"
     }
   },
   "app_2500525325": {
-    "missing": {
-      "1479": "divergent-return",
-      "168": "divergent-return"
+    "resolved": {
+      "1479": "guarded-return",
+      "168": "guarded-return"
     }
   },
   "app_2600186959": {
@@ -85,15 +85,15 @@
     }
   },
   "app_2645463331": {
-    "missing": {
-      "2855": "caller-residual",
-      "2950": "caller-residual"
+    "resolved": {
+      "2855": "minimum-depth",
+      "2950": "minimum-depth"
     }
   },
   "app_2694165644": {
-    "missing": {
-      "2844": "caller-residual",
-      "2939": "caller-residual"
+    "resolved": {
+      "2844": "minimum-depth",
+      "2939": "minimum-depth"
     }
   }
 }

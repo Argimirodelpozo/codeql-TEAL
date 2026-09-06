@@ -25,7 +25,9 @@ def distinct_files(root: Path, *, recursive=False):
 
 
 def representation_metrics(prog):
-    from tealql.tealtools.ssa.relations import unresolved_call_results, shared_execution_blocks
+    from tealql.tealtools.ssa.relations import (
+        unresolved_call_results, shared_execution_blocks, unresolved_shared_execution_blocks,
+    )
     from tealql.tealtools.language.avm import op_arity
     examined = missing = 0
     for assignment in prog.assignments:
@@ -36,7 +38,8 @@ def representation_metrics(prog):
             examined += 1
             missing += len(assignment.inputs) < inputs
     return dict(unresolved=len(unresolved_call_results(prog)), missing=missing,
-                shared=len(shared_execution_blocks(prog)), examined=examined)
+                shared=len(shared_execution_blocks(prog)),
+                shared_unresolved=len(unresolved_shared_execution_blocks(prog)), examined=examined)
 
 
 def load_manifest():

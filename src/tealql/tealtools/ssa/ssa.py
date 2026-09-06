@@ -222,6 +222,7 @@ class PySSA:
     # callsub bb_key -> continuation bb_key (corrected policy), see
     # subroutines.corrected_return_points.
     _corrected_rp: dict = field(default_factory=dict)
+    _edge_polarity: dict = field(default_factory=dict)
 
     @classmethod
     def build(cls, prog: SSAProgram) -> SSAProgram:
@@ -272,6 +273,7 @@ class PySSA:
     # ----- Phase 1: instantiate PyVars -----------------------------------
 
     def _phase1_instantiate(self, prog: SSAProgram) -> None:
+        self._edge_polarity = prog.edge_polarity
         by_ql: dict[object, PyBlock] = {}
         for qbb in prog.blocks.values():
             b = PyBlock((qbb.file, qbb.first_line, qbb.last_line))
@@ -346,7 +348,8 @@ class PySSA:
                                 frame_analysis=frame_analysis,
                                 effect_summaries=self._effect_summaries,
                                 arity=self._callsub_arities,
-                                divergent_subs=self._arity_divergent)
+                                divergent_subs=self._arity_divergent,
+                                edge_polarity=self._edge_polarity)
         self._stack_result = res
         self._divergent_legacy = {b.key for b in res.divergent}
         for b in self.blocks:
@@ -487,7 +490,7 @@ class PySSA:
         so a region that only ever exits the program (a never-returning branch,
         the dead continuation of a call to an assert-fail helper — exactly
         where band heights are legitimately unknowable) cannot compromise it,
-        however it writes. Within reaching blocks, an uncomputable height IS
+        however it writes. Within reaching blocks, an unavailable lower bound IS
         unsafe — the live continuation of a call whose crossing could not be
         verified (a DIVERGENT legacy callee leaves no single depth), or a
         height-conflicted join. Unsafety is
@@ -526,6 +529,10 @@ class PySSA:
                     reaches_retsub.add(p)
                     reach_wl.append(p)
 
+        from .stacksim import minimum_entry_heights
+        minimum_heights = minimum_entry_heights(
+            self.blocks, self._bb_to_sub, self._callsub_arities,
+            return_point, self._arity_divergent)
         _READONLY = frozenset({"dig", "frame_dig", "dup", "dup2", "dupn"})
         unsafe: set = set()
         clobber: set = set()        # unsafe BECAUSE caller values were consumed
@@ -540,6 +547,14 @@ class PySSA:
             if sub in unsafe:
                 continue
             h = self._frame_edepth.get(b.key)
+            if h is None and sub in self._proto_io:
+                # A minimum proves non-interference even when extra locals
+                # make exact frame coordinates ambiguous. Keep the exact
+                # height poison intact for frame reads and returned values.
+                # A legacy retsub has no VM-enforced result count: ambiguous
+                # heights must keep its callers unsafe even if local writes
+                # never dip below its own arguments.
+                h = minimum_heights.get(b.key)
             if h is None:
                 unsafe.add(sub)
                 continue

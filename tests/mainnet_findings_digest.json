@@ -62,9 +62,9 @@
    "findings": 217
   },
   "partial-tainted-fund-flow": {
-   "contracts": 19,
+   "contracts": 18,
    "crashes": 0,
-   "findings": 57
+   "findings": 55
   },
   "tainted-asset-admin": {
    "contracts": 7,
@@ -202,7 +202,6 @@
    "inner-txn-close-rekey": "194,198",
    "is-deletable": "929",
    "is-updatable": "929",
-   "partial-tainted-fund-flow": "175,181",
    "tainted-fund-flow": "177,185,194,198",
    "tainted-state-write": "599,602,605,608",
    "timelock-upgrade": "929",

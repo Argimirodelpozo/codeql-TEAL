@@ -44,6 +44,13 @@ remain outside the proved fragments.
 Numeric call summaries
 ----------------------
 
+The stack interpreter also computes minimum entry depths to establish caller
+residual preservation across nested calls and height-conflicting joins. This
+uses a separate lower-bound fixed point; it never substitutes a minimum for
+an exact frame coordinate. Descending cycles, ambiguous legacy return counts
+and exhausted work retain conservative refusals. See
+[STACK_COMPLETION.md](STACK_COMPLETION.md) for the independent stack controls.
+
 `call_result` symbolically executes the stack and frame of a straight-line
 `proto` routine, including nested summarized calls, frame replacement, stack
 shuffles and the supported integer arithmetic. Results contain `bounds`,

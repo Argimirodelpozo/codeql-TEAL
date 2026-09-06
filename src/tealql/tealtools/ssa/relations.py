@@ -70,9 +70,9 @@ def unresolved_call_results(prog: SSAProgram) -> list:
 def shared_execution_blocks(prog: SSAProgram) -> dict:
     """Blocks executed in more than one routine ownership context.
 
-    The ownership partition assigns one stack context per block. A shared tail
-    executes in several contexts, so its single SSA operand set is a known
-    context-sensitivity limitation and must remain observable to diagnostics.
+    This is a physical overlap census, not a count of missing values. The stack
+    interpreter records each routine separately and joins its public operands.
+    :func:`unresolved_shared_execution_blocks` identifies incomplete records.
     """
     from ..cfg.subroutines import pyblock_partition, _pyblock_return_point
     from ..ssa import stacksim
@@ -97,6 +97,28 @@ def shared_execution_blocks(prog: SSAProgram) -> dict:
             hits.setdefault(block, []).append(entry)
     return {block: entries for block, entries in hits.items()
             if len(entries) > 1}
+
+
+def unresolved_shared_execution_blocks(prog: SSAProgram) -> dict:
+    """Shared blocks missing an execution context or one of its operands."""
+    shared = shared_execution_blocks(prog)
+    result = getattr(getattr(prog, '_pyssa', None), '_stack_result', None)
+    if result is None or not result.contexts_complete:
+        return shared
+    missing = {}
+    for block, entries in shared.items():
+        for entry in entries:
+            context = result.contexts.get(entry)
+            if context is None or block not in context.exit:
+                missing[block] = entries
+                break
+            for op in block.ops:
+                needed = 1 if op.op in {'frame_dig', 'frame_bury'} else op.n_in
+                args = context.args.get(id(op), ())
+                if len(args) < needed or any(v is None for v in args):
+                    missing[block] = entries
+                    break
+    return missing
 
 
 def scratch_load_sources(prog: SSAProgram) -> dict:
@@ -139,5 +161,6 @@ __all__ = [
     "scratch_load_sources",
     "scratch_unknown_loads",
     "shared_execution_blocks",
+    "unresolved_shared_execution_blocks",
     "unresolved_call_results",
 ]

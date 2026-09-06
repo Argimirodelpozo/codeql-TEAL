@@ -65,12 +65,12 @@ The latter now retain distinct call-result and control-flow merges, including
 recursive returns; a direct branch can no longer erase the returned alternatives
 or make their joined value appear constant.
 
-`REPRESENTATION_GAPS.md` and `tests/representation_gaps.json` classify every
-remaining site. Six missing operands need nested caller-residual summaries;
-seven need a relationship between a legacy return flag and its stack depth.
-Four shared blocks consume incoming effect operands, and six share only control
-flow without an incoming stack operand. Their counts remain explicit, with
-location-level regressions in addition to the existing per-program ceilings.
+At this milestone, `REPRESENTATION_GAPS.md` and `tests/representation_gaps.json`
+classified six missing caller-residual operands, seven legacy return/flag gaps,
+four shared effect blocks and six shared control blocks. The subsequent
+[stack completion](STACK_COMPLETION.md) resolves all 13 operand gaps and supplies
+complete execution records for all 10 shared blocks. Historical source locations
+and per-program ceilings remain checked.
 
 Validation: 409 frame/lift/adversarial checks passed; 53 backend/fact/return checks
 passed with the real Puya backend enabled; 25 gap/manifest checks passed. The

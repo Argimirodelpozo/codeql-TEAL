@@ -1,4 +1,4 @@
-"""Return joins retain concrete alternatives; remaining gaps have exact sites."""
+"""Historical gaps stay fixed at their exact source sites and routine contexts."""
 from pathlib import Path
 import json
 
@@ -60,35 +60,37 @@ def test_all_seven_historical_corpus_return_gaps_are_resolved(name):
 
 
 @pytest.mark.parametrize('name,expected', GAPS.items())
-def test_remaining_gaps_have_exact_locations_and_verified_causes(name, expected):
+def test_historical_gaps_are_resolved_at_their_exact_locations(name, expected):
     from tests.corpus_manifest import _ARITY_SKIP
     from tealql.tealtools.cfg.subroutines import identify_subroutines
     from tealql.tealtools.language.avm import op_arity
-    from tealql.tealtools.ssa.relations import shared_execution_blocks
+    from tealql.tealtools.ssa.relations import shared_execution_blocks, unresolved_shared_execution_blocks
     p = SSAProgram(str(ROOT / 'mainnet-random-probes' / (name + '.teal')))
     missing = {str(a.location.line): a for a in p.assignments if a.op not in _ARITY_SKIP
                and len(a.inputs) < max(0, op_arity(a.op, a.immediates)[0])}
-    assert set(missing) == set(expected.get('missing', {}))
+    assert not missing
+    assert not unresolved_shared_execution_blocks(p)
     shared = shared_execution_blocks(p)
     assert {str(b.key[1]): b.key[2] for b in shared} == {
         line: row[0] for line, row in expected.get('shared', {}).items()}
     info, py = identify_subroutines(p), p._pyssa
-    for line, assignment in missing.items():
-        cause = expected['missing'][line]
-        if cause == 'divergent-return':
+    for line, cause in expected.get('resolved', {}).items():
+        assignment = next(a for a in p.assignments if a.location.line == int(line))
+        assert len(assignment.inputs) == op_arity(assignment.op, assignment.immediates)[0]
+        if cause == 'guarded-return':
             # The preceding helper returns one cell on failure and two on
-            # success; the intervening flag guard does not refine SSA height.
+            # success. Its flag guard now retains the surviving return shape.
             call = next(a for a in p.assignments if a.location.line == int(line) - 2)
             entry = info['callsub_target'][call.basic_block]
             assert assignment.op == 'store' and call.op == 'callsub'
             assert (entry.file, entry.first_line, entry.last_line) in py._divergent_legacy
         else:
-            assert cause == 'caller-residual' and assignment.op == 'concat'
+            assert cause == 'minimum-depth' and assignment.op == 'concat'
             caller = next(b for b, cont in info['continuations'].items() if cont is assignment.basic_block)
             entry = info['callsub_target'][caller]
             key = entry.file, entry.first_line, entry.last_line
             callee = next(b for b in py.blocks if b.key == key)
-            assert callee in py._unsafe_callee_blocks and callee not in py._effect_summaries
+            assert callee not in py._unsafe_callee_blocks
     for block in shared:
         cause = expected['shared'][str(block.key[1])][1]
         # Does this block consume an incoming stack cell, independent of the
@@ -100,10 +102,15 @@ def test_remaining_gaps_have_exact_locations_and_verified_causes(name, expected)
                 needs_input = True
             depth += produced - consumed
         assert needs_input is (cause == 'effect-tail')
+        for entry in shared[block]:
+            context = py._stack_result.contexts[entry]
+            assert block in context.exit
+            assert all(len(context.args[id(op)]) >= op.n_in for op in block.ops)
 
 
-def test_the_classification_covers_every_remaining_corpus_gap():
+def test_the_census_has_no_unresolved_representation_sites():
     from tests.corpus_manifest import load_manifest
-    remaining = {Path(row['path']).stem for row in load_manifest()['representation'].values()
-                 if row['missing'] or row['shared'] or row['unresolved']}
-    assert remaining == set(GAPS)
+    rows = load_manifest()['representation'].values()
+    assert all(row['missing'] == row['unresolved'] == row['shared_unresolved'] == 0 for row in rows)
+    shared = {Path(row['path']).stem for row in rows if row['shared']}
+    assert shared == {name for name, sites in GAPS.items() if sites.get('shared')}
