@@ -65,7 +65,7 @@ The current backend emits at least AVM 10.
 
 The scheduled/manual workflow pins the official go-algorand 5.0 image by digest,
 uses a disposable private network bound to localhost, and installs the locked
-`behavioral` SDK extra. Its 24 runtime tests cover creation, global state across
+`behavioral` SDK extra. Its 33 runtime tests cover creation, global state across
 calls, box write/read/delete, inner payments, group fields, exported scratch,
 opt-in/close-out/clear/update/delete transitions, and numeric loops/calls. Expected
 logs independently check concrete values, including stride 12, multiple returns,
@@ -75,9 +75,12 @@ Eight added controls check the 64/65-byte numeric-comparison boundary, actual
 assembler cost, constant revision agreement/difference and scalar reads that
 fail even when their values are discarded. A timestamp lookup and reads of the
 current transaction's effects remain observable traps in revision comparison.
+Nine stack controls check success and rejection through return flags, both
+branch polarities, minimum-depth caller preservation, and shared inner-payment
+tails with independently expected amounts.
 The workflow also runs nine assembler differential checks. The external gate
 adds three provenance/adapter checks, six reviewed example evaluations and six
-original/lifted assembly checks, for 48 checks in the combined private gate.
+original/lifted assembly checks, for 57 checks in the combined private gate.
 This does not establish equivalence for arbitrary initial
 ledger state, unsupported effects, or unexecuted input paths.
 
@@ -92,9 +95,11 @@ When the gate is explicitly enabled, unavailable infrastructure is a failure.
 Normal hermetic runs skip the runtime tests. The workflow supplies the node setup
 and cleanup; existing public networks and accounts are not used.
 
-The final follow-up run passed 6,249 tests with 47 intentional skips and 88.68%
-combined statement/branch coverage. The complete core-only run passed 4,748
-tests with 328 skips. All 48 combined private checks passed. One hermetic lifting
+The earlier six-milestone follow-up run passed 6,249 tests with 47 intentional
+skips and 88.68% combined statement/branch coverage. Its complete core-only run
+passed 4,748 tests with 328 skips. All 48 combined private checks passed. One hermetic lifting
 skip names the non-AVM `sha512` benchmark fixture; its taint regression is not a
 claim of executable AVM behavior. Exact commands, code identity, coverage detail
 and remaining limits are recorded in [FOLLOWUP_IMPLEMENTATION.md](FOLLOWUP_IMPLEMENTATION.md).
+The subsequent stack-gap fixes and their validation are recorded in
+[STACK_COMPLETION.md](STACK_COMPLETION.md).

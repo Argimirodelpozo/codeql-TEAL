@@ -221,8 +221,10 @@ That third run was interrupted and superseded by the complete final run below.
 Final validation
 ----------------
 
-The final source implementation is `563b4425`; subsequent edits only record
-validation. The complete final run used that source without further edits.
+This section records the six-milestone completion at source implementation
+`563b4425`. That complete run used the source without further edits. The later
+stack-gap implementation and validation are recorded in
+[STACK_COMPLETION.md](STACK_COMPLETION.md).
 
 | Gate | Result |
 | --- | --- |
