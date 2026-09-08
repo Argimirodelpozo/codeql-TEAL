@@ -16,6 +16,11 @@ resources, or absence of arithmetic failure.
 Intervals and induction
 -----------------------
 
+The shared [loop analysis](LOOP_ANALYSIS.md) additionally provides stack/scratch
+induction certificates, bounded interval fixed points, runtime trip limits and
+exit invariants. It connects numeric facts with independently proved execution
+costs and documents the remaining unsupported fragments.
+
 Range queries combine definition-site arithmetic, must-predicates at the queried
 use, and transitive difference constraints over integer-typed operands. For
 example, `Fee < LastValid` and `LastValid < 100` establish `Fee <= 98` after

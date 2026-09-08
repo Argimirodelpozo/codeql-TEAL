@@ -13,9 +13,8 @@ from .._utils.dot import (
     render as _dot_render,
 )
 from ..cfg import CFG
-from ..cfg.dominance import iterative_dominators
+from ..cfg.loops import _LoopShape, _routine_graph, _loop_shapes
 from ..ssa import BasicBlock, SSAProgram
-from ..cfg.subroutines import identify_subroutines
 from .context import BudgetContext, MAX_STACK_DEPTH, context_for
 from .costs import (
     CostModel,
@@ -28,15 +27,6 @@ from .costs import (
 
 # The one canonical control-op spelling lives beside the cost model.
 from .costs import terminator_op as _terminator
-
-
-@dataclass(frozen=True)
-class _LoopShape:
-    kind: str
-    header: BasicBlock
-    entries: tuple[BasicBlock, ...]
-    body: frozenset[BasicBlock]
-    back_edges: tuple[tuple[BasicBlock, BasicBlock], ...]
 
 
 @dataclass(frozen=True)
@@ -61,6 +51,8 @@ class LoopBound:
     context: BudgetContext
     degradations: tuple[str, ...] = ()
     depth: int = 0
+    semantic_trip_bound: Optional[int] = None
+    semantic_reason: str = ''
 
     @property
     def min_iteration_cost(self) -> int:
@@ -101,122 +93,6 @@ class LoopBound:
     @property
     def first_line(self) -> int:
         return self.header.first_line
-
-
-def _reachable(cfg: CFG, pp=None) -> set[BasicBlock]:
-    out: set[BasicBlock] = set()
-    for entry in cfg.entries:
-        if entry in out:
-            continue
-        out.add(entry)
-        work = [entry]
-        while work:
-            block = work.pop()
-            for successor in block.successors:
-                if pp is not None and not pp.edge_is_feasible(block, successor):
-                    continue
-                if successor not in out:
-                    out.add(successor)
-                    work.append(successor)
-    return out
-
-
-def _routine_graph(
-    prog: SSAProgram, cfg: CFG, pp=None,
-) -> tuple[nx.DiGraph, tuple[BasicBlock, ...]]:
-    """Call-summary graph used for loop structure.
-
-    A call block flows to its matched continuation and each subroutine entry is
-    an additional graph root.  A ``retsub`` has no outgoing edge in this view.
-    This prevents one callee's return from being paired with another caller's
-    continuation while still exposing loops in caller and callee routines.
-    Callee execution cost is handled conservatively as a degradation on a
-    cycle containing ``callsub`` rather than splicing context-insensitive
-    return edges into the loop graph.
-    """
-    if pp is None:
-        from ..cfg.path_predicates import PathPredicateAnalysis
-        pp = PathPredicateAnalysis(prog)
-    reached = _reachable(cfg, pp)
-    subs = identify_subroutines(prog)
-    roots = tuple(dict.fromkeys([
-        *(b for b in cfg.entries if b in reached),
-        *(b for b in subs["entries"] if b in reached),
-    ]))
-    graph = nx.DiGraph()
-    graph.add_nodes_from(reached)
-    continuations = subs["continuations"]
-    for bb in reached:
-        term = _terminator(bb)
-        if term == "callsub":
-            cont = continuations.get(bb)
-            if cont in reached:
-                graph.add_edge(bb, cont)
-            continue
-        if term in {"retsub", "return", "err"}:
-            continue
-        for successor in bb.successors:
-            if successor in reached and pp.edge_is_feasible(bb, successor):
-                graph.add_edge(bb, successor)
-    return graph, roots
-
-
-def _dominators(graph: nx.DiGraph, roots: tuple[BasicBlock, ...]) -> dict:
-    nodes = list(graph.nodes)
-    return iterative_dominators(nodes, roots, lambda b: graph.predecessors(b))
-
-
-def _natural_loops(graph: nx.DiGraph, roots: tuple[BasicBlock, ...]) -> list[_LoopShape]:
-    dom = _dominators(graph, roots)
-    by_header: dict[BasicBlock, list[tuple[BasicBlock, BasicBlock]]] = {}
-    for source, target in graph.edges:
-        if target in dom.get(source, ()):
-            by_header.setdefault(target, []).append((source, target))
-
-    out: list[_LoopShape] = []
-    for header, edges in by_header.items():
-        body = {header}
-        work = [source for source, _ in edges]
-        while work:
-            node = work.pop()
-            if node in body:
-                continue
-            body.add(node)
-            work.extend(p for p in graph.predecessors(node) if p not in body)
-        out.append(_LoopShape(
-            "reducible", header, (header,), frozenset(body), tuple(edges)
-        ))
-    return out
-
-
-def _cyclic_sccs(graph: nx.DiGraph) -> list[frozenset[BasicBlock]]:
-    out: list[frozenset[BasicBlock]] = []
-    for raw in nx.strongly_connected_components(graph):
-        comp = frozenset(raw)
-        if len(comp) > 1 or any(graph.has_edge(b, b) for b in comp):
-            out.append(comp)
-    return out
-
-
-def _loop_shapes(graph: nx.DiGraph, roots: tuple[BasicBlock, ...]) -> list[_LoopShape]:
-    natural = _natural_loops(graph, roots)
-    out = list(natural)
-    for comp in _cyclic_sccs(graph):
-        entry_nodes = {
-            node for node in comp
-            if any(pred not in comp for pred in graph.predecessors(node))
-            or node in roots
-        }
-        # A maximal SCC with several entries is irreducible even if it also
-        # contains one or more nested natural loops.
-        if len(entry_nodes) <= 1:
-            continue
-        ordered = tuple(sorted(entry_nodes, key=lambda b: (b.file, b.first_line)))
-        internal_edges = tuple((u, v) for u, v in graph.edges if u in comp and v in comp)
-        out.append(_LoopShape(
-            "irreducible", ordered[0], ordered, comp, internal_edges
-        ))
-    return out
 
 
 def _path_cost(
@@ -361,12 +237,14 @@ def analyze_loops(
     budget: Optional[int] = None,
 ) -> list[LoopBound]:
     """Return all reachable reducible loops and irreducible cyclic regions."""
-    cfg = cfg or CFG.of(prog)
+    from ..analysis import FactDomain
+    induction = prog.facts(FactDomain.RANGES).loop_analysis()
+    cfg = cfg or induction.cfg
     ctx = context_for(prog, context, budget=budget)
     model = CostModel(prog, avm_version=ctx.avm_version)
-    from ..cfg.path_predicates import PathPredicateAnalysis
-    pp = PathPredicateAnalysis(prog)
-    graph, roots = _routine_graph(prog, cfg, pp)
+    pp = induction.base.predicates
+    graph, roots = ((induction.graph, induction.roots) if cfg is induction.cfg
+                    else _routine_graph(prog, cfg, pp))
     distances, paths = _entry_distances(cfg, model, pp)
     out: list[LoopBound] = []
     for shape in _loop_shapes(graph, roots):
@@ -376,6 +254,7 @@ def analyze_loops(
         cost_floor = max(1, iteration.lower)
         growth, stack_degradation = _guaranteed_stack_growth(shape, graph)
         stack_bound = MAX_STACK_DEPTH // growth if growth is not None else None
+        proof = induction.summary(shape)
         degradations = tuple(dict.fromkeys((
             *iteration.reasons,
             *prefix.reasons,
@@ -397,6 +276,8 @@ def analyze_loops(
             stack_bound,
             ctx,
             degradations,
+            semantic_trip_bound=proof.trip_bound,
+            semantic_reason=proof.reason,
         ))
 
     nested = [
@@ -433,6 +314,8 @@ def render(
             + f">={loop.iteration_cost.lower}/cycle ({precision}), "
             + f">={loop.prefix.lower} prefix{stack} -> "
             + f"at most {loop.max_iterations} ({loop.bound_reason})"
+            + (f", semantic trip cap {loop.semantic_trip_bound}"
+               if loop.semantic_trip_bound is not None else ", semantic trip cap unknown")
         )
         for reason in loop.degradations:
             rows.append("  " + "  " * (loop.depth + 1) + f"~ {reason}")

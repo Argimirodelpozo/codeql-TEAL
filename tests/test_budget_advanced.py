@@ -101,14 +101,8 @@ def test_attacker_controlled_budget_loop_is_a_review_candidate():
     assert "ranking function" in candidates[0].reason
 
 
-def test_counting_loop_with_a_constant_cap_is_not_a_candidate():
-    """``for (i = 0; i < 24; i += 1)`` already HAS the explicit iteration cap the finding asks a
-    reviewer to establish, so reporting it asks for something the code carries.
-
-    The attacker decides whether to take each back edge, but the monotone counter independently
-    limits that decision to 24 laps. TEALScript compiles every fixed-size StaticArray walk into this
-    shape, so the pattern is ubiquitous.
-    """
+def test_counting_loop_needs_guaranteed_credit_as_well_as_a_trip_cap():
+    """A bounded loop still consumes budget, including its final exit test."""
     prog = _program(
         "#pragma version 8\n"
         "int 0\n"
@@ -118,7 +112,10 @@ def test_counting_loop_with_a_constant_cap_is_not_a_candidate():
         "txn NumAppArgs\nbnz loop\n"          # attacker-influenced back edge
         "done:\npop\nint 1\nreturn\n"
     )
-    assert find_budget_exhaustion_candidates(prog) == []
+    candidates = find_budget_exhaustion_candidates(prog)
+    assert len(candidates) == 1 and 'trip cap of 24' in candidates[0].reason
+    assert find_budget_exhaustion_candidates(prog, guaranteed_entry_credit=2000) == []
+    assert find_budget_exhaustion_candidates(prog, guaranteed_entry_credit=700)
 
 
 def test_constant_comparison_does_not_hide_an_unchanged_counter():
@@ -185,7 +182,8 @@ def test_descending_constant_cap_proves_progress_in_the_other_direction():
     loop = analyze_loops(prog)[0]
     facts = prog.facts(FactDomain.CONSTANTS)
     assert budget_advanced._constant_trip_cap(prog, loop, facts) == 24
-    assert find_budget_exhaustion_candidates(prog) == []
+    assert find_budget_exhaustion_candidates(prog)
+    assert find_budget_exhaustion_candidates(prog, guaranteed_entry_credit=700) == []
 
 
 def test_loop_bounded_by_a_non_constant_is_still_a_candidate():
@@ -267,19 +265,13 @@ def test_expensive_growing_loop_can_exhaust_budget_before_stack():
     assert loop.budget_bound < loop.stack_bound
 
 
-def test_constant_capped_loops_are_dropped_on_a_real_contract():
-    """The synthetic cap fixtures above pass with OR without ``_constant_trip_cap``
-    (verified by running them against the pre-fix sources), so they pin nothing on
-    their own: the hand-written shapes never reach the loop-carried-Phi test the
-    helper requires.
+def test_real_contract_caps_are_retained_without_claiming_budget_coverage():
+    """Five useful cap certificates survive the removal of unsound suppression.
 
-    Reti's ValidatorRegistry is the shape the fix was measured on, and it does
-    exercise it — ten candidates before, five after, the dropped five capped at 3
-    to 24 by StaticArray capacities against reported bounds in the thousands. The
-    five that REMAIN are bounded by state values (``curNumPools``,
-    ``maxPoolsPerNodeForThisValidator``), which bound nothing on their own, so this
-    pins both directions at once: the cap drops what it should and keeps what it
-    must."""
+    The previous count of five candidates relied on comparing caps with a
+    cheapest-cycle/maximum-credit ceiling. All ten require cost/credit review;
+    the five certified counting loops should not be asked to establish a cap.
+    """
     from pathlib import Path
 
     contract = (Path(__file__).resolve().parent
@@ -289,10 +281,16 @@ def test_constant_capped_loops_are_dropped_on_a_real_contract():
         pytest.skip("reti fixture not present")
     prog = SSAProgram(str(contract), strict=False)
     candidates = find_budget_exhaustion_candidates(prog)
-    assert len(candidates) == 5, (
-        f"budget-exhaustion candidates moved to {len(candidates)} (expected 5). "
-        f"Ten before the constant-cap fix; a rise back toward ten means the cap "
-        f"stopped being credited, a fall means a state-bounded loop was dropped.")
+    assert len(candidates) == 10
+    caps = {c.loop.first_line: constant_trip_cap(prog, c.loop) for c in candidates}
+    assert {line: caps[line] for line in (475, 3573, 3947, 3960, 5090)} == {
+        475: 24, 3573: 6, 3947: 8, 3960: 3, 5090: 6,
+    }
+    # Bounded runtime limits add one useful byte-walk bound and three uint64
+    # ceilings. None of these says the available opcode credit is sufficient.
+    assert caps[5963] == 128
+    assert all(caps[line] == 2**64 - 1 for line in (2592, 3774, 5430))
+    assert caps[5694] is None
 
 
 def test_opaque_leaf_conditions_are_attacker_possible():

@@ -601,3 +601,52 @@ def test_recursive_return_shapes_against_interpreter(node, kind, depth, accepted
     else:
         assert 'assert failed' in observation.detail
     assert client.status()['last-round'] == round
+
+
+@pytest.mark.parametrize('kind', ['stack-pre', 'stack-post', 'scratch-pre', 'scratch-post', 'guarded', 'variable'])
+@pytest.mark.parametrize('value', [0, 9, 10, 11])
+def test_loop_certificates_against_interpreter(node, kind, value):
+    import base64
+    import json
+    from tealql.tealtools.analysis import FactDomain
+    from tealql.tealtools.budget.upper_cost import UpperCost
+    from tealql.tealtools.ssa import SSAProgram
+    from tests.test_loop_induction import counter_loop
+    from tests.behavioral_lift.simulate import creation, simulate_transactions
+    from tests.behavioral_lift.observations import observe_simulate
+
+    if kind == 'guarded':
+        body = ('txna ApplicationArgs 0\nbtoi\ndup\nint 10\n<=\nassert\n'
+                'int 0\nloop:\ndup\ndig 2\n<\nbz done\nint 1\n+\nb loop\n'
+                'done:\nitob\nlog\npop\nint 1\nreturn\n')
+        expected = value
+    elif kind == 'variable':
+        body = counter_loop(limit=9).replace('int 1\n+\n',
+                    'txna ApplicationArgs 0\nbtoi\nint 2\n%\nint 1\n+\n+\n')
+        expected = 10 if value % 2 else 9
+    else:
+        body = counter_loop(start=value, scratch=kind.startswith('scratch'), post=kind.endswith('post'))
+        expected = max(10, value + int(kind.endswith('post')))
+    source = '#pragma version 10\n' + body
+    program = SSAProgram.from_text(source, name='loop-runtime.teal')
+    use = next(a for a in program.assignments if a.op == 'itob')
+    bounds = program.facts(FactDomain.RANGES).range_at(use.inputs[0], use)
+    upper = UpperCost(program).from_block(program.entry_blocks()[0]).upper
+    assert upper is not None
+    client, sender, round = node
+    clear = _compile(client, '#pragma version 10\nint 1')
+    txn = creation(client, _compile(client, source), clear, sender=sender, round=round)
+    txn.app_args = [value.to_bytes(8, 'big')]
+    response = simulate_transactions(client, [txn], round=round)
+    observed = observe_simulate(response)
+    accepted = kind != 'guarded' or value <= 10
+    assert observed.approved is accepted, observed
+    assert response['txn-groups'][0]['app-budget-consumed'] <= upper
+    if accepted:
+        logs = [int.from_bytes(base64.b64decode(log), 'big')
+                for log in json.loads(observed.effects)['logs']]
+        assert logs == [expected]
+        assert bounds is not None and bounds.lo <= expected <= bounds.hi
+    else:
+        assert 'assert failed' in observed.detail
+    assert client.status()['last-round'] == round

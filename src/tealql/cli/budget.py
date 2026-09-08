@@ -108,6 +108,8 @@ def _cmd_loops(args) -> int:
                     "budget_bound": b.budget_bound,
                     "stack_bound": b.stack_bound,
                     "max_iterations": b.max_iterations,
+                    "semantic_trip_bound": b.semantic_trip_bound,
+                    "semantic_reason": b.semantic_reason,
                     "bound": b.bound_reason,
                     "degradations": list(b.degradations),
                 } for b in loops],

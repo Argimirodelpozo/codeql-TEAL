@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
+
+from ..ssa.operands import canonical_assignments, terminator_op
 from typing import Iterable, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -192,20 +194,6 @@ _FIELD_LENGTH_COSTS: dict[str, dict[str, tuple[int, int, int, int]]] = {
 def _ceil_div(value: int, divisor: int) -> int:
     return (value + divisor - 1) // divisor
 
-
-def terminator_op(bb: "BasicBlock") -> Optional[str]:
-    """The control op ending ``bb``'s canonical stream, or ``None``.
-
-    The ONE spelling of the control-op set — `loop_bounds` and the cost model
-    each carried a verbatim copy, so a future control op would have to be
-    remembered twice or the loop graph and the cost model silently disagree."""
-    for assignment in reversed(canonical_assignments(bb)):
-        if assignment.op in {
-            "b", "bz", "bnz", "switch", "match", "callsub",
-            "retsub", "return", "err",
-        }:
-            return assignment.op
-    return None
 
 
 class CostModel:
@@ -485,10 +473,6 @@ def sum_costs(facts: Iterable[CostFact]) -> CostFact:
     return total
 
 
-def canonical_assignments(bb: "BasicBlock") -> tuple["Assignment", ...]:
-    """The opcodes the AVM executes, independent of presentation cleanup."""
-    stream = bb.stack_assignments
-    return tuple(stream) if stream else tuple(bb.assignments)
 
 
 def assignment_cost(assignment: "Assignment") -> CostFact:

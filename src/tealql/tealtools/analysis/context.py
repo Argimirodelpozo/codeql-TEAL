@@ -273,6 +273,7 @@ class ValueFacts:
         self._intervals = None
         self._congruences = None
         self._numeric_calls = None
+        self._loops = None
 
     @classmethod
     def build(
@@ -402,6 +403,14 @@ class ValueFacts:
             from .intervals import IntervalQuery
             self._intervals = IntervalQuery(self)
         return self._intervals.range_at(value, target)
+
+    def loop_analysis(self):
+        """Revision-scoped induction certificates for intervals and costs."""
+        from .loop_induction import LoopAnalysis
+        self.resolve(None)
+        if self._loops is None:
+            self._loops = LoopAnalysis(self)
+        return self._loops
 
 
 class AnalysisContext:

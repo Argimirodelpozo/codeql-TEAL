@@ -65,7 +65,7 @@ The current backend emits at least AVM 10.
 
 The scheduled/manual workflow pins the official go-algorand 5.0 image by digest,
 uses a disposable private network bound to localhost, and installs the locked
-`behavioral` SDK extra. Its 51 runtime tests cover creation, global state across
+`behavioral` SDK extra. Its 75 runtime tests cover creation, global state across
 calls, box write/read/delete, inner payments, group fields, exported scratch,
 opt-in/close-out/clear/update/delete transitions, and numeric loops/calls. Expected
 logs independently check concrete values, including stride 12, multiple returns,
@@ -82,9 +82,12 @@ Eighteen recursive controls compare SSA predictions with read-only execution
 of original TEAL across three recursion forms, three depths and both acceptance
 outcomes. These cases exercise source analysis and execution. Divergent recursive
 legacy routines still have separate compiler-lowering limits.
+Twenty-four loop controls compare interval and cost predictions with original
+TEAL execution across stack/scratch counters, pre/post tests, runtime limits and
+variable positive strides, including rejection of an invalid guarded argument.
 The workflow also runs nine assembler differential checks. The external gate
 adds three provenance/adapter checks, six reviewed example evaluations and six
-original/lifted assembly checks, for 75 checks in the combined private gate.
+original/lifted assembly checks, for 99 checks in the combined private gate.
 This does not establish equivalence for arbitrary initial
 ledger state, unsupported effects, or unexecuted input paths.
 
@@ -109,3 +112,5 @@ The subsequent stack-gap fixes and their validation are recorded in
 [STACK_COMPLETION.md](STACK_COMPLETION.md).
 The recursive-return extension and its validation are recorded in
 [RECURSIVE_RETURNS.md](RECURSIVE_RETURNS.md).
+The loop induction, interval fixed points, budget-proof correction and their
+validation are recorded in [LOOP_ANALYSIS.md](LOOP_ANALYSIS.md).

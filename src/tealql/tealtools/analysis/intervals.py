@@ -26,11 +26,12 @@ def _meet(left, right):
 
 
 class IntervalQuery:
-    def __init__(self, facts, *, budget=128):
+    def __init__(self, facts, *, budget=128, loop_invariants=True):
         from ..cfg.path_predicates import PathPredicateAnalysis
         self.facts = facts
         self.predicates = PathPredicateAnalysis(facts._prog)
         self.budget = budget
+        self.loop_invariants = loop_invariants
         self.cache = {}
         self.relational = {}
         self.visits = self.widenings = 0
@@ -158,6 +159,10 @@ class IntervalQuery:
         base, reachable = self._refine(value, self._bounds(value), file, line)
         if not reachable:
             return None
+        if self.loop_invariants and (isinstance(value, Phi) or
+                getattr(getattr(value, 'defined_by', None), 'op', None) == 'load'):
+            invariant = self.facts.loop_analysis().range_at(value, file, line)
+            base = _meet(base, invariant)
         cache_key = key, file, line
         if cache_key in self.cache:
             return self.cache[cache_key]

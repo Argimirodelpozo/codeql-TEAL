@@ -9,7 +9,10 @@ immediate as int) — it was re-rolled per-module before landing here.
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .models import Assignment, BasicBlock
 
 from .models import Const
 
@@ -93,3 +96,24 @@ def source_operands(a) -> tuple:
     ``inputs[0]`` meant the topmost value in one module and the deepest in
     another, distinguishable only by reading a docstring in a third."""
     return tuple(reversed(a.inputs))
+
+
+def canonical_assignments(bb: "BasicBlock") -> tuple["Assignment", ...]:
+    """The opcodes the AVM executes, independent of presentation cleanup."""
+    stream = bb.stack_assignments
+    return tuple(stream) if stream else tuple(bb.assignments)
+
+
+def terminator_op(bb) -> Optional[str]:
+    """The control op ending ``bb``'s canonical stream, or ``None``.
+
+    The ONE spelling of the control-op set — `loop_bounds` and the cost model
+    each carried a verbatim copy, so a future control op would have to be
+    remembered twice or the loop graph and the cost model silently disagree."""
+    for assignment in reversed(canonical_assignments(bb)):
+        if assignment.op in {
+            "b", "bz", "bnz", "switch", "match", "callsub",
+            "retsub", "return", "err",
+        }:
+            return assignment.op
+    return None
