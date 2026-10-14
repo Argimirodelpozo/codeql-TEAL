@@ -263,11 +263,28 @@ func (l *remoteLedger) LookupWithoutRewards(rnd basics.Round, addr basics.Addres
 	default:
 		ad.Status = basics.Offline
 	}
+	// The REST view applies pending rewards: amount and reward-base are
+	// advanced to round rnd's rewards level, amount-without-pending-rewards is
+	// the stored balance. The evaluator needs the STORED record (it credits the
+	// pending rewards itself, into ApplyData's ss/rs/rc), so undo the
+	// advance: pending = (level - base) * units, units = stored / RewardUnit.
 	ad.MicroAlgos = basics.MicroAlgos{Raw: a.AmountWithoutPendingRewards}
 	if a.RewardBase != nil {
 		ad.RewardsBase = *a.RewardBase
 	}
-	ad.RewardedMicroAlgos = basics.MicroAlgos{Raw: a.Rewards}
+	ad.RewardedMicroAlgos = basics.MicroAlgos{Raw: a.Rewards - a.PendingRewards}
+	if a.PendingRewards > 0 {
+		hdr, err := l.BlockHdr(rnd)
+		if err != nil {
+			return ledgercore.AccountData{}, rnd, err
+		}
+		units := a.AmountWithoutPendingRewards / config.Consensus[hdr.CurrentProtocol].RewardUnit
+		if units == 0 || a.PendingRewards%units != 0 {
+			return ledgercore.AccountData{}, rnd, fmt.Errorf(
+				"account %s: pending rewards %d not a multiple of %d reward units", addr, a.PendingRewards, units)
+		}
+		ad.RewardsBase = hdr.RewardsLevel - a.PendingRewards/units
+	}
 	ad.AuthAddr = addrOf(a.AuthAddr)
 	if a.IncentiveEligible != nil {
 		ad.IncentiveEligible = *a.IncentiveEligible
