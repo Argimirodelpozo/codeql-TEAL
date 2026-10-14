@@ -25,7 +25,7 @@ Sampled rather than fully triaged (cells left unlabelled): `tainted-fund-flow` (
 
 | Detector | Cells | Contracts | Decided | TP | FP | INTENDED | UNKNOWN | Precision |
 | --- | --: | --: | --: | --: | --: | --: | --: | --: |
-| `tainted-fund-flow` | 281 | 67 | 57% | 17 | 83 | 59 | 122 | 0.17 |
+| `tainted-fund-flow` | 284 | 67 | 57% | 17 | 86 | 59 | 122 | 0.17 |
 | `is-deletable` | 219 | 164 | 100% | 67 | 7 | 144 | 1 | 0.91 |
 | `inner-txn-close-rekey` | 202 | 83 | 99% | 7 | 2 | 190 | 3 | 0.78 |
 | `is-updatable` | 173 | 130 | 100% | 61 | 10 | 102 | 0 | 0.86 |
@@ -41,7 +41,7 @@ Sampled rather than fully triaged (cells left unlabelled): `tainted-fund-flow` (
 | `unvalidated-group-sibling` | 57 | 29 | 88% | 2 | 45 | 3 | 7 | 0.04 |
 | `arbitrary-inner-asset` | 43 | 25 | 86% | 5 | 24 | 8 | 6 | 0.17 |
 | `abi-method-selector` | 39 | 34 | 100% | 2 | 26 | 11 | 0 | 0.07 |
-| `partial-tainted-fund-flow` | 34 | 16 | 82% | 3 | 24 | 1 | 6 | 0.11 |
+| `partial-tainted-fund-flow` | 31 | 13 | 81% | 3 | 21 | 1 | 6 | 0.12 |
 | `arbitrary-inner-appcall` | 20 | 13 | 45% | 0 | 7 | 2 | 11 | 0.00 |
 | `tainted-asset-admin` | 7 | 7 | 100% | 0 | 0 | 7 | 0 | — |
 | `constant-condition` | 6 | 4 | 100% | 6 | 0 | 0 | 0 | 1.00 |
@@ -65,6 +65,7 @@ text alone.
 - **fee-to-fixed-recipient** ×4 — e.g. `app_1050030771.teal:1957`: fee share paid to app_params_get AppAddress of Applications[122], asserted == constant app 949203488
 - **sender-pinned-to-whitelisted-state** ×4 — e.g. `app_2200406603.teal:223`: 'withdraw' requires the preceding txn to be the caller's own call to the bridge app with sender == global w1 or w2 (whitelist written only by the bridge app); payout goes to txn Sender
 - **refund-of-freed-box-mbr** ×3 — e.g. `app_2645463331.teal:551`: Amount = sum of 2500+400*(keylen+boxlen) over boxes just box_del'd, paid to txn Sender: exactly the MBR released, the app's spendable balance cannot drop
+- **receiver-pinned-to-owner-state** ×3 — e.g. `app_2645463331.teal:3522`: the NFD asa is clawed to frame -2, which the caller (vault_send) asserted == state "i.owner.a" before callsub label119 — the NFD goes to its owner (same code as app_2300200702.teal:3480). Moved from partial-tainted-fund-flow on 2026-10-14 when the owner read became account-typed: the a07 address-pin rule now judges the owner slot, whose writers include `gtxns Sender` of a purchase payment (anyone who buys becomes owner) — authority not preserved, yet the NFD still goes to its rightful owner
 - **sender-pinned-to-registry-admin** ×2 — e.g. `app_2450526014.teal:351`: the arg-amount withdraw site asserts txn Sender == the 'MNA' address read from the UL_SUPERADMIN_APP registry app (app_global_get_ex of a foreign admin app) and pays txn Sender
 - **signature-verified-payload** ×2 — e.g. `app_2450526014.teal:353`: receiver is field 72..104 of a base64 order payload whose signature is checked by label65 (ed25519verify_bare / ecdsa_verify against the payload's signer) before label90 pays out
 - **sender-pinned-to-admin-state** ×2 — e.g. `app_900170865.teal:92`: withdraw asserts (callsub label14) txn Sender == CreatorAddress || == global admin (admin rotated only under the same gate) and pays txn Sender
@@ -196,7 +197,6 @@ text alone.
 - **receiver-from-keyed-record** ×8 — e.g. `app_3550011936.teal:387`: receiver = the depositor address stored in box "as"||asset (written from txn Sender at 305-312); the caller only picks which listing to settle
 - **value-from-app-written-record** ×4 — e.g. `app_1050030771.teal:1569`: refund of the order account's own recorded "amount_in"/"asset_in_id" (app-written local state), after creator or expiry, to the recorded "beneficiary_address" (asserted 1537-1544)
 - **receiver-pinned-to-constant-app** ×4 — e.g. `app_1050030771.teal:1959`: receiver load 140 = AppAddress of Applications[i], asserted == constant app 949203488 at 1894-1898
-- **receiver-pinned-to-owner-state** ×3 — e.g. `app_2645463331.teal:3522`: the NFD asa is clawed to frame -2, which the caller (vault_send) asserted == state "i.owner.a" before callsub label119 — the NFD goes to its owner (same code as app_2300200702.teal:3480)
 - **same-slot-reread-not-credited** ×3 — e.g. `app_1850552146.teal:381`: AssetReceiver = txnas Accounts[frame -3], and the same Accounts[frame -3] is asserted == global CreatorAddress at 351-355; the re-read through a fresh txnas is not credited *Fixable: a fresh txnas of the same (param) slot should share the check.*
 - **receiver-is-own-child-app** ×2 — e.g. `app_3550011936.teal:603`: receiver = AppAddress of the listing app, asserted to be created by this app (AppCreator == CurrentApplicationAddress at 564-569)
 

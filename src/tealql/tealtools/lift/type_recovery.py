@@ -855,24 +855,28 @@ def _infer_state_types(lifter):
     whatever was put to its constant key; a key with conflicting put types stays
     unknown. Put inputs are top-first (value [0], key [1]); the read value is
     output 1 for ``*_get_ex`` (did_exist at 0), the sole output for ``*_get``."""
-    key_types: dict = {}
+    put_types: dict = {}       # key -> types of typed registers PUT to it (claims)
+    read_families: dict = {}   # key -> AVM families of reads / constant puts (witnesses)
     for a in lifter.prog.stack_assignments:
         if a.op in ("app_global_put", "app_local_put") and len(a.inputs) >= 2:
             key, v = _const_key(a.inputs[1]), a.inputs[0]
             if key is None:
                 continue
+            # A constant (or a folded one that lost its register type) only
+            # knows its family, so it witnesses; a typed register claims.
+            const_kind = None
             if isinstance(v, (SSAVar, Phi)):
                 vt = lifter.reg(v).ir_type
                 if vt == "?":                    # folded const lost its reg type
-                    cv = getattr(v, "const_value", None)
-                    if getattr(cv, "kind", None):
-                        vt = "uint64" if cv.kind == "int" else "bytes"
+                    const_kind = getattr(getattr(v, "const_value", None), "kind", None)
             elif isinstance(v, Const):           # a constant put still types the key
-                vt = "uint64" if v.kind == "int" else "bytes"
+                vt, const_kind = "?", v.kind
             else:
                 vt = None
-            if vt and vt != "?":
-                key_types.setdefault(key, set()).add(vt)
+            if const_kind:
+                read_families.setdefault(key, set()).add("u" if const_kind == "int" else "b")
+            elif vt and vt != "?":
+                put_types.setdefault(key, set()).add(vt)
 
     # Also seed from READ value types: a key never PUT with a determinate type
     # here still needs unifying if it is read with CONFLICTING types, else a
@@ -892,20 +896,36 @@ def _infer_state_types(lifter):
             continue
         fam = avm(lifter.reg(rv).ir_type)
         if fam in ("b", "u"):
-            key_types.setdefault(rk, set()).add("bytes" if fam == "b" else "uint64")
+            read_families.setdefault(rk, set()).add(fam)
 
-    def _resolve(types: set):
+    def _resolve(puts: set, witnessed: set):
         # ONE put type -> that type. HAZARD: a genuine bytes/uint64 clash is left
         # UNRESOLVED. Forcing the chain to bytes crosses the avm_type divide by
         # fiat and propagates into lowering — a real semantic change made on a
         # guess about which side was mistyped. Recovery only refines WITHIN a
         # family, so it stays a pure annotation.
-        if len(types) == 1:
-            return next(iter(types))
-        return None
+        #
+        # Reads and constant puts only WITNESS a family; they confirm a claim of
+        # that family instead of competing with it. Counting them as claims left
+        # an account key ({account, bytes}) unresolved: its reads kept per-site
+        # types, and Puya's CSE merged an `(account, bool)` read into a
+        # `(uint64, bool)` one (mainnet app 3192677198 failed to lift).
+        fams = {avm(t) for t in puts} | witnessed
+        if len(fams) != 1 or (fam := next(iter(fams))) not in ("b", "u"):
+            return None
+        base = "bytes" if fam == "b" else "uint64"
+        if len(puts) == 1 and not witnessed:
+            return next(iter(puts))
+        if fam == "b":
+            # account refines bytes: one refined claim wins over witnesses.
+            refined = puts - {base}
+            return refined.pop() if len(refined) == 1 else base
+        # uint64 family: a bool claim beside other evidence may not hold for
+        # every write (an arithmetic put, a constant 5), so take the base.
+        return base
 
-    key_types = {k: t for k, s in key_types.items()
-                 if (t := _resolve(s)) is not None}
+    key_types = {k: t for k in put_types.keys() | read_families.keys()
+                 if (t := _resolve(put_types.get(k, set()), read_families.get(k, set()))) is not None}
     if not key_types:
         return
     for a in lifter.prog.stack_assignments:

@@ -62,9 +62,9 @@
    "findings": 173
   },
   "partial-tainted-fund-flow": {
-   "contracts": 16,
+   "contracts": 13,
    "crashes": 0,
-   "findings": 34
+   "findings": 31
   },
   "tainted-asset-admin": {
    "contracts": 7,
@@ -84,7 +84,7 @@
   "tainted-fund-flow": {
    "contracts": 67,
    "crashes": 0,
-   "findings": 281
+   "findings": 284
   },
   "tainted-log": {
    "contracts": 48,
@@ -129,9 +129,8 @@
    "arbitrary-inner-asset": "2501,2519",
    "inner-txn-close-rekey": "2505",
    "is-updatable": "227",
-   "partial-tainted-fund-flow": "3522",
    "tainted-asset-admin": "2118",
-   "tainted-fund-flow": "551,2406,2503,2505,2507,2521,2523",
+   "tainted-fund-flow": "551,2406,2503,2505,2507,2521,2523,3522",
    "tainted-log": "306,682,1111,1337,1429",
    "tainted-state-write": "589,1078,1086",
    "timelock-upgrade": "227",
@@ -660,9 +659,8 @@
    "arbitrary-inner-asset": "2480,2498",
    "inner-txn-close-rekey": "2484",
    "is-updatable": "227",
-   "partial-tainted-fund-flow": "3480",
    "tainted-asset-admin": "2097",
-   "tainted-fund-flow": "551,2385,2482,2484,2486,2500,2502",
+   "tainted-fund-flow": "551,2385,2482,2484,2486,2500,2502,3480",
    "tainted-log": "306,682,1111,1337,1429",
    "tainted-state-write": "589,1078,1086",
    "timelock-upgrade": "227",
@@ -854,9 +852,8 @@
    "arbitrary-inner-asset": "2490,2508",
    "inner-txn-close-rekey": "2494",
    "is-updatable": "221",
-   "partial-tainted-fund-flow": "3519",
    "tainted-asset-admin": "2112",
-   "tainted-fund-flow": "545,2400,2492,2494,2496,2510,2512",
+   "tainted-fund-flow": "545,2400,2492,2494,2496,2510,2512,3519",
    "tainted-log": "300,676,1105,1331,1423",
    "tainted-state-write": "583,1072,1080",
    "timelock-upgrade": "221",
