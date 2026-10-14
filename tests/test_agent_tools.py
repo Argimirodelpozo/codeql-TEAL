@@ -8,6 +8,7 @@ from "ran clean"; reachability results label themselves as over-approximate.
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 from pathlib import Path
 
@@ -22,6 +23,9 @@ TESTS = Path(__file__).resolve().parent
 REPRO = TESTS / "contracts" / "repro" / "approval.teal"           # ABI app, `// repro.py:N` comments
 UNGUARDED = TESTS / "benchmark" / "tainted-fund-flow" / "vuln" / "unguarded_receiver.teal"
 REKEY_VULN_DIR = TESTS / "benchmark" / "rekey-to" / "vuln"        # logicsig-mode detector
+# Without the optional `lift` extra the storage schema cannot be recovered, so a
+# brief is honestly incomplete (complete=false, exit 2) — the core-only CI job.
+HAVE_LIFT = importlib.util.find_spec("puya") is not None
 
 
 def _json_roundtrip(payload) -> dict:
@@ -250,13 +254,14 @@ def test_brief_composes_sections_with_one_envelope_and_renders_markdown():
     assert lc["updatable"] is True and lc["update_not_creator_gated"] is True
     assert lc["deletable"] is True and lc["delete_not_creator_gated"] is True
     assert b["abi_methods"][0]["name"] == "known_method"
-    assert b["attack_surface"] == [] and b["complete"] is True
+    assert b["attack_surface"] == [] and b["complete"] is HAVE_LIFT
     assert any(s.startswith("Upgradeable (by anyone") for s in b["headline"])
     assert {f["rule_id"] for f in b["findings"]} >= {"unprotected-updatable", "is-deletable"}
     assert "is-updatable" in b["detectors_run"]
     md = render_brief_markdown(b)
-    for heading in ("## ABI methods", "## Lifecycle", "## Findings", "## Analysis health: complete"):
+    for heading in ("## ABI methods", "## Lifecycle", "## Findings"):
         assert heading in md
+    assert ("## Analysis health: complete" in md) is HAVE_LIFT
     assert "unprotected-updatable @ approval.teal:17" in md
     # A logicsig program: lifecycle detectors do not apply and say so (null).
     lsig = contract_brief(sorted(REKEY_VULN_DIR.glob("*.teal"))[0])
@@ -265,10 +270,11 @@ def test_brief_composes_sections_with_one_envelope_and_renders_markdown():
 
 
 def test_cli_brief_explain_and_mcp_list(capsys):
-    assert main(["brief", str(REPRO), "--json"]) == 1          # findings -> 1, like `all`
+    expected = 1 if HAVE_LIFT else 2                            # findings -> 1; incomplete -> 2
+    assert main(["brief", str(REPRO), "--json"]) == expected
     b = json.loads(capsys.readouterr().out)
     assert b["file"] == "approval.teal" and b["findings"]
-    assert main(["brief", str(REPRO)]) == 1
+    assert main(["brief", str(REPRO)]) == expected
     assert "# approval.teal" in capsys.readouterr().out
     assert main(["explain", str(UNGUARDED), "--line", "4"]) == 0
     out = capsys.readouterr().out
