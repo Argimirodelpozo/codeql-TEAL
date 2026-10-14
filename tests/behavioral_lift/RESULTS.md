@@ -53,7 +53,7 @@ app, a v5 PyTeal-era app, and others.
 |---|---|---|---|---|---|---|---|---|
 | 1002541853 (Tinyman v2) | 30 | 61 | **61** | 0 | 7 | 1.01 | 1 | 42% |
 | 1284326447 | 30 | 95 | **95** | 0 | 0 | 1.02 | 1 | 65% |
-| 3172554435 | 30 | 30 | **29** | 0 | 0 | 0.99 | 4 | 2–64% |
+| 3172554435 | 30 | 30 | **30** | 0 | 0 | 0.99 | 4 | 2–64% |
 | 1222048105 | 30 | 30 | **30** | 0 | 0 | 0.98 | 1 | 72% |
 | 641500474 | 30 | 31 | **31** | 0 | 0 | 1.00 | 1 | 63% |
 | 1439234347 | 30 | 54 | **54** | 0 | 0 | 1.00 | 1 | 79% |
@@ -61,9 +61,11 @@ app, a v5 PyTeal-era app, and others.
 | 3192677198 | 30 | 30 | **30** | 0 | 0 | 1.00 | 2 | 18–23% |
 | 1040271396 | 30 | 30 | **30** | 0 | 0 | 0.95 | 2 | 26–28% |
 
-**397/398 groups FAITHFUL, 0 DIVERGES.** The remaining group is a version
-artifact: an UpdateApplication to an AVM 9 program is refused as a "downgrade"
-from the lifted program's AVM 10. Recompiled programs spend about the same
+**398/398 groups FAITHFUL, 0 DIVERGES.** One of them is an UpdateApplication
+installing an AVM 9 program, which the AVM refuses as a "downgrade" from the
+lifted program's AVM 10; that block is re-run with the lifted new program
+installed instead (at a matching version, its clear program too), and the
+update and everything after it behave as on chain. Recompiled programs spend about the same
 pooled budget as the originals (median 0.95–1.02×). Tinyman's groups are
 budget-exact (the deployed program used 2,096 of a 2,100 pool), so 7 groups
 needed 13–30 more opcodes than the chain gave them. Those were judged on a re-run
@@ -77,8 +79,8 @@ are replayable from history. **Every group was FAITHFUL**, with 0 DIVERGES and 0
 lift failures. One more app (971323141) has budget-exact groups: 7 needed a
 little more budget than the chain gave them and were exact with it.
 
-**Combined: 30 apps, 664 blocks, 912 groups, 45 program versions: 911
-FAITHFUL, 0 DIVERGES**, plus 1 version artifact. 100 groups predate AVM 10 and
+**Combined: 30 apps, 664 blocks, 912 groups, 45 program versions: 912
+FAITHFUL, 0 DIVERGES.** 100 groups predate AVM 10 and
 were replayed under the current protocol. The deployed program's chain
 reproduction showed that upgrade changed nothing. Median pooled-budget
 ratio per app is 0.87–1.08.
@@ -95,6 +97,9 @@ rival claims. After the fix, all 5 blocks are FAITHFUL (`test_state_type_unifica
   whole prefix is replayed.
 - **Version cap:** the lift's AVM ≥ 10 is rejected by old blocks' protocols,
   so those blocks are re-run under the current protocol.
+- **Version downgrade:** an update installing an older-AVM program is refused
+  once the lifted program raised the version, so the lifted variants install
+  the lifted new program instead (ttreplay `installs`).
 - **REST rewards view:** the stored rewards base had to be recovered from
   `reward-base` and `pending-rewards`.
 - **Poisoning:** any non-faithful group poisons the rest of its block,

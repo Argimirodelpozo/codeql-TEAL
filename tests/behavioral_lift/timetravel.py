@@ -38,6 +38,7 @@ import hashlib
 import json
 import os
 import random
+import re
 import subprocess
 import sys
 import time
@@ -57,7 +58,9 @@ REPLAY_TIMEOUT = int(os.environ.get("TEALQL_TT_REPLAY_TIMEOUT", "1800"))
 # recompiled program may spend more opcode budget than the original did.
 _BUDGET_MARKERS = ("dynamic cost budget exceeded", "cost budget exceeded")
 # The lift emits AVM >= 10; an UpdateApplication installing an older-version
-# program is then a "downgrade" the AVM refuses. An oracle artifact, not counted.
+# program is then a "downgrade" the AVM refuses. ``replay_block`` re-runs such a
+# block installing the LIFTED new program instead; a group still refused (the
+# new program did not lift) is an oracle artifact, not counted.
 _VERSION_ARTIFACT_MARKERS = ("program version downgrade",)
 
 
@@ -140,6 +143,22 @@ def assemble(teal: str) -> tuple[str | None, str | None]:
     proc = _ttreplay("asm", teal)
     out = json.loads(proc.stdout or "{}")
     return out.get("program"), out.get("error") or (proc.stderr.strip() or None)
+
+
+def program_version(program_b64: str) -> int:
+    """The AVM version a program's bytecode starts with (a uvarint)."""
+    v = shift = 0
+    for b in base64.b64decode(program_b64):
+        v |= (b & 0x7F) << shift
+        if b < 0x80:
+            return v
+        shift += 7
+    raise ValueError("empty program")
+
+
+def at_version(teal: str, version: int) -> str:
+    """``teal`` with its ``#pragma version`` set to ``version``."""
+    return re.sub(r"(?m)^#pragma version \d+", f"#pragma version {version}", teal, count=1)
 
 
 def instruction_count(teal: str) -> int:
@@ -298,11 +317,45 @@ def _run_replay(req: dict) -> dict:
         return {"error": f"ttreplay exit {proc.returncode}: {proc.stderr.strip()[-400:]}"}
 
 
-def replay_block(app_id: int, rnd: int, lift: dict, cache_dir: Path) -> dict:
+def install_map(app_id: int, rnd: int, lift: dict, lifts: Path) -> tuple[dict, str | None]:
+    """``{sha256 hex of a program the block installs: replacement b64}`` for the
+    lifted variants: the LIFTED new approval, and the new clear program at the
+    same AVM version (approval and clear must match from v6). Both are raised
+    to at least the overridden program's version, so the update is no
+    downgrade. Returns ({}, why) when the new program has no lift."""
+    progs = programs_at(app_id, rnd)
+    if progs is None:
+        return {}, "app has no programs after the block"
+    new = lift_program(progs[0], lifts)
+    if new.get("status") != "OK":
+        return {}, f"installed program {new['sha']}: {new.get('status')} {new.get('error', '')}"[:300]
+    version = max(program_version(new["lifted"]), program_version(lift["lifted"]))
+    approval = new["lifted"]
+    if program_version(approval) != version:
+        approval, err = assemble(at_version((lifts / f"{new['sha']}.lifted.teal").read_text(), version))
+        if approval is None:
+            return {}, f"installed program at v{version}: {err}"
+    clear, err = assemble(at_version(disassemble(progs[1]), version))
+    if clear is None:
+        return {}, f"installed clear program at v{version}: {err}"
+    sha = lambda b: hashlib.sha256(base64.b64decode(b)).hexdigest()  # noqa: E731
+    return {sha(progs[0]): approval, sha(progs[1]): clear}, None
+
+
+def _refused(resp: dict, markers) -> bool:
+    return any(m in (g.get("error") or "")
+               for v in resp.get("variants") or [] if v.get("name", "").startswith("lifted")
+               for g in v.get("groups") or [] for m in markers)
+
+
+def replay_block(app_id: int, rnd: int, lift: dict, cache_dir: Path, lifts: Path | None = None) -> dict:
     """Replay under the block's own protocol. The lift emits AVM >= 10, which
     older blocks' protocols reject outright; then BOTH variants are re-run under
     mainnet's current protocol (``protocol_upgraded``), and the unmodified
-    program's chain comparison says whether the upgrade changed its behaviour."""
+    program's chain comparison says whether the upgrade changed its behaviour.
+
+    An update the lifted variants refuse as a version downgrade is re-run with
+    ``install_map``'s replacements installed instead (``installs_lifted``)."""
     variants = [{"name": "orig"}]
     if lift.get("status") == "OK":
         override = {str(app_id): {"approval": lift["lifted"]}}
@@ -313,12 +366,19 @@ def replay_block(app_id: int, rnd: int, lift: dict, cache_dir: Path) -> dict:
     req = {"node": NODE, "round": rnd, "apps": [app_id], "prefix": True, "coverage": True,
            "variants": variants, "cache_dir": str(cache_dir)}
     resp = _run_replay(req)
-    capped = any(_VERSION_CAP in (g.get("error") or "")
-                 for v in resp.get("variants") or [] if v.get("name", "").startswith("lifted")
-                 for g in v.get("groups") or [])
-    if capped:
-        resp = _run_replay({**req, "protocol": current_protocol()})
-        resp["protocol_upgraded"] = True
+    if _refused(resp, (_VERSION_CAP,)):
+        req["protocol"] = current_protocol()
+        resp = {**_run_replay(req), "protocol_upgraded": True}
+    if lifts is not None and _refused(resp, _VERSION_ARTIFACT_MARKERS):
+        installs, why = install_map(app_id, rnd, lift, lifts)
+        if why:
+            resp["install_error"] = why
+        else:
+            for v in req["variants"]:
+                if v["name"] != "orig":
+                    v["installs"] = installs
+            resp = {**_run_replay(req), "protocol_upgraded": resp.get("protocol_upgraded", False),
+                    "installs_lifted": True}
     return resp
 
 
@@ -342,7 +402,7 @@ def oracle_self_test(app_id: int, rnd: int, lift: dict, out: Path) -> str | None
     program, err = assemble(_entry_mutant(teal))
     if program is None:
         return f"mutant did not assemble: {err}"
-    resp = replay_block(app_id, rnd, {**lift, "lifted": program}, out / "httpcache")
+    resp = replay_block(app_id, rnd, {**lift, "lifted": program}, out / "httpcache", out / "lifts")
     variants = {v["name"]: v for v in resp.get("variants") or []}
     if "orig" not in variants or "lifted" not in variants:
         return f"mutant replay failed: {resp.get('error')}"
@@ -372,7 +432,7 @@ def run_app(app_id: int, samples: int, seed: int, out: Path) -> list[dict]:
         lift = lift_program(progs[0], out / "lifts")
         base["program"] = lift["sha"]
         t0 = time.time()
-        resp = replay_block(app_id, rnd, lift, out / "httpcache")
+        resp = replay_block(app_id, rnd, lift, out / "httpcache", out / "lifts")
         variants = {v["name"]: v for v in resp.get("variants") or []}
         orig = variants.get("orig")
         if resp.get("error") or orig is None or orig.get("error"):
@@ -419,6 +479,7 @@ def run_app(app_id: int, samples: int, seed: int, out: Path) -> list[dict]:
         for g in groups:
             rows.append({**base, **g, "orig_pcs": cov, "lifted_pcs": lcov,
                          "protocol_upgraded": bool(resp.get("protocol_upgraded")),
+                         "installs_lifted": bool(resp.get("installs_lifted")),
                          "unsupported": sorted(set(orig.get("unsupported") or []) | set(lifted.get("unsupported") or []))})
         log(rnd, f"{time.time() - t0:.0f}s http={resp.get('http_calls')}",
             dict(Counter(g["status"] for g in groups)))

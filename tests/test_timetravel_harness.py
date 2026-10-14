@@ -53,3 +53,34 @@ def test_entry_mutant_lands_on_the_first_executed_instruction():
     assert mutant[i - 1].strip().startswith("bytecblock")      # constant blocks stay first
     # Labels, pragmas, comments and blanks are not instructions.
     assert instruction_count(lifted) == 6 and instruction_count(_entry_mutant(lifted)) == 8
+
+
+def test_an_update_refused_as_a_downgrade_is_rerun_installing_the_lifted_program(monkeypatch):
+    """The lift raises the AVM version, so an update installing the chain's
+    older-version program is refused; the block is re-run with the installed
+    programs replaced — on the lifted variants only, the deployed run untouched."""
+    import base64
+
+    import tests.behavioral_lift.timetravel as tt
+    assert tt.program_version(base64.b64encode(bytes([9, 0x20])).decode()) == 9
+    assert tt.program_version(base64.b64encode(bytes([0x81, 0x01])).decode()) == 129
+    assert tt.at_version("#pragma version 9\nint 1\n", 11) == "#pragma version 11\nint 1\n"
+
+    refused = {"error": "approval program version downgrade: 9 < 10"}
+    reqs = []
+
+    def fake_run(req):
+        reqs.append(req)
+        installs = any(v.get("installs") for v in req["variants"])
+        return {"variants": [{"name": v["name"], "groups": [{} if installs or v["name"] == "orig" else refused]}
+                             for v in req["variants"]]}
+    monkeypatch.setattr(tt, "_run_replay", fake_run)
+    monkeypatch.setattr(tt, "install_map", lambda *a: ({"aa": "Cg=="}, None))
+    resp = tt.replay_block(1, 2, {"status": "OK", "lifted": "Cg=="}, None, lifts=object())
+    assert resp["installs_lifted"] and len(reqs) == 2
+    assert [v.get("installs") for v in reqs[1]["variants"]] == [None, {"aa": "Cg=="}, {"aa": "Cg=="}]
+    # No lift of the new program: the refusal stands, with the reason recorded.
+    monkeypatch.setattr(tt, "install_map", lambda *a: ({}, "installed program x: LIFT_FAIL"))
+    reqs.clear()
+    resp = tt.replay_block(1, 2, {"status": "OK", "lifted": "Cg=="}, None, lifts=object())
+    assert len(reqs) == 1 and resp["install_error"].endswith("LIFT_FAIL") and "installs_lifted" not in resp

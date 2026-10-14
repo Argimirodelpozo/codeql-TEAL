@@ -625,6 +625,12 @@ type Variant struct {
 	Name        string                       `json:"name"`
 	ExtraBudget int                          `json:"extra_budget"`
 	Overrides map[string]map[string]string `json:"overrides"` // app id -> {"approval": b64, "clear": b64}
+	// Installs swaps the programs a top-level create/update INSTALLS: hex
+	// sha256 of the chain's program bytes -> b64 replacement. With an
+	// overridden (newer-AVM) program in place, an update installing the
+	// chain's older-version program is a "version downgrade" the AVM refuses;
+	// installing the replacement of that program is the faithful counterpart.
+	Installs map[string]string `json:"installs"`
 }
 
 type TxnResult struct {
@@ -790,9 +796,29 @@ func warm(rem *remote, blk bookkeeping.Block, groups [][]transactions.SignedTxnW
 	}
 }
 
+func installed(installs map[string][]byte, prog []byte) []byte {
+	if len(prog) == 0 {
+		return prog
+	}
+	sum := sha256.Sum256(prog)
+	if r, ok := installs[hex.EncodeToString(sum[:])]; ok {
+		return r
+	}
+	return prog
+}
+
 func evaluate(rem *remote, blk bookkeeping.Block, groups [][]transactions.SignedTxnWithAD,
 	want map[int]bool, req Request, v Variant, overrides map[basics.AppIndex]programs) (out VariantResult) {
 	out.Name = v.Name
+	installs := map[string][]byte{}
+	for h, b := range v.Installs {
+		r, err := base64.StdEncoding.DecodeString(b)
+		if err != nil {
+			out.Error = fmt.Sprintf("install %s: %v", h, err)
+			return
+		}
+		installs[h] = r
+	}
 	defer func() {
 		if r := recover(); r != nil {
 			out.Error = fmt.Sprintf("panic: %v", r)
@@ -822,6 +848,12 @@ func evaluate(rem *remote, blk bookkeeping.Block, groups [][]transactions.Signed
 		group := make([]transactions.SignedTxnWithAD, len(chain))
 		for i, t := range chain {
 			group[i] = transactions.SignedTxnWithAD{SignedTxn: t.SignedTxn}
+			if t.Txn.Type == protocol.ApplicationCallTx {
+				// Validate is off, so the group hash and signature are not
+				// re-checked against the rewritten fields.
+				group[i].Txn.ApprovalProgram = installed(installs, t.Txn.ApprovalProgram)
+				group[i].Txn.ClearStateProgram = installed(installs, t.Txn.ClearStateProgram)
+			}
 		}
 		*tr = *newTracer()
 		if want[gi] {

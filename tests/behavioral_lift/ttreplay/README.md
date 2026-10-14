@@ -33,6 +33,12 @@ with empty state and synthetic inputs.
   The lift emits AVM ≥ 10, which older blocks' protocols reject, so the harness
   re-runs both variants under mainnet's current protocol. The `orig`-vs-chain
   comparison then shows whether the upgrade changed anything.
+- **Installs.** A variant's `installs` maps the sha256 (hex) of a program a
+  top-level create/update installs to replacement bytes. With a lifted (AVM ≥ 10)
+  program in place, an update installing the chain's older-AVM program is
+  refused as a version downgrade; the harness then re-runs the block installing
+  the lifted new program (and the new clear program at the same version).
+  Validate is off, so the rewritten transaction's group hash is not re-checked.
 
 Logic signatures are not evaluated: they run during signature verification,
 which `TransactionGroup` skips. App programs and inner transactions are fully
