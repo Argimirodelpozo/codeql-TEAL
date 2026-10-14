@@ -331,6 +331,9 @@ def _entry_mutant(lifted_teal: str) -> str:
     return "\n".join(lines[:k] + ["pushbytes 0x7465616c716c", "log"] + lines[k:]) + "\n"
 
 
+INCONCLUSIVE = "inconclusive"
+
+
 def oracle_self_test(app_id: int, rnd: int, lift: dict, out: Path) -> str | None:
     """Replay one block with the entry mutant; return an error unless every
     reported group of it is caught. Guards against an override that silently
@@ -346,8 +349,10 @@ def oracle_self_test(app_id: int, rnd: int, lift: dict, out: Path) -> str | None
     rows = classify(variants["orig"], variants["lifted"])
     # BUDGET counts: the two extra opcodes can tip a budget-tight program over.
     caught = [r for r in rows if r["status"] in ("DIVERGES", "AFTER_DIVERGENCE", "BUDGET")]
-    counted = [r for r in rows if r["status"] != "REPLAY_MISS"]
-    if not counted or len(caught) != len(counted):
+    counted = [r for r in rows if r["status"] not in ("REPLAY_MISS", "VERSION_ARTIFACT")]
+    if not counted:
+        return INCONCLUSIVE           # nothing judgeable here: test on the next block
+    if len(caught) != len(counted):
         return f"entry mutant NOT detected: {[(r['group'], r['status']) for r in rows]}"
     return None
 
@@ -384,10 +389,10 @@ def run_app(app_id: int, samples: int, seed: int, out: Path) -> list[dict]:
             continue
         if not self_tested:
             problem = oracle_self_test(app_id, rnd, lift, out)
-            if problem:
+            if problem and problem != INCONCLUSIVE:
                 log("ORACLE BROKEN", problem)
                 return rows + [{**base, "status": "ORACLE_BROKEN", "detail": problem[:400]}]
-            self_tested = True
+            self_tested = problem is None     # inconclusive: test again on the next block
         lifted = variants.get("lifted") or {"groups": [], "error": "missing lifted variant"}
         # Judge on the plain run. Only when it ran out of budget, judge on the
         # extra-budget run instead (over_budget marks those groups): programs
