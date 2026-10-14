@@ -19,6 +19,7 @@ import pytest
 from tests.mainnet_triage import (
     DOC,
     LABELS,
+    POLICY,
     detector_table,
     doc_rows,
     load_digest,
@@ -54,6 +55,21 @@ def test_labels_are_well_formed_and_cite_real_probe_lines(manifest, paths):
     assert not dupes, f"one label per cell: {sorted(dupes)[:10]}"
     assert set(manifest.get("label_semantics", {})) >= {r["detector"] for r in manifest["labels"]}, \
         "every labelled detector needs a written TP/FP/INTENDED meaning"
+
+
+def test_policy_class_departs_from_its_label_only_through_an_explicit_override(manifest, paths):
+    """An ungated Delete on an app with no inner txns is TP by policy
+    (``POLICY``); relabelling such a cell needs a written ``override``."""
+    rec = next(r for r in manifest["labels"]
+               if (r["detector"], r["class"]) in POLICY and "override" not in r)
+    assert rec["label"] == POLICY[(rec["detector"], rec["class"])] and not validate_label(rec, paths)
+    quiet = {**rec, "label": "FP"}
+    assert any("needs an explicit override" in e for e in validate_label(quiet, paths))
+    assert not validate_label({**quiet, "override": "funds provably sit elsewhere"}, paths)
+    # An override that departs from nothing is itself an error.
+    assert validate_label({**rec, "override": "x"}, paths)
+    other = next(r for r in manifest["labels"] if (r["detector"], r["class"]) not in POLICY)
+    assert validate_label({**other, "override": "x"}, paths)
 
 
 def test_matching_reports_resolved_and_unlabelled_without_failing(manifest, matched, paths):

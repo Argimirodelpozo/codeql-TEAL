@@ -11,7 +11,7 @@ false or provably neutralised), `INTENDED` (true, but the author's evident
 design, e.g. creator-gated update or close-out to the creator), `UNKNOWN`
 (not decidable from the program text, or not read).
 
-**Coverage:** 1535/1952 cells decided (79%); critical/high cells 834/915 (91%). Overall labelled precision TP/(TP+FP) = 354/775 = 0.46.
+**Coverage:** 1535/1952 cells decided (79%); critical/high cells 834/915 (91%). Overall labelled precision TP/(TP+FP) = 387/772 = 0.50.
 
 > **Caveats.** Precision is over DECIDED cells only — UNKNOWN cells are
 > excluded, so a detector with many UNKNOWNs has a wide error bar. `INTENDED`
@@ -31,7 +31,7 @@ Sampled rather than fully triaged (cells left unlabelled): `tainted-fund-flow` (
 | `is-updatable` | 173 | 130 | 100% | 61 | 10 | 102 | 0 | 0.86 |
 | `tainted-log` | 157 | 48 | 18% | 0 | 0 | 28 | 129 | — |
 | `unsafe-division-order` | 126 | 36 | 32% | 15 | 13 | 12 | 86 | 0.54 |
-| `delete-funds-check` | 100 | 67 | 97% | 30 | 47 | 20 | 3 | 0.39 |
+| `delete-funds-check` | 100 | 67 | 97% | 63 | 11 | 23 | 3 | 0.85 |
 | `timelock-upgrade` | 97 | 87 | 100% | 0 | 8 | 89 | 0 | 0.00 |
 | `unprotected-deletable` | 97 | 67 | 99% | 67 | 15 | 14 | 1 | 0.82 |
 | `tainted-state-write` | 82 | 20 | 93% | 2 | 62 | 12 | 6 | 0.03 |
@@ -97,7 +97,6 @@ text alone.
 
 ### `delete-funds-check`
 
-- **app-cannot-move-funds** ×36 — e.g. `app_282499111.teal:106`: v4 program: the app account cannot send funds (no inner txns before v5) *Fixable: gate on version >= 5 / presence of itxn_submit — an app account that can never send has nothing new to strand.*
 - **oc-test-combined-in-callee** ×4 — e.g. `app_2200207295.teal:143`: this exit is in the OC==0 method arm (bnz label4 after `txn OnCompletion; int 0; ==; callsub label2; callsub label3`); Delete goes only to label8 *Fixable: the OC comparison flows through a callee that returns arg && x; carry the predicate through the callee return value tree.*
 - **delete-drains-first** ×2 — e.g. `app_1050027991.teal:929`: the delete path calls label43, which closes the app ALGO remainder (CloseRemainderTo) to the seller before approving *Fixable: accept a CloseRemainderTo/AssetCloseTo inner txn dominating the delete exit as balance handling.*
 - **exit-value-zero-on-path** ×2 — e.g. `app_900033624.teal:2336`: DeleteApplication jumps straight to label2, which pushes 0 and branches to the shared `return` at label10: the Delete path always rejects; the shared exit only approves for other arms. (same shape as app_900032639.teal) *Fixable: judge the verdict operand per incoming edge (Delete jumps to int 0; b shared-return).*
@@ -205,13 +204,22 @@ text alone.
 - **target-pinned-to-creation-state** ×6 — e.g. `app_3100284609.teal:1124`: caller asserts gtxnsa Applications 1/2 == "POOL_ID"/"FARM_ID" (written only on the creation call) for the same group index passed into the callee *Fixable: the caller's pin on gtxnsa Applications N is lost when the callee re-reads the slot.*
 - **creator-pin-via-callee-bool** ×1 — e.g. `app_2002410770.teal:355`: label19 starts with txn Sender; callsub label26 (returns Sender == CreatorAddress); assert — the sender IS pinned, through a callee returning the comparison
 
+## Policy labels
+
+These classes are labelled by policy; a cell departs only through a
+written override, listed here.
+
+- `delete-funds-check` / **ungated-delete-no-itxn** = TP
+  - override: `app_1050043795.teal:212` (delete-funds-check) → INTENDED: delete is the sale settlement and must be grouped with a sibling that closes the escrow (CloseRemainderTo pinned to global "ca"), which is where the funds sit
+  - override: `app_1050043795.teal:354` (delete-funds-check) → INTENDED: delete is the sale settlement and must be grouped with a sibling that closes the escrow (CloseRemainderTo pinned to global "ca"), which is where the funds sit
+
 ## What TP/FP/INTENDED mean per detector
 
 - `abi-method-selector`: TP = an approving exit reachable with arbitrary ApplicationArgs[0] (no selector match and not a bare NumAppArgs==0 route) that performs an action; FP = the exit is only reached after a selector match or a bare-route NumAppArgs==0 test, or is a create/opt-in/close-out OC path not meant to be method-dispatched; INTENDED = a deliberate catch-all/fallback handler.
 - `arbitrary-inner-appcall`: TP = attacker chooses the called ApplicationID with app authority and no allowlist; FP = the id is checked; INTENDED = router/proxy design where the callee cannot abuse the app's authority.
 - `arbitrary-inner-asset`: As tainted-fund-flow, for XferAsset: TP = attacker names an asset the app holds and it leaves the app with no check; INTENDED = the caller withdraws their own deposit of the asset they name, checked by per-user accounting; FP = the asset id is checked.
 - `constant-condition`: TP = a branch condition that is really constant (dead code / always-taken check); FP = the condition is not constant.
-- `delete-funds-check`: TP = Delete reachable by anyone with no balance handling; INTENDED = Delete gated to the creator/admin (the admin owns the stranding risk); FP = Delete cannot reach the exit, or the delete path drains the account (close-out inner txn) or the app never holds funds by construction.
+- `delete-funds-check`: TP = Delete reachable by anyone with no balance handling — by POLICY also when the app issues no inner txns (class ungated-delete-no-itxn: its balance can never leave, so deleting strands it; a departure needs an explicit override); INTENDED = Delete gated to the creator/admin (the admin owns the stranding risk); FP = Delete cannot reach the exit, or the delete path drains the account (close-out inner txn).
 - `group-size-check`: TP = an exit whose path relies on an absolute gtxn sibling with no GroupSize bound and no own-GroupIndex pin, so one sibling can be reused by several calls / padding changes the meaning; FP = the path to this exit reads no absolute gtxn, or GroupSize is in fact bounded, or the app pins its own GroupIndex such that padding cannot alter what was checked; UNKNOWN when the sibling's role cannot be judged.
 - `hardcoded-min-balance`: TP = a hardcoded min-balance constant that is wrong for the asset/box usage; INTENDED = documented constant matching protocol MBR; FP = not a min-balance constant.
 - `inner-txn-close-rekey`: TP = the close/rekey target is attacker-chosen (or the caller) on a path anyone can trigger and it drains a SHARED balance; INTENDED = target is the creator / a fixed address / a preserved admin key, or a per-user escrow closing to its owner; FP = the write is a provable no-op or cannot execute (e.g. closes to the app itself).

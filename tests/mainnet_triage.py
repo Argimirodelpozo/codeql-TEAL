@@ -22,6 +22,13 @@ digest (a cell with two findings on one line, ``"45,45"``, is one cell).
 * ``UNKNOWN``  — not decided from the program text alone (needs off-chain or
                  deployment context, or the cell was not read). UNKNOWN beats a guess.
 
+Policy classes
+--------------
+Some shapes are decided by POLICY, not per cell: ``POLICY`` maps
+``(detector, class)`` to the label every such cell carries. A cell may depart
+from it only through an explicit ``"override"`` — one line saying why this cell
+is the exception — so a policy can't be eroded by quietly relabelling cells.
+
 ``labelled_by`` is ``"manual"`` for a cell whose TEAL was read, or
 ``"rule:<class>"`` when a shape verified on a manually-read representative was
 extended mechanically (the label still carries THIS probe's own evidence lines).
@@ -59,6 +66,10 @@ REQUIRED = ("contract", "probe", "detector", "line", "anchor", "label",
 SEVERITIES = ("critical", "high", "medium", "low", "informational")
 #: Severities whose cells the triage covers in full (the rest is sampled).
 FULL_COVERAGE = ("critical", "high")
+#: ``(detector, class) -> label`` decided by policy; departures need ``"override"``.
+#: An ungated Delete on an app with no inner txns is TP: whatever the account
+#: holds can never leave, and anyone can delete it.
+POLICY = {("delete-funds-check", "ungated-delete-no-itxn"): "TP"}
 _CLASS_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 _LABELLED_BY_RE = re.compile(r"^(manual|rule:[a-z0-9][a-z0-9-]*)$")
 
@@ -148,6 +159,16 @@ def validate_label(rec: dict, paths: "dict[str, Path]") -> "list[str]":
         errs.append(f"{where}: labelled_by {rec['labelled_by']!r}")
     if not rec["reason"].strip() or "\n" in rec["reason"]:
         errs.append(f"{where}: reason must be one non-empty line")
+    policy = POLICY.get((rec["detector"], rec["class"]))
+    override = rec.get("override")
+    if override is not None:
+        if policy is None or rec["label"] == policy:
+            errs.append(f"{where}: override departs from no policy label")
+        elif not isinstance(override, str) or not override.strip() or "\n" in override:
+            errs.append(f"{where}: override must be one non-empty line")
+    elif policy is not None and rec["label"] != policy:
+        errs.append(f"{where}: class {rec['class']} is {policy} by policy; "
+                    f"label {rec['label']} needs an explicit override")
     path = paths.get(rec["contract"])
     if path is None:
         return errs + [f"{where}: contract {rec['contract']} is not a probe"]
@@ -329,6 +350,16 @@ def render_doc(manifest: dict, m: Match) -> str:
             note = notes.get(cls, "")
             out.append(f"- **{cls}** ×{n} — e.g. `{ex['probe']}:{ex['line']}`: {ex['reason']}"
                        + (f" *{note}*" if note else ""))
+        out.append("")
+    overrides = sorted((r for r in m.matched.values() if "override" in r),
+                       key=lambda r: (r["detector"], r["probe"], r["line"]))
+    if POLICY:
+        out += ["## Policy labels", "",
+                "These classes are labelled by policy; a cell departs only through a",
+                "written override, listed here.", ""]
+        out += [f"- `{d}` / **{c}** = {lab}" for (d, c), lab in sorted(POLICY.items())]
+        out += [f"  - override: `{r['probe']}:{r['line']}` ({r['detector']}) → {r['label']}: "
+                f"{r['override']}" for r in overrides]
         out.append("")
     sem = manifest.get("label_semantics", {})
     if sem:
