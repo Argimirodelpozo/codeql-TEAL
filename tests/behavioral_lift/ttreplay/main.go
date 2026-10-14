@@ -807,7 +807,12 @@ func evaluate(rem *remote, blk bookkeeping.Block, groups [][]transactions.Signed
 			group[i] = transactions.SignedTxnWithAD{SignedTxn: t.SignedTxn}
 		}
 		*tr = *newTracer()
-		tr.extra = v.ExtraBudget
+		if want[gi] {
+			// Only reported groups: prefix programs that read global
+			// OpcodeBudget (OpUp loops) would otherwise create fewer inner
+			// apps and shift every later created ID in the block.
+			tr.extra = v.ExtraBudget
+		}
 		evalErr := ev.TransactionGroup(group...)
 		if !want[gi] {
 			if evalErr != nil {

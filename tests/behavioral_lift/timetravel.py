@@ -389,11 +389,13 @@ def run_app(app_id: int, samples: int, seed: int, out: Path) -> list[dict]:
                 return rows + [{**base, "status": "ORACLE_BROKEN", "detail": problem[:400]}]
             self_tested = True
         lifted = variants.get("lifted") or {"groups": [], "error": "missing lifted variant"}
-        # Behaviour is judged with extra budget; the plain run says whether the
-        # recompiled program would also have fit the budget the chain gave it.
-        judged = variants.get("lifted_xb") or lifted
-        lcov = sorted({pc for g in judged.get("groups") or [] for pc in (g.get("coverage") or {}).get(str(app_id), [])})
+        # Judge on the plain run. Only when it ran out of budget, judge on the
+        # extra-budget run instead (over_budget marks those groups): programs
+        # that read `global OpcodeBudget` (OpUp loops) behave differently
+        # with more budget, so the extra must not be the default.
         plain = {r["group"]: r["status"] for r in classify(orig, lifted)}
+        judged = (variants.get("lifted_xb") or lifted) if "BUDGET" in plain.values() else lifted
+        lcov = sorted({pc for g in judged.get("groups") or [] for pc in (g.get("coverage") or {}).get(str(app_id), [])})
         ops = {name: {g["group"]: (g.get("ops") or {}).get(str(app_id), 0) for g in v.get("groups") or []}
                for name, v in variants.items()}
         cost = {name: {g["group"]: g.get("cost") or 0 for g in v.get("groups") or []}
