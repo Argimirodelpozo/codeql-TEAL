@@ -4,6 +4,7 @@ from __future__ import annotations
 from tealql.security._lifted_taint_sink import (
     _LiftedTaintSinkDetector,
     _LiftedTaintSinkViolation,
+    _sources_text,
 )
 
 
@@ -17,7 +18,7 @@ class ArbitraryInnerAssetDetector(_LiftedTaintSinkDetector):
     fields = {"XferAsset": "HIGH"}
 
     def _message(self, finding, location):
-        sources = "+".join(sorted(finding.sources))
+        sources = _sources_text(finding)
         return (
             f"[{finding.severity}] attacker-controlled inner asset-transfer "
             f"target itxn {finding.field} <- {sources} ({location}, "
@@ -29,6 +30,7 @@ class ArbitraryInnerAssetDetector(_LiftedTaintSinkDetector):
     def _suppress(self, lifter, findings):
         from tealql.tealtools.lift.fund_flow import (
             itxn_selector_lines_returned_to_sender,
+            itxn_selector_lines_self_optin,
         )
 
         returned = itxn_selector_lines_returned_to_sender(
@@ -36,4 +38,9 @@ class ArbitraryInnerAssetDetector(_LiftedTaintSinkDetector):
             selector_field="XferAsset",
             receiver_field="AssetReceiver",
         )
-        return [finding for finding in findings if finding.line not in returned]
+        # A 0-amount axfer to the app itself with no close/clawback is an
+        # OPT-IN, not an outflow (24 mainnet FP cells, class
+        # `asset-optin-zero-amount-self`).
+        optins = itxn_selector_lines_self_optin(lifter, selector_field="XferAsset")
+        return [finding for finding in findings
+                if finding.line not in returned and finding.line not in optins]

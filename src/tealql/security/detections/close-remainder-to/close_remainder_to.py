@@ -21,3 +21,5 @@ class CloseRemainderToDetector(_ApprovalExitProtectedDetector):
     applies_to = frozenset({"logicsig"})
     signed_txn = True   # only the SIGNED txn's own field protects the signer
     violation_cls = CloseRemainderToViolation
+    # Pinned to ZeroAddress / a fixed address — not merely compared.
+    safe_value = "address-pin"

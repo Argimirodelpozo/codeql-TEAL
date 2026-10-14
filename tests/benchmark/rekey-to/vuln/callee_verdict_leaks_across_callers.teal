@@ -1,0 +1,35 @@
+#pragma version 10
+// VULNERABLE lsig: arm B pops the RekeyTo verdict; arm A asserts it. A txn with
+// arg 0 == "b" rekeys the signer.
+arg 0
+byte "b"
+==
+bnz armB
+callsub rekey_ok
+assert
+b common
+armB:
+callsub rekey_ok
+pop
+common:
+txn CloseRemainderTo
+global ZeroAddress
+==
+assert
+txn Fee
+int 1000
+<=
+assert
+int 1
+return
+rekey_ok:
+proto 0 1
+txn RekeyTo
+global ZeroAddress
+==
+bnz yes
+int 0
+retsub
+yes:
+int 1
+retsub

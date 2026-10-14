@@ -1,0 +1,19 @@
+#pragma version 10
+// SAFE: the requested amount is bounded by the group sibling's payment --
+// a bound that costs the attacker (gtxn 0 Amount is not a taint source), so
+// comparing an input against it IS a value check (unlike input <= input).
+txna ApplicationArgs 0
+btoi
+dup
+gtxn 0 Amount
+<=
+assert
+itxn_begin
+int pay
+itxn_field TypeEnum
+global CreatorAddress
+itxn_field Receiver
+itxn_field Amount
+itxn_submit
+int 1
+return

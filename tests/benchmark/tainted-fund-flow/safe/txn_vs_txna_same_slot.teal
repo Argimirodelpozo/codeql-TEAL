@@ -1,0 +1,18 @@
+#pragma version 10
+// SAFE (FP probe): guard reads `txn ApplicationArgs 1`, sink reads `txna ApplicationArgs 1` -- same slot
+txn ApplicationArgs 1
+btoi
+int 100
+<=
+assert
+txna ApplicationArgs 1
+btoi
+itxn_begin
+int pay
+itxn_field TypeEnum
+global CreatorAddress
+itxn_field Receiver
+itxn_field Amount
+itxn_submit
+int 1
+return

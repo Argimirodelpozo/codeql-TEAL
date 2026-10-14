@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "tealql": {
+      "type": "stdio",
+      "command": "uv",
+      "args": ["run", "tealql", "mcp"]
+    }
+  }
+}

@@ -1,0 +1,34 @@
+#pragma version 10
+// VULNERABLE: the Update arm calls is_creator but POPS the verdict; the NoOp arm
+// asserts it. Anyone can update.
+txn OnCompletion
+int UpdateApplication
+==
+bnz update
+txn OnCompletion
+int NoOp
+==
+assert
+callsub is_creator
+assert
+int 1
+return
+update:
+callsub is_creator
+pop
+byte "k"
+app_global_get
+pop
+int 1
+return
+is_creator:
+proto 0 1
+txn Sender
+global CreatorAddress
+==
+bnz yes
+int 0
+retsub
+yes:
+int 1
+retsub

@@ -1,0 +1,11 @@
+#pragma version 8
+// VULNERABLE: CloseRemainderTo is compared to an ARGUMENT the submitter
+// supplies — they pass their own address and close the account to it.
+txn CloseRemainderTo
+arg 0
+==
+assert
+txn TypeEnum
+int pay
+==
+return

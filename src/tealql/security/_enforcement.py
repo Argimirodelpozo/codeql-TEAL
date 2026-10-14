@@ -5,8 +5,11 @@ from __future__ import annotations
 
 from typing import Optional
 
+from tealql.tealtools.analysis.guard_coverage import (
+    NO_COVERAGE, OPAQUE, Coverage, CoverageWalker, every,
+)
 from tealql.tealtools.language.avm import CMP_OPS
-from tealql.tealtools.ssa import (BasicBlock, SSAProgram, SSAVar,
+from tealql.tealtools.ssa import (BasicBlock, Phi, SSAProgram, SSAVar,
                                   const_int)
 
 from ._program_shape import is_rejection_exit
@@ -87,35 +90,66 @@ _CONJUNCTION_OPS = frozenset({"&&"})
 _DISJUNCTION_OPS = frozenset({"||"})
 
 
-def _disjunct_constrains_field(prog: SSAProgram, var, field_vars: set,
-                               seen: Optional[set] = None) -> bool:
-    """``var`` (a boolean) compares a value flowing from ``field_vars``.
+class _FieldComparisonModel:
+    """The SSA spelling of a boolean for the shared coverage walker
+    (:mod:`tealql.tealtools.analysis.guard_coverage`), asking: does it COMPARE
+    a value flowing from ``field_vars``? A comparison node is the credited
+    leaf (any comparison — the field family is value-agnostic, so the walker
+    runs with ``exclusions=False``); the walker owns the connectives: ``&&``
+    constrains when EITHER side does (both are forced), ``||`` / a phi only
+    when EVERY arm does, ``!`` flips the sense (De Morgan)."""
 
-    Connectives keep their real semantics: ``&&`` constrains when EITHER side does
-    (both are forced), ``||`` only when BOTH do, ``!`` is transparent."""
-    from ._value_flow import _operand_flows_from_field_var
-    if seen is None:
-        seen = set()
-    if var is None or id(var) in seen:
+    def __init__(self, prog: SSAProgram, field_vars: set):
+        self.prog = prog
+        self.field_vars = field_vars
+
+    def is_node(self, v) -> bool:
+        return isinstance(v, SSAVar) or (isinstance(v, Phi) and bool(v.args))
+
+    def definition(self, v):
+        if isinstance(v, Phi):
+            return "phi", None, tuple(v.args)
+        d = getattr(v, "defined_by", None)
+        return ("op", d.op, tuple(d.inputs)) if d is not None else (None, None, ())
+
+    def returns(self, v):
+        return ()
+
+    def arm_value(self, v):
+        k = const_int(v)
+        return k if k is not None else (v if self.is_node(v) else OPAQUE)
+
+    def literal_int(self, v):
+        return const_int(v)
+
+    def leaf_credit(self, v, op, self_truthy, sender_ok):
+        from ._value_flow import _operand_flows_from_field_var
+        if op in CMP_OPS and any(
+                _operand_flows_from_field_var(self.prog, i, self.field_vars)
+                for i in v.defined_by.inputs):
+            return Coverage(checks=True)
+        return NO_COVERAGE
+
+    def pins_sender(self, v) -> bool:
         return False
-    seen.add(id(var))
-    d = getattr(var, "defined_by", None)
-    if d is None:
+
+    def dependent(self, v, state_ok=False) -> bool:
         return False
-    if d.op in _CONJUNCTION_OPS:
-        return any(_disjunct_constrains_field(prog, i, field_vars, seen)
-                   for i in d.inputs)
-    if d.op in _DISJUNCTION_OPS:
-        return bool(d.inputs) and all(
-            _disjunct_constrains_field(prog, i, field_vars, seen)
-            for i in d.inputs)
-    if d.op == "!":
-        return any(_disjunct_constrains_field(prog, i, field_vars, seen)
-                   for i in d.inputs)
-    if d.op in CMP_OPS:
-        return any(_operand_flows_from_field_var(prog, op, field_vars)
-                   for op in d.inputs)
-    return False
+
+    def counterpart_ok(self, pinned, other) -> bool:
+        return True
+
+    def arm_dead(self, v, sense) -> bool:
+        return False
+
+
+def _disjunct_constrains_field(prog: SSAProgram, var, field_vars: set) -> bool:
+    """``var`` (a boolean that must hold) compares a value flowing from
+    ``field_vars`` — see :class:`_FieldComparisonModel`."""
+    if var is None:
+        return False
+    return CoverageWalker(_FieldComparisonModel(prog, field_vars),
+                          exclusions=False).cover(var, True).checks
 
 
 def _disjunction_is_enforcing(prog: SSAProgram, disj, arrived_from,
@@ -130,9 +164,9 @@ def _disjunction_is_enforcing(prog: SSAProgram, disj, arrived_from,
     low-fee txn. With no ``field_vars`` the answer is conservatively no."""
     if not field_vars:
         return False
-    others = [i for i in disj.inputs if i is not arrived_from]
-    return bool(others) and all(
-        _disjunct_constrains_field(prog, o, field_vars) for o in others)
+    # JOIN: every other arm (and at least one) — the walker's rule.
+    return every(_disjunct_constrains_field(prog, o, field_vars)
+                 for o in disj.inputs if o is not arrived_from)
 
 
 def _acted_on(prog: SSAProgram, var, depth: int = 0, truthy: bool = False) -> bool:
@@ -149,6 +183,17 @@ def _acted_on(prog: SSAProgram, var, depth: int = 0, truthy: bool = False) -> bo
     (rejects on NONZERO, approves on the callee's 0) must NOT credit the 0 as a
     rejection, and ``!; assert`` PASSES on the 0. A value laundered through any
     other op has unknown truth and credits nothing.
+
+    HAZARD: PER RETURN TARGET. The callee's 0 flows into ONE phi per
+    continuation block (one per call site), and the callee's rejecting arm is
+    credited for the whole program — its branch block lands in every caller's
+    gate set. So EVERY return-target phi must act on the 0: with ``any``, a
+    single ``callsub check; assert`` caller made the callee a rejection for a
+    second caller that ``pop``s the verdict (the caller-blind twin of the
+    "retsub is never an exit" hazard below). The price is a misplaced finding
+    when callers disagree — the asserting caller's exit reads unguarded too —
+    which is still the right program-level verdict, since the popping caller
+    IS the vulnerability.
 
     Deliberately calls ``is_rejection_exit`` and never ``_rejects``: recursing
     back through the callee-return credit would not terminate."""
@@ -194,11 +239,9 @@ def _acted_on(prog: SSAProgram, var, depth: int = 0, truthy: bool = False) -> bo
                     return True
             continue
         # Laundered through an arbitrary op: truth unknown, credit nothing.
-    for ph in prog.phis.values():
-        if any(a is var for a in ph.args) and _acted_on(
-                prog, ph, depth + 1, truthy):
-            return True
-    return False
+    # JOIN over the return targets: every one (and at least one) must act.
+    return every(_acted_on(prog, ph, depth + 1, truthy) for ph in prog.phis.values()
+                 if any(a is var for a in ph.args))
 
 
 def _callee_zero_return_rejects(prog: SSAProgram, bb: BasicBlock) -> bool:

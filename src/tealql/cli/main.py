@@ -25,12 +25,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = p.add_subparsers(dest="cmd", required=True, metavar="<command>")
     add = make_add(sub)
-    from . import budget, lifted, reports, security_cmds, obligations
+    from . import agent_cmds, budget, lifted, reports, security_cmds, obligations
     reports.register(sub, add)
     budget.register(sub, add)
     lifted.register(sub, add)
     security_cmds.register(sub, add)
     obligations.register(sub, add)
+    agent_cmds.register(sub, add)
+    from . import triage_cmds
+    triage_cmds.register(sub, add)
     return p
 
 

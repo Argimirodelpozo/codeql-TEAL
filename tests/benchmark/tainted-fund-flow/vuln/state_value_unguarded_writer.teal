@@ -1,0 +1,25 @@
+#pragma version 10
+// VULN: method "set" lets ANY caller store an attacker-chosen account in global
+// "payee" (no sender check); the default path then pays app_global_get "payee".
+// Set-then-drain across two calls: the receiver is attacker-controlled state.
+txna ApplicationArgs 0
+byte "set"
+==
+bnz set_payee
+itxn_begin
+int pay
+itxn_field TypeEnum
+byte "payee"
+app_global_get
+itxn_field Receiver
+int 1000
+itxn_field Amount
+itxn_submit
+int 1
+return
+set_payee:
+byte "payee"
+txna Accounts 1
+app_global_put
+int 1
+return

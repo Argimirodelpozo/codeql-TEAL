@@ -1,0 +1,12 @@
+#pragma version 10
+// VULNERABLE: the "expected selector" is txna ApplicationArgs 1 — the caller
+// supplies both sides, so any selector passes.
+txna ApplicationArgs 0
+txna ApplicationArgs 1
+==
+assert
+byte "k"
+app_global_get
+pop
+int 1
+return

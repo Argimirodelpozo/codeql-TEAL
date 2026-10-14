@@ -1,0 +1,20 @@
+#pragma version 10
+// VULN: Amount = btoi(arg0) + btoi(arg1); only arg0 is bounded, arg1 is free
+txna ApplicationArgs 0
+btoi
+dup
+int 100
+<=
+assert
+txna ApplicationArgs 1
+btoi
++
+itxn_begin
+int pay
+itxn_field TypeEnum
+global CreatorAddress
+itxn_field Receiver
+itxn_field Amount
+itxn_submit
+int 1
+return

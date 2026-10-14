@@ -128,9 +128,13 @@ def _cmd_audit(args) -> int:
         sev_counts[group_sev[name]] = sev_counts.get(group_sev[name], 0) + len(vs)
 
     if args.json_out:
-        from tealql.tealtools._utils.serialize import finding_to_dict
+        from tealql.security.findings import normalize_violation
+
+        def finding_to_dict(v, name):
+            return normalize_violation(v, name, rel_path=teal_path.name).to_dict()
         print(_json.dumps({
             **health.to_dict(),
+            "schema_version": 1,
             "app_id": app_id,
             "approval_program": str(teal_path),
             "callees": callees,
@@ -139,11 +143,13 @@ def _cmd_audit(args) -> int:
             "summary": {s: sev_counts[s]                    # counts by severity
                         for s in reversed(SEVERITY_ORDER) if s in sev_counts},
             "findings": {name: {"severity": group_sev[name],
-                                "findings": [finding_to_dict(v) for v in own[name]]}
+                                "findings": [finding_to_dict(v, name) for v in own[name]]}
                          for name in ordered},               # severity-ordered
             "cross_contract_findings": [
                 {"app_id": f.app_id, "detector": f.detector_name,
-                 "message": f.violation.pretty()} for f in cross],
+                 "message": f.violation.pretty(),
+                 "finding": normalize_violation(f.violation, f.detector_name).to_dict()}
+                for f in cross],
         }, indent=2))
         return 2 if not health.complete else 1 if (n_own or cross) else 0
 
@@ -230,9 +236,11 @@ def _cmd_xcontract(args) -> int:
             "cross_auth_findings": [finding_to_dict(f) for f in auth],
         }
         if args.detections or args.detector:
+            from tealql.security.findings import normalize_violation
             payload["cross_detection_findings"] = [
                 {"app_id": f.app_id, "detector": f.detector_name,
-                 "message": f.violation.pretty()}
+                 "message": f.violation.pretty(),
+                 "finding": normalize_violation(f.violation, f.detector_name).to_dict()}
                 for f in sg_findings
             ]
         print(_json.dumps(payload, indent=2))
@@ -262,18 +270,25 @@ def _cmd_group_taint(args) -> int:
     from tealql.tealtools.dataflow.group_taint_graph import (
         GroupTaintGraph, group_taint_findings, render_group_taint,
     )
+    from tealql.tealtools.diagnostics.health import AnalysisHealth
     progs = []
+    notes: list = []
     for member in args.members:
         prog = SSAProgram(str(member), strict=False)
         prog.propagate_constants()
         _check_parse_health(prog, args)
+        notes.extend(prog.health().degradations)
         progs.append(prog)
+    health = AnalysisHealth(tuple(notes))
     findings = group_taint_findings(GroupTaintGraph.build(progs))
     if args.json_out:
-        print(_json.dumps({"findings": [f.to_dict() for f in findings]}, indent=2))
+        print(_json.dumps({"schema_version": 1, **health.to_dict(),
+                           "findings": [f.to_dict() for f in findings]}, indent=2))
     else:
         print(render_group_taint(findings))
-    return 1 if findings else 0
+        for d in health.degradations:
+            print(f"[INCOMPLETE] {d.message}")
+    return 2 if not health.complete else 1 if findings else 0
 
 
 def _cmd_taint_query(args) -> int:
@@ -286,65 +301,97 @@ def _cmd_taint_query(args) -> int:
     from tealql.tealtools.dataflow.taint_query import TaintQuery
     prog = _load(args)
     precise = getattr(args, "precise", False)
+    # The completeness envelope every detection command carries: a program with
+    # an unparsed span or an unknown opcode must not answer "(no dangerous
+    # sinks)" and exit 0 — that reads as a clean bill for input never analysed.
+    health = prog.health()
+    envelope = {"schema_version": 1, **health.to_dict()}
+    rc_done = 2 if not health.complete else 0
+
+    def _trailer():
+        for d in health.degradations:
+            print(f"[INCOMPLETE] {d.message}")
 
     if getattr(args, "verify", False):
         from tealql.security.sink_verdict import verify_sinks
         verdicts = verify_sinks(prog, precise=precise)
         if args.json_out:
-            print(_json.dumps([v.to_dict() for v in verdicts], indent=2))
-        elif not verdicts:
-            print("(no dangerous sinks reachable from attacker input)")
+            print(_json.dumps({**envelope, "precise": precise,
+                               "verdicts": [v.to_dict() for v in verdicts]}, indent=2))
         else:
+            if not verdicts:
+                print("(no dangerous sinks reachable from attacker input)")
             for v in verdicts:
                 print(v.render())
-        return 0
+            _trailer()
+        return rc_done
 
     q = TaintQuery(prog)
 
-    def _emit_hits(hits):
+    def _emit_hits(hits, query: dict):
         if args.json_out:
-            print(_json.dumps([h.to_dict() for h in hits], indent=2))
-        elif not hits:
-            print("(no dangerous sinks)")
+            print(_json.dumps({**envelope, "precise": precise, "query": query,
+                               "hits": [h.to_dict() for h in hits]}, indent=2))
         else:
+            if not hits:
+                print("(no dangerous sinks)")
             for h in hits:
                 print(h.render())
+            _trailer()
 
-    def _emit_nodes(nodes, empty):
+    def _emit_nodes(nodes, empty, query: dict):
         if args.json_out:
-            print(_json.dumps([{"file": n.file, "line": n.line,
-                                "node_class": n.node_class} for n in nodes], indent=2))
-        elif not nodes:
-            print(empty)
+            print(_json.dumps({**envelope, "query": query,
+                               "sources": [{"file": n.file, "line": n.line,
+                                            "node_class": n.node_class} for n in nodes]},
+                              indent=2))
         else:
+            if not nodes:
+                print(empty)
             for n in nodes:
                 print(f"  {n.file}:{n.line}  {n.node_class}")
+            _trailer()
 
     if args.from_line is not None:
-        _emit_hits(q.sinks_from(line=args.from_line))
+        _emit_hits(q.sinks_from(line=args.from_line), {"from_line": args.from_line})
     elif args.from_src is not None:
         sf, _, sl = args.from_src.rpartition(":")
         if not sl.isdigit():
             print("error: --from-src expects [FILE:]LINE", file=sys.stderr)
             return 2
-        _emit_hits(q.sinks_from(source_file=sf or None, source_line=int(sl)))
+        candidates = q.source_files_matching(sf or None)
+        if sf and len(candidates) > 1 and sf not in candidates:
+            print(f"error: --from-src {sf!r} is ambiguous; it names "
+                  f"{', '.join(candidates)} — give the unique path suffix",
+                  file=sys.stderr)
+            return 2
+        if not candidates:
+            logger.warning("--from-src: no `// FILE:LINE` source comments match %r "
+                           "(raw bytecode carries none)", sf or "any file")
+        _emit_hits(q.sinks_from(source_file=sf or None, source_line=int(sl)),
+                   {"from_source": args.from_src})
     elif args.to_line is not None:
-        _emit_nodes(q.sources_of(line=args.to_line), "(no attacker source reaches it)")
+        _emit_nodes(q.sources_of(line=args.to_line), "(no attacker source reaches it)",
+                    {"to_line": args.to_line})
     elif args.list_sinks:
-        _emit_hits(q.all_sinks())
+        _emit_hits(q.all_sinks(), {"inventory": "sinks"})
     elif args.list_sources:
-        _emit_nodes(q.all_sources(), "(no attacker-input sources)")
+        _emit_nodes(q.all_sources(), "(no attacker-input sources)", {"inventory": "sources"})
     else:
-        _emit_hits(q.tainted_sinks(precise=precise))   # default: whole attack surface
-    return 0
+        _emit_hits(q.tainted_sinks(precise=precise), {"attack_surface": True})
+    return rc_done
 
 
 def _resolve_mode(args) -> "str | None":
-    """The DECLARED detection mode: ``--mode``, else a ``--config`` glob match on
-    the target string, else ``None`` meaning unfiltered — never inferred from
-    opcodes."""
-    if args.mode:
+    """The DECLARED detection mode: ``--mode app|logicsig``, else a ``--config``
+    glob match on the target string, else ``None`` meaning unfiltered. ``--mode
+    auto`` is the one INFERRED option: it classifies each program by opcode
+    (any app-only opcode ⇒ app) — the same rule ``detections-scan`` applies under
+    ``auto_mode``."""
+    if args.mode and args.mode != "auto":
         return args.mode
+    if args.mode == "auto":
+        return "auto"
     if args.config:
         from tealql.security.config import DetectionConfig
         cfg = DetectionConfig.from_path(Path(args.config))
@@ -356,7 +403,6 @@ def _cmd_detections(args) -> int:
     from tealql.security import DETECTORS
     from tealql.tealtools.diagnostics.health import AnalysisDegradation, AnalysisHealth
     from tealql.tealtools.reporting.registry import _input_health, _safe
-    from tealql.tealtools._utils.serialize import finding_to_dict
 
     if args.list:
         if args.json_out:
@@ -379,23 +425,39 @@ def _cmd_detections(args) -> int:
     mode = _resolve_mode(args)
     programs = _load_programs(args)
     names = list(DETECTORS) if args.all else [args.detector]
+    if args.all and mode is None:
+        logger.warning("--all without --mode runs every detector UNFILTERED: the "
+                       "logicsig-only ones (rekey-to, fee-validation, …) report on an "
+                       "app too. Pass --mode app|logicsig, or --mode auto to classify "
+                       "by opcode.")
+
+    def _applies(name: str, resolved: "str | None") -> bool:
+        return resolved is None or resolved in getattr(
+            DETECTORS[name], "applies_to", frozenset({"app", "logicsig"}))
+
     # Mode filtering is for --all only; an explicit --detector runs as asked.
-    if mode is not None and args.all:
-        names = [
-            n for n in names
-            if mode in getattr(DETECTORS[n], "applies_to",
-                               frozenset({"app", "logicsig"}))
-        ]
+    # With `auto` the filter is PER PROGRAM (a directory may mix both kinds).
+    per_program_mode: dict = {}
+    if args.all and mode is not None:
+        from tealql.security._program_shape import classify_program
+        for prog, file in programs:
+            per_program_mode[id(prog)] = (classify_program(prog, file=file)
+                                          if mode == "auto" else mode)
+        if mode != "auto":
+            names = [n for n in names if _applies(n, mode)]
     logger.info("running %d detection(s) on %d program(s) (mode=%s)",
                 len(names), len(programs), mode or "unfiltered")
     strict = getattr(args, 'strict', False)
     notes = [note for prog, _ in programs for note in _input_health(prog, strict).degradations]
+    from tealql.security.findings import normalize_violation
 
     def _run(name):
         # Rendering belongs inside the same isolated execution boundary.
         cls = DETECTORS[name]
         found = []
         for prog, file in programs:
+            if not _applies(name, per_program_mode.get(id(prog))):
+                continue
             def execute():
                 detector = cls(prog, file=file)
                 violations = list(detector.detect())
@@ -404,7 +466,11 @@ def _cmd_detections(args) -> int:
                     if strict:
                         raise TealQLError(f'detector {name} ran degraded: {degraded}')
                     notes.append(AnalysisDegradation('detector-degraded', degraded, file, detector=name))
-                rendered = [finding_to_dict(v) if args.json_out else v.pretty() for v in violations]
+                # JSON is the versioned Finding record (rule_id / severity /
+                # confidence / file / line / witness / details), the same one
+                # detections-scan emits — never the detector-private dict alone.
+                rendered = [normalize_violation(v, name, rel_path=file).to_dict()
+                            if args.json_out else v.pretty() for v in violations]
                 _json.dumps(rendered)
                 return rendered
             try:
@@ -460,7 +526,6 @@ def _cmd_detections_scan(args) -> int:
     # A partial scan cannot safely replace an accepted baseline.
     if args.update_baseline:
         if not findings.complete:
-            from tealql.tealtools.diagnostics.errors import TealQLError
             raise TealQLError('cannot update baseline from an incomplete scan')
         from tealql.security.suppress import write_baseline
         n = write_baseline(args.update_baseline, findings)
@@ -470,6 +535,11 @@ def _cmd_detections_scan(args) -> int:
     # Suppressions — inline `// tealql-ignore` (always) + --baseline fingerprints
     # — drop findings from BOTH the output and the exit code.
     from tealql.security.suppress import partition, load_baseline
+    if args.baseline and not Path(args.baseline).exists():
+        # A typo'd path would silently behave as an EMPTY baseline and report
+        # every finding as new — loud failure beats a surprising CI run.
+        raise TealQLError(f"--baseline file does not exist: {args.baseline} "
+                          "(create it with --update-baseline PATH)")
     baseline = load_baseline(args.baseline) if args.baseline else set()
     # HAZARD: partition returns PLAIN lists, which would drop the degradation
     # notifications on the floor — and a suppression config silently deleting
@@ -607,9 +677,10 @@ def register(sub, add) -> None:
              "(omit when using --list)",
     )
     _add_common_flags(det)
-    det.add_argument("--mode", choices=["app", "logicsig"], default=None,
-                     help="declare the target's mode; with --all, skips "
-                          "detectors that don't apply to that mode")
+    det.add_argument("--mode", choices=["app", "logicsig", "auto"], default=None,
+                     help="declare the target's mode; with --all, skips detectors "
+                          "that don't apply to that mode. `auto` classifies each "
+                          "program by opcode (any app-only opcode => app)")
     det.add_argument("--config", default=None,
                      help="detection-mode config (yaml/json); the target "
                           "path is matched against its globs to pick a mode")

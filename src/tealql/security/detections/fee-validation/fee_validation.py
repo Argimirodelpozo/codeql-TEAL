@@ -23,3 +23,5 @@ class FeeValidationDetector(_ApprovalExitProtectedDetector):
     # sibling `gtxn N` still does not count.
     signed_txn = True
     violation_cls = FeeValidationViolation
+    # An UPPER bound: `Fee > 0` compares the field and caps nothing.
+    safe_value = "upper-bound"

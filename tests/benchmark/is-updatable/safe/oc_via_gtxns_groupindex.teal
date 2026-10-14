@@ -1,0 +1,13 @@
+#pragma version 10
+// SAFE: OnCompletion read through `gtxns` at the current GroupIndex — the
+// same field as `txn OnCompletion`.
+txn GroupIndex
+gtxns OnCompletion
+int NoOp
+==
+assert
+byte "k"
+app_global_get
+pop
+int 1
+return

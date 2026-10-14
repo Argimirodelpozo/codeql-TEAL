@@ -28,6 +28,63 @@ produced *directly* by a divide (`/` / `b/` / `divw`). That is the
 divide-before-multiply order; the fix is to multiply first, `(a * c) / b`. A divide
 by the literal `1` (never truncates) is excluded.
 
+## How to fix
+
+Multiply before dividing, so the result truncates once: `(a * c) / b`. Prove
+the intermediate product fits in uint64, or use `mulw` + `divmodw` for a
+128-bit intermediate (neither is matched by this detector).
+
+<!-- verify: unsafe-division-order clean -->
+```teal
+#pragma version 10
+txna ApplicationArgs 0
+btoi
+byte "rate"
+app_global_get
+*
+byte "total"
+app_global_get
+/
+itob
+log
+int 1
+return
+```
+
+<!-- verify: unsafe-division-order finding -->
+```teal
+#pragma version 10
+txna ApplicationArgs 0
+btoi
+byte "total"
+app_global_get
+/
+byte "rate"
+app_global_get
+*
+itob
+log
+int 1
+return
+```
+
+```python
+out = amount * rate // total      # not amount // total * rate
+```
+
+When floor-then-scale is intended (rounding down to a lot size,
+`(x / unit) * unit`), suppress with `// tealql-ignore: unsafe-division-order`
+on the flagged multiply line or the line above, or record it in a baseline
+(`--update-baseline` / `--baseline PATH`).
+
+## False positives
+
+- Intentional floor-then-scale (lot-size rounding, `(x / unit) * unit`) is
+  reported by design.
+- MAY semantics: a multiply operand reached through a phi or a scratch
+  round-trip is flagged if ANY arm/store is a divide, even when the dividing
+  path is not the one taken.
+
 ## Scope
 
 A correctness/precision smell, not an exploit primitive — reported at **MEDIUM**

@@ -1,0 +1,27 @@
+#pragma version 8
+// SAFE: the Delete arm closes the app account's ALGO (and, since a close-out
+// fails while assets are still held, every asset) to the creator BEFORE it
+// approves — nothing is stranded by the deletion.
+txn OnCompletion
+int DeleteApplication
+==
+bnz delete
+txn OnCompletion
+int NoOp
+==
+assert
+int 1
+return
+delete:
+itxn_begin
+int pay
+itxn_field TypeEnum
+int 0
+itxn_field Amount
+global CreatorAddress
+itxn_field Receiver
+global CreatorAddress
+itxn_field CloseRemainderTo
+itxn_submit
+int 1
+return

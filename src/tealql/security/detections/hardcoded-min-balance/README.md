@@ -1,6 +1,6 @@
 # Hardcoded Minimum Balance
 
-**Severity:** medium · **Applies to:** application & logicsig
+**Severity:** medium · **Applies to:** application
 
 ## What it looks for
 
@@ -10,9 +10,69 @@ The correct pattern is to use the `min_balance` opcode (a dynamic per-account co
 
 ## How it works
 
-Pattern match: find a `balance` opcode and a `-` opcode in the same program where the `-` consumes a literal int. Then *globally* require that the program contains no `min_balance` opcode (its presence anywhere is taken as evidence the dev knew about the dynamic form and is using it elsewhere).
+Value flow: a `-` whose one operand flows from a `balance` read (through phi / scratch / proto-frame) and whose other operand is a known integer constant is reported. The whole detector is silenced when the program contains any `min_balance` opcode (its presence anywhere is taken as evidence the dev knew about the dynamic form and is using it elsewhere).
 
-This is a heuristic — the `balance` and `-` aren't required to be data-connected, only co-resident. The match-anywhere `min_balance` exemption is also coarse. False positives on contracts that subtract for unrelated reasons are possible; tightening this is a follow-up.
+## How to fix
+
+Subtract the account's current `min_balance` instead of a literal.
+
+<!-- verify: hardcoded-min-balance clean -->
+```teal
+#pragma version 10
+// pay out only the balance above the account's CURRENT minimum
+itxn_begin
+int pay
+itxn_field TypeEnum
+txn Sender
+itxn_field Receiver
+global CurrentApplicationAddress
+balance
+global CurrentApplicationAddress
+min_balance
+-
+itxn_field Amount
+int 0
+itxn_field Fee
+itxn_submit
+int 1
+return
+```
+
+<!-- verify: hardcoded-min-balance finding -->
+```teal
+#pragma version 10
+itxn_begin
+int pay
+itxn_field TypeEnum
+txn Sender
+itxn_field Receiver
+global CurrentApplicationAddress
+balance
+int 100000
+-
+itxn_field Amount
+int 0
+itxn_field Fee
+itxn_submit
+int 1
+return
+```
+
+```python
+app = Global.current_application_address
+amount = app.balance - app.min_balance
+```
+
+Suppress an intended finding with `// tealql-ignore: hardcoded-min-balance` on
+the flagged `-` line (or the line above), or record it in a baseline
+(`--update-baseline` / `--baseline PATH`).
+
+## False positives
+
+Any `balance - <constant>` is flagged, whatever the constant means — a fee
+reserve or an intentional buffer subtracted from a balance reads the same as a
+hardcoded minimum. The reverse is coarse too: one `min_balance` anywhere in the
+program silences every subtraction.
 
 ## Examples
 

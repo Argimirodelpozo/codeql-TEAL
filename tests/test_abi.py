@@ -133,25 +133,74 @@ class TestLineAttribution:
         "    callsub helper\n"                                   # 9  helper is a boundary
         "    return\n"                                           # 10
         "handle_addr:\n"                                         # 11
-        "    global ZeroAddress\n"                               # 12 <- in get_address
+        "    callsub helper\n"                                   # 12 <- in get_address
         "    return\n"                                           # 13
-        "helper:\n"                                              # 14 shared sub (no method)
+        "helper:\n"                                              # 14 SHARED sub: two calling methods -> no method
         "    retsub\n"                                           # 15
+        "only_add:\n"                                            # 16 sub whose only caller is OUTSIDE every method
+        "    retsub\n"                                           # 17
+        "main_tail:\n"                                           # 18
+        "    callsub only_add\n"                                 # 19
+        "    return\n"                                           # 20
     )
 
     def test_spans_pair_selector_to_handler(self):
         r = method_line_ranges(self._ROUTER)
-        named = {m.name: (s, e) for s, e, m in r}
-        assert named["add_one"] == (7, 10)          # handle_add .. before handle_addr
-        assert named["get_address"] == (11, 13)     # handle_addr .. before helper (callsub target)
+        spans = {(s, e, m.name) for s, e, m in r}
+        assert (7, 10, "add_one") in spans          # handle_add .. before handle_addr
+        assert (11, 13, "get_address") in spans     # handle_addr .. before helper (callsub target)
 
     def test_method_at_line(self):
         r = method_line_ranges(self._ROUTER)
         assert method_at_line(r, 8).name == "add_one"
         assert method_at_line(r, 12).name == "get_address"
         assert method_at_line(r, 3) is None         # router glue
-        assert method_at_line(r, 15) is None         # shared helper sub
+        assert method_at_line(r, 15) is None        # shared helper sub (two methods call it)
+        assert method_at_line(r, 17) is None        # its only caller is router-level code
+        assert method_at_line(r, 19) is None        # main_tail is not a method
         assert method_at_line(r, None) is None
+
+    def test_unique_caller_subroutine_is_attributed_to_its_method(self):
+        # PuyaPy/TEALScript keep the method BODY in a `callsub` target behind a
+        # thin route arm: a sub called from exactly one method belongs to it,
+        # transitively; a sub called from two methods stays shared (None); and a
+        # label the router PROLOGUE branches to (bare create) is a boundary, not
+        # part of the method dispatched after it.
+        src = (
+            "#pragma version 10\n"
+            "    txn NumAppArgs\n"
+            "    bz bare\n"                                               # 3
+            "    txna ApplicationArgs 0\n"
+            '    pushbytess 0x03b5c0af 0x7fad9780 // method "add_one(uint64)uint64", method "get_address()address"\n'
+            "    match route_add route_addr\n"                              # 6
+            "    err\n"
+            "route_add:\n"                                                 # 8
+            "    callsub add_impl\n"
+            "    return\n"
+            "route_addr:\n"                                                # 11
+            "    callsub addr_impl\n"
+            "    return\n"
+            "bare:\n"                                                      # 14
+            "    int 1\n"                                                  # 15
+            "    return\n"
+            "add_impl:\n"                                                  # 17
+            "    callsub shared\n"                                         # 18
+            "    callsub add_helper\n"
+            "    retsub\n"
+            "addr_impl:\n"                                                 # 21
+            "    callsub shared\n"                                         # 22
+            "    retsub\n"
+            "shared:\n"                                                    # 24
+            "    retsub\n"                                                 # 25
+            "add_helper:\n"                                                # 26
+            "    retsub\n"                                                 # 27
+        )
+        r = method_line_ranges(src)
+        assert method_at_line(r, 15) is None, "bare-create arm is a router boundary"
+        assert method_at_line(r, 18).name == "add_one"
+        assert method_at_line(r, 22).name == "get_address"
+        assert method_at_line(r, 25) is None
+        assert method_at_line(r, 27).name == "add_one"
 
     def test_empty_on_raw_bytecode(self):
         assert method_line_ranges("#pragma version 8\nint 1\nreturn\n") == []

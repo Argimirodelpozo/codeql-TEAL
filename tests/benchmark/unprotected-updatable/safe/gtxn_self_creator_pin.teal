@@ -1,0 +1,22 @@
+#pragma version 6
+// SAFE: a one-transaction group at index 0, so `gtxn 0 Sender` IS this
+// transaction's sender — pinned to the creator.
+txn OnCompletion
+int UpdateApplication
+==
+bz done
+global GroupSize
+int 1
+==
+txn GroupIndex
+int 0
+==
+&&
+assert
+gtxn 0 Sender
+global CreatorAddress
+==
+assert
+done:
+int 1
+return

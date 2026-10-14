@@ -1,0 +1,44 @@
+#pragma version 8
+// SAFE (PyTeal Router emission): a bare (no-arg) call is routed by
+// NumAppArgs == 0 to the create handler; every arg-carrying call must match
+// a method selector or err.
+txn NumAppArgs
+int 0
+==
+bnz main_l4
+txna ApplicationArgs 0
+method "hello(string)string"
+==
+bnz main_l3
+err
+main_l3:
+txn OnCompletion
+int NoOp
+==
+txn ApplicationID
+int 0
+!=
+&&
+assert
+callsub hello_1
+int 1
+return
+main_l4:
+txn OnCompletion
+int NoOp
+==
+bnz main_l6
+err
+main_l6:
+txn ApplicationID
+int 0
+==
+assert
+int 1
+return
+hello_1:
+proto 0 0
+byte "k"
+app_global_get
+pop
+retsub

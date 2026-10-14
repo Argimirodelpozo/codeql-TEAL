@@ -31,6 +31,13 @@ def finding_to_dict(f) -> dict[str, Any]:
     ``{"message": f.pretty()}`` so ``pretty()``-only detectors still emit JSON."""
     if hasattr(f, "to_dict"):
         return f.to_dict()
-    if hasattr(f, "pretty"):
-        return {"message": f.pretty()}
-    return {"message": str(f)}
+    out: dict[str, Any] = {"message": f.pretty() if hasattr(f, "pretty") else str(f)}
+    # A violation that knows where it is must say so in JSON too — a consumer
+    # must never have to regex the prose for the location.
+    line = getattr(f, "line", None)
+    if isinstance(line, int):
+        out["line"] = line
+        file = getattr(f, "file", None)
+        if isinstance(file, str):
+            out["file"] = file
+    return out

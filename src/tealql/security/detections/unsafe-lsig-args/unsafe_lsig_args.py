@@ -18,7 +18,11 @@ from tealql.security._program_shape import file_match, loc
 
 
 _ARG_OPS = frozenset({"arg", "arg_0", "arg_1", "arg_2", "arg_3", "args"})
-_EQ_OPS = frozenset({"==", "b=="})
+#: Every EQUALITY-KEY sink: a disequality (`!=; bnz reject` is the commoner
+#: hand-written spelling of the same gate) and the multi-way dispatchers, whose
+#: key is compared for equality against each candidate. The claim is "an arg is
+#: used as an equality key", so the spelling must not change the verdict.
+_EQ_OPS = frozenset({"==", "b==", "!=", "b!=", "match", "switch"})
 
 
 @dataclass

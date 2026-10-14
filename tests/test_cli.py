@@ -360,7 +360,8 @@ def test_cli_taint_query_from_source_line(tmp_path, capsys):
     (tmp_path / "p.teal").write_text(_TAINT_TEAL)
     main(["taint-query", str(tmp_path / "p.teal"), "--from", "5", "--json"])
     data = json.loads(capsys.readouterr().out)
-    assert any(d["category"] == "inner-payment-receiver" for d in data)
+    assert data["complete"] is True and data["query"] == {"from_line": 5}
+    assert any(d["category"] == "inner-payment-receiver" for d in data["hits"])
 
 
 def test_cli_taint_query_sinks_inventory(tmp_path, capsys):
@@ -375,7 +376,8 @@ def test_cli_taint_query_verify(tmp_path, capsys):
     rc = main(["taint-query", str(tmp_path / "p.teal"), "--verify", "--json"])
     assert rc == 0
     data = json.loads(capsys.readouterr().out)
-    recv = [d for d in data if d["category"] == "inner-payment-receiver"]
+    assert data["complete"] is True
+    recv = [d for d in data["verdicts"] if d["category"] == "inner-payment-receiver"]
     assert recv and recv[0]["verdict"] == "CONFIRMED"
     assert "tainted-fund-flow" in recv[0]["confirmed_by"]
 
@@ -387,7 +389,8 @@ def test_cli_taint_query_precise(tmp_path, capsys):
     rc = main(["taint-query", str(tmp_path / "p.teal"), "--precise", "--json"])
     assert rc == 0
     data = json.loads(capsys.readouterr().out)
-    assert any(d["category"] == "inner-payment-receiver" for d in data)
+    assert data["precise"] is True
+    assert any(d["category"] == "inner-payment-receiver" for d in data["hits"])
 
 
 def test_cli_json_auth_shape(capsys):

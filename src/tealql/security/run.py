@@ -41,7 +41,7 @@ def _secguide_detector(short_name: str, notes: "list | None" = None,
     would point the dependency arrow backwards."""
     def _run(prog: SSAProgram):
         det = DETECTORS[short_name](prog)
-        out = list(det.detect())
+        out = [_NormalizedView(v, short_name) for v in det.detect()]
         degraded = getattr(det, "degraded", None)
         if degraded and notes is not None:
             notes.append((short_name, degraded))
@@ -50,6 +50,30 @@ def _secguide_detector(short_name: str, notes: "list | None" = None,
             raise TealQLError(f"detector {short_name} ran degraded: {degraded}")
         return out
     return _FnDetector(f"detections/{short_name}", _run)
+
+
+class _NormalizedView:
+    """A sec-guide violation as the runner sees it: ``pretty()`` unchanged for
+    the text report, ``to_dict()`` the versioned :class:`~.findings.Finding`
+    record — so ``tealql all --json`` carries rule_id / severity / confidence /
+    file / line for every detector instead of ``{"message": …}`` for the ones
+    without their own ``to_dict``."""
+
+    __slots__ = ("violation", "_name")
+
+    def __init__(self, violation, name: str):
+        self.violation = violation
+        self._name = name
+
+    def pretty(self) -> str:
+        return self.violation.pretty() if hasattr(self.violation, "pretty") else str(self.violation)
+
+    def to_dict(self) -> dict:
+        from .findings import normalize_violation
+        return normalize_violation(self.violation, self._name).to_dict()
+
+    def __getattr__(self, item):
+        return getattr(self.violation, item)
 
 
 SECGUIDE_DETECTORS: list[Detector] = [_secguide_detector(n) for n in _SECGUIDE_NAMES]

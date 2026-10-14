@@ -1,0 +1,14 @@
+#pragma version 8
+// VULN: `CallerApplicationID == 0` only says "not an inner call" — any
+// externally signed transaction passes it.
+txn OnCompletion
+int UpdateApplication
+==
+bz done
+global CallerApplicationID
+int 0
+==
+assert
+done:
+int 1
+return

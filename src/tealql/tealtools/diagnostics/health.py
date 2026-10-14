@@ -8,6 +8,14 @@ import re
 
 T = TypeVar("T")
 
+# Ops whose operand count is not their static arity (frame slots, call
+# boundaries, constant blocks) or whose halt needs no operand accounting.
+# Mirrors the corpus census's exemption set (`tests.corpus_manifest`).
+_ARITY_FREE = frozenset({
+    "frame_dig", "frame_bury", "callsub", "retsub", "proto",
+    "intcblock", "bytecblock", "return", "err",
+})
+
 
 @dataclass(frozen=True)
 class AnalysisDegradation:
@@ -19,7 +27,7 @@ class AnalysisDegradation:
 
     def to_dict(self) -> dict:
         return {"kind": self.code, "message": self.message,
-                "file": self.file, "detector": self.detector}
+                "file": self.file, "line": self.line, "detector": self.detector}
 
 
 @dataclass(frozen=True)
@@ -76,6 +84,26 @@ def health_for(prog, *, deep: bool = False) -> AnalysisHealth:
             "unknown-opcode",
             "unknown opcode stack effects: " + ", ".join(unknown_ops),
         ))
+    # A consuming instruction whose stack operand the simulation could not
+    # name (a withdrawn call residual, a sub's loop reading below its frame,
+    # an unknown join arm). The op keeps a SHORT input list — the shape every
+    # may-analysis reads as clean — so the refusal is said here. Same arity
+    # source and the same ops exempted as the corpus representation census,
+    # whose `missing` column this mirrors per site.
+    from ..language.avm import op_arity
+    for a in (getattr(prog, "_stack_assignments", None)
+              or getattr(prog, "assignments", ()) or ()):
+        if a.op in _ARITY_FREE:
+            continue
+        n_in = op_arity(a.op, a.immediates)[0]
+        named = sum(1 for i in a.inputs if i is not None)
+        if n_in > named:
+            items.append(AnalysisDegradation(
+                "missing-stack-operand",
+                f"`{a.op}` consumes {n_in} stack cell(s) but the stack model "
+                f"named {named}",
+                a.location.file, a.location.line,
+            ))
     stack_result = getattr(getattr(prog, '_pyssa', None), '_stack_result', None)
     if stack_result is not None and not stack_result.contexts_complete:
         items.append(AnalysisDegradation(

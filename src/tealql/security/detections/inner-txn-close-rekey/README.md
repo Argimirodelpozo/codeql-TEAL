@@ -12,6 +12,64 @@ The correct pattern is to omit the field entirely (it defaults to the zero addre
 
 **Per-assignment finding** — every `itxn_field <FIELD>` opcode where `FIELD` is one of the three dangerous names is reported, regardless of the value being assigned. No path-sensitivity is applied: even an `itxn_field RekeyTo` guarded behind a `bz` that's never taken still flags. This is intentional — the false-positive cost is low because the correct pattern is to never write these fields.
 
+## How to fix
+
+Do not write `CloseRemainderTo`, `RekeyTo` or `AssetCloseTo` on an inner
+transaction; leave them at their zero-address default. A write whose value
+provably is the zero address (`global ZeroAddress` or a 32-byte zero literal) is
+not flagged.
+
+<!-- verify: inner-txn-close-rekey clean -->
+```teal
+#pragma version 10
+itxn_begin
+int pay
+itxn_field TypeEnum
+txn Sender
+itxn_field Receiver
+int 100000
+itxn_field Amount
+int 0
+itxn_field Fee
+itxn_submit
+int 1
+return
+```
+
+<!-- verify: inner-txn-close-rekey finding -->
+```teal
+#pragma version 10
+itxn_begin
+int pay
+itxn_field TypeEnum
+txn Sender
+itxn_field Receiver
+int 0
+itxn_field Amount
+txn Sender
+itxn_field CloseRemainderTo
+int 0
+itxn_field Fee
+itxn_submit
+int 1
+return
+```
+
+```python
+itxn.Payment(receiver=Txn.sender, amount=100_000, fee=0).submit()  # no close_remainder_to / rekey_to
+```
+
+A deliberate close-out (e.g. an admin-only teardown that closes the app's
+holdings to the creator) is still reported; suppress it with
+`// tealql-ignore: inner-txn-close-rekey` on the `itxn_field` line (or the line
+above), or record it in a baseline (`--update-baseline` / `--baseline PATH`).
+
+## False positives
+
+By design every non-zero write is reported regardless of guards or
+reachability (see How it works): an intended, creator-gated close-out flags and
+must be suppressed.
+
 ## Examples
 
 Vulnerable — the detector flags this:

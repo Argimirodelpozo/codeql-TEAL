@@ -288,6 +288,30 @@ def is_current_sender_read(op: str, immediates, index: Optional[int] = None) -> 
     return False
 
 
+def is_group_signer_read(op: str, immediates, index: Optional[int] = None) -> bool:
+    """``True`` when ``(op, immediates[, index])`` reads the sender of a
+    transaction IN THIS GROUP at a fixed position: the current sender
+    (:func:`is_current_sender_read`), ``gtxn K Sender`` for any immediate ``K``, or ``gtxns Sender`` whose stack
+    index the caller resolved to a constant (``index``).
+
+    AUTHORISATION only, never identity: a pin ``gtxn K Sender == creator``
+    means the creator SIGNED a transaction of this group, and every signature
+    covers the group id, which commits to every member — so the creator
+    approved this very call. It is NOT "the caller is the creator": a sibling
+    sender must never stand for ``txn Sender`` in beneficiary/identity rules
+    (:func:`is_current_sender_read` keeps the ``gtxn*`` family out for exactly
+    that reason). A non-constant ``gtxns`` index stays out (conservative)."""
+    if is_current_sender_read(op, immediates, index):
+        return True
+    toks = (immediates.split() if isinstance(immediates, str)
+            else [str(t) for t in (immediates or ())])
+    if op == "gtxn":
+        return len(toks) == 2 and toks[0].isdigit() and toks[1] == "Sender"
+    if op == "gtxns":
+        return toks == ["Sender"] and index is not None
+    return False
+
+
 def attacker_input_label(op: str, immediates: str) -> Optional[str]:
     """The attacker-controlled input family ``op`` reads, or ``None`` — THE
     single source for "is this read attacker-steerable", shared by the SSA-level
@@ -297,7 +321,11 @@ def attacker_input_label(op: str, immediates: str) -> Optional[str]:
     HAZARD: the field is matched as an EXACT token via :func:`txn_field_name`,
     never by substring — ``txn NumAccounts`` (the uint64 array-length read)
     contains ``"Accounts"`` and used to be mislabelled ``ForeignAccounts``,
-    seeding phantom taint on every count-guarded contract."""
+    seeding phantom taint on every count-guarded contract.
+
+    The other source kind — own-state reads whose slot an untrusted caller can
+    write — is :data:`STATE_VALUE_SOURCE`, decided per read by the lifted seed
+    because it depends on the slot's writers, not on ``(op, immediates)``."""
     if op in LSIG_ARG_OPS:
         return "LogicSigArgs"
     field = txn_field_name(op, immediates)
@@ -315,6 +343,39 @@ def attacker_input_label(op: str, immediates: str) -> Optional[str]:
     if op in ITXN_SOURCE_OPS and field == "LastLog":
         return "ItxnLastLog"
     return None
+
+
+#: The SECOND source kind: a value READ from this app's own state whose slot an
+#: untrusted caller can write. Not decidable from ``(op, immediates)`` alone —
+#: whether a read is a source depends on the slot's WRITERS — so the lifted
+#: taint seed (``lift.taint``) decides per read and labels it with
+#: :func:`state_value_label`; this table owns the kind and its spelling so the
+#: two source families stay in one place. Labels are ``StateValue:<key>``.
+STATE_VALUE_SOURCE = "StateValue"
+
+#: Own-state reads that can return a stored value (``box_len`` cannot).
+STATE_VALUE_READ_OPS: frozenset[str] = frozenset({
+    "app_global_get", "app_global_get_ex", "app_local_get", "app_local_get_ex",
+    "box_get", "box_extract",
+})
+
+
+def state_value_label(key_hex: str) -> str:
+    """``StateValue:<key>`` for a constant state key given as ``0x``-hex: the
+    key's text when it is printable ASCII, else the hex itself."""
+    raw = key_hex[2:] if key_hex.startswith("0x") else key_hex
+    try:
+        text = bytes.fromhex(raw).decode("ascii")
+    except (ValueError, UnicodeDecodeError):
+        text = None
+    if text is None or not text or not text.isprintable():
+        text = "0x" + raw
+    return f"{STATE_VALUE_SOURCE}:{text}"
+
+
+def is_state_value_label(label: str) -> bool:
+    """``True`` for a :func:`state_value_label` source label."""
+    return isinstance(label, str) and label.startswith(STATE_VALUE_SOURCE + ":")
 
 #: Opcodes the AVM accepts ONLY in Application mode, so their presence PROVES a
 #: program is an application (consumed by ``classify_program``).

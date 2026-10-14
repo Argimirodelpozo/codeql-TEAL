@@ -13,9 +13,76 @@ The "creator can rugpull instantly" pattern: the contract isn't open to everyone
 Three conjoined conditions per approval exit:
 1. Approval exit reachable under `OnCompletion == 4`.
 2. `senderCreatorGuardDominates` holds (the basic creator-only gate is present — opposite polarity from `unprotected-updatable`).
-3. `hasTimestampCheck()` is false globally (no `Global.LatestTimestamp` comparison anywhere in the program).
+3. Some entry path to the exit does not cross a block that ENFORCES a comparison consuming a `global LatestTimestamp` or `global Round` read.
 
-This is a *contract-wide* gate on condition (3): the timestamp check just has to exist somewhere, not dominate the upgrade path. Tightening this is a follow-up.
+Condition (3) is per exit: a deadline in another arm does not cover the Update arm, and a timestamp that is only stored, logged, or compared with the result dropped is not a delay.
+
+## How to fix
+
+Make the creator-only Update arm wait for a delay the creator announced earlier: compare `global LatestTimestamp` (or `global Round`, for a delay in rounds) against a stored unlock time/round and enforce the result (`assert` or branch to a rejection) on every path to the Update exit. A timestamp that is only stored or logged, a comparison whose result is popped, or a deadline that lives in another arm is not credited.
+
+<!-- verify: timelock-upgrade clean -->
+```teal
+#pragma version 10
+txn OnCompletion
+int UpdateApplication
+==
+bnz update
+txn OnCompletion
+int NoOp
+==
+assert
+int 1
+return
+update:
+txn Sender
+global CreatorAddress
+==
+assert
+global LatestTimestamp
+byte "upgrade_unlock"
+app_global_get
+>=
+assert
+int 1
+return
+```
+
+The same delay spelled in rounds (`global Round; byte "upgrade_unlock_round"; app_global_get; >=; assert`) is credited identically. Vulnerable counterpart:
+
+<!-- verify: timelock-upgrade finding -->
+```teal
+#pragma version 10
+txn OnCompletion
+int UpdateApplication
+==
+bnz update
+txn OnCompletion
+int NoOp
+==
+assert
+int 1
+return
+update:
+txn Sender
+global CreatorAddress
+==
+assert
+int 1
+return
+```
+
+```python
+assert Global.latest_timestamp >= self.upgrade_unlock  # set by an earlier announce_upgrade() call
+```
+
+Give the Update arm its own exit: the delay must lie on every path into the flagged exit (see False positives). If an instant creator upgrade is an accepted trust assumption, suppress with `// tealql-ignore: timelock-upgrade` on the flagged exit line or the line above it, or record it in a baseline (`--update-baseline` / `--baseline PATH`).
+
+## False positives
+
+- **Shared exit.** The delay is required on *every* entry path to the exit, not only the Update paths. When the Update arm (creator check + delay) and a non-Update arm share one `approve:` exit (`OnCompletion == UpdateApplication; bz done; …; done: int 1; return`), the non-Update path never crosses the delay and the exit is reported even though the update itself is delayed. Verified on the current tree; work-around: give the Update arm its own `int 1; return`.
+- Conversely (a false negative): any enforced `LatestTimestamp` / `Round` comparison on the path is credited, including an app-expiry check (`global LatestTimestamp; int END; <; assert`) in the shared prologue that delays nothing (reproduced on the current tree).
+- The round-based-delay FP (A11) is fixed.
 
 ## Examples
 

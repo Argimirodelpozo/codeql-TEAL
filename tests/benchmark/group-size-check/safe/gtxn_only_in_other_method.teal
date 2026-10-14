@@ -1,0 +1,38 @@
+#pragma version 6
+// SAFE: only the "deposit" method reads an absolute sibling (gtxn 0), and it
+// pins GroupSize first. The "ping" method's exit reads no sibling at all, so
+// padding the group cannot change what it checked.
+txn ApplicationID
+bz create
+txna ApplicationArgs 0
+byte "deposit"
+==
+bnz deposit
+txna ApplicationArgs 0
+byte "ping"
+==
+bnz ping
+err
+deposit:
+global GroupSize
+int 2
+==
+assert
+gtxn 0 Receiver
+global CurrentApplicationAddress
+==
+assert
+byte "total"
+gtxn 0 Amount
+app_global_put
+int 1
+return
+ping:
+byte "pings"
+int 1
+app_global_put
+int 1
+return
+create:
+int 1
+return

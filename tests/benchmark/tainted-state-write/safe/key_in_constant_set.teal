@@ -1,0 +1,15 @@
+#pragma version 10
+// SAFE (FP probe): key pinned to a two-element constant set via ||
+txna ApplicationArgs 1
+byte "a"
+==
+txna ApplicationArgs 1
+byte "b"
+==
+||
+assert
+txna ApplicationArgs 1
+txna ApplicationArgs 2
+app_global_put
+int 1
+return

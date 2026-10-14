@@ -4,6 +4,7 @@ from __future__ import annotations
 from tealql.security._lifted_taint_sink import (
     _LiftedTaintSinkDetector,
     _LiftedTaintSinkViolation,
+    _sources_text,
 )
 
 _ROLE = {
@@ -29,7 +30,7 @@ class TaintedAssetAdminDetector(_LiftedTaintSinkDetector):
     }
 
     def _message(self, finding, location):
-        sources = "+".join(sorted(finding.sources))
+        sources = _sources_text(finding)
         role = _ROLE.get(finding.field, "administer the asset")
         return (
             f"[{finding.severity}] attacker-controlled asset-admin role itxn "

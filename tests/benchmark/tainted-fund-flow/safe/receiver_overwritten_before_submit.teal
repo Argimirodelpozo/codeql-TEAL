@@ -1,0 +1,14 @@
+#pragma version 10
+// SAFE (FP probe): Receiver set to attacker FIRST then overwritten by the app address -- last write wins
+itxn_begin
+int pay
+itxn_field TypeEnum
+txna Accounts 1
+itxn_field Receiver
+global CurrentApplicationAddress
+itxn_field Receiver
+int 1000
+itxn_field Amount
+itxn_submit
+int 1
+return

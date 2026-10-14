@@ -1,0 +1,14 @@
+#pragma version 5
+// SAFE: a pre-ABI app. ApplicationArgs 0 is a DATA payload (a price), read
+// and stored but never compared — there is no method table to bypass.
+txn ApplicationID
+bz create
+byte "price"
+txna ApplicationArgs 0
+btoi
+app_global_put
+int 1
+return
+create:
+int 1
+return

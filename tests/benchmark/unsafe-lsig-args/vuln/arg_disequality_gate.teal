@@ -1,0 +1,24 @@
+#pragma version 10
+// VULNERABLE: lsig "password" check spelled as `!=; bnz reject` — an equality
+// gate on an lsig arg, which the caller chooses freely.
+arg 0
+byte "secret"
+!=
+bnz reject
+txn RekeyTo
+global ZeroAddress
+==
+assert
+txn CloseRemainderTo
+global ZeroAddress
+==
+assert
+txn Fee
+int 1000
+<=
+assert
+int 1
+return
+reject:
+int 0
+return

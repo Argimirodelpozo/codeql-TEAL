@@ -1,0 +1,18 @@
+#pragma version 10
+// SAFE (FP probe): sender pin AFTER the submit via a forced branch to `err` -- a failing path reverts the itxn
+itxn_begin
+int pay
+itxn_field TypeEnum
+txna ApplicationArgs 1
+itxn_field Receiver
+int 1000
+itxn_field Amount
+itxn_submit
+txn Sender
+global CreatorAddress
+==
+bnz ok
+err
+ok:
+int 1
+return

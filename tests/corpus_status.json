@@ -44,6 +44,10 @@
    "diagnostics": [],
    "path": "benchmark/unvalidated-group-sibling/safe/pinned_via_branched_retsub.teal"
   },
+  "038951c4e253cf69": {
+   "diagnostics": [],
+   "path": "benchmark/inner-txn-fee/vuln/itxn_min_txn_fee.teal"
+  },
   "0395386c2b632561": {
    "diagnostics": [],
    "path": "mainnet-random-probes/app_3350348253.teal"
@@ -55,6 +59,14 @@
   "0438a86fda28bf78": {
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/compile_HelloOtherConstants/src/HelloOtherConstants.approval.teal"
+  },
+  "04640e60c09deef6": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-fund-flow/vuln/input_vs_input_equality.teal"
+  },
+  "04837a63a7802e7e": {
+   "diagnostics": [],
+   "path": "benchmark/group-size-check/vuln/groupsize_lower_bound_only.teal"
   },
   "04eaf9230f7557a9": {
    "diagnostics": [],
@@ -72,6 +84,10 @@
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/regression_tests_Child/src/Child.approval.teal"
   },
+  "05575d75d3cf0df7": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-fund-flow/safe/sum_of_two_inputs_bounded.teal"
+  },
   "056cd6dcd5e905c8": {
    "diagnostics": [],
    "path": "benchmark/inner-txn-fee/safe/itxn_zero_fee.teal"
@@ -83,6 +99,10 @@
   "060cfe75b877fe0c": {
    "diagnostics": [],
    "path": "benchmark/partial-tainted-fund-flow/safe/whole_value_owned_by_tff.teal"
+  },
+  "064ddc0e6980bf02": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-fund-flow/vuln/gtxnsa_stack_index_collision.teal"
   },
   "07be4d7c9a5e27e1": {
    "diagnostics": [],
@@ -107,6 +127,10 @@
   "08bc4661b9b939bf": {
    "diagnostics": [],
    "path": "mainnet-random-probes/app_203122583.teal"
+  },
+  "08f3284e874bcdac": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-fund-flow/vuln/plus_constant_bypass.teal"
   },
   "08f8f03744954407": {
    "diagnostics": [],
@@ -236,6 +260,10 @@
    "diagnostics": [],
    "path": "benchmark/partial-tainted-fund-flow/safe/clean_prefix_recipient.teal"
   },
+  "100b80f3bd3fe29a": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-fund-flow/safe/receiver_overwritten_before_submit.teal"
+  },
   "10258da68f2073fe": {
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/regression_tests_ConstBigIntToIntOverflow/src/ConstBigIntToIntOverflow.approval.teal"
@@ -288,6 +316,10 @@
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/ssa2_MyContract/src/MyContract.approval.teal"
   },
+  "13388b6124b6c911": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-fund-flow/safe/creator_signed_sibling_guard.teal"
+  },
   "13f84cef286e83d2": {
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/regression_tests_ReplaceOpSelection/src/ReplaceOpSelection.approval.teal"
@@ -314,7 +346,7 @@
   },
   "181b74a03edf6f48": {
    "diagnostics": [],
-   "path": "benchmark/partial-tainted-fund-flow/vuln/dynamic_accounts_index_recipient.teal"
+   "path": "benchmark/tainted-fund-flow/vuln/dynamic_accounts_index_recipient.teal"
   },
   "1876a1785a597f2a": {
    "diagnostics": [],
@@ -404,6 +436,10 @@
    "diagnostics": [],
    "path": "mainnet-random-probes/app_600334957.teal"
   },
+  "1c4771c134464ab9": {
+   "diagnostics": [],
+   "path": "benchmark/unprotected-updatable/safe/gtxn_self_creator_pin.teal"
+  },
   "1c7a5a843a87da06": {
    "diagnostics": [],
    "path": "mainnet-random-probes/app_3100297243.teal"
@@ -416,10 +452,6 @@
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/array_ImmutableArrayContract/src/ImmutableArrayContract.approval.teal"
   },
-  "1d03240e1055534e": {
-   "diagnostics": [],
-   "path": "tealtools/sec_guide/delete_funds_check/vuln/prog.teal"
-  },
   "1d946fe75f3d43cc": {
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/dup2_optimization_bug_MyContract/src/MyContract.approval.teal"
@@ -427,6 +459,10 @@
   "1df701438e12b04b": {
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/koopman_MyContract/src/MyContract.approval.teal"
+  },
+  "1e29a84b26c2e0cf": {
+   "diagnostics": [],
+   "path": "benchmark/group-size-check/safe/groupsize_bound_before_shared_helper.teal"
   },
   "1e31e92d773d7fee": {
    "diagnostics": [],
@@ -443,6 +479,10 @@
   "1e692a8d0bfb01b5": {
    "diagnostics": [],
    "path": "tealtools/sec_guide/rekey_to/false_path_approves__vuln_cosmetic_pop/prog.teal"
+  },
+  "1e71c375528162e0": {
+   "diagnostics": [],
+   "path": "tealtools/sec_guide/delete_funds_check/vuln_untied_ops/prog.teal"
   },
   "1e7fd45f1afb0f6c": {
    "diagnostics": [],
@@ -500,6 +540,10 @@
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/inheritance_ParentContract/src/ParentContract.approval.teal"
   },
+  "22de38a47cd18fb9": {
+   "diagnostics": [],
+   "path": "benchmark/unprotected-updatable/vuln/caller_application_zero_is_no_pin.teal"
+  },
   "22fdac3f15808965": {
    "diagnostics": [],
    "path": "benchmark/unprotected-deletable/vuln/appid_eq_nonzero_const_dispatch.teal"
@@ -515,6 +559,10 @@
   "239c76a13ae96e7d": {
    "diagnostics": [],
    "path": "benchmark/hardcoded-min-balance/vuln/balance_minus_const.teal"
+  },
+  "23a92de8a040590b": {
+   "diagnostics": [],
+   "path": "benchmark/abi-method-selector/vuln/selector_vs_other_app_arg.teal"
   },
   "23b1192d74420095": {
    "diagnostics": [],
@@ -652,10 +700,6 @@
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/array_AbiCallContract/src/AbiCallContract.approval.teal"
   },
-  "2c6dd04790369c66": {
-   "diagnostics": [],
-   "path": "benchmark/abi-method-selector/vuln/selector_unchecked.teal"
-  },
   "2cc635e2efd6819e": {
    "diagnostics": [],
    "path": "tealtools/sec_guide/asset_close_to/gabe_fixed/prog.teal"
@@ -683,6 +727,10 @@
   "2ec4aa5becb6bdcd": {
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/intrinsics_ImmediateVariants/src/ImmediateVariants.approval.teal"
+  },
+  "2f16d06e5f62751c": {
+   "diagnostics": [],
+   "path": "benchmark/delete-funds-check/safe/shared_approve_two_oc_arms.teal"
   },
   "2f5099d2a06e3a2f": {
    "diagnostics": [],
@@ -720,6 +768,10 @@
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/array_StaticSizeContract/src/StaticSizeContract.approval.teal"
   },
+  "3271f1f4a5cdae50": {
+   "diagnostics": [],
+   "path": "benchmark/fee-validation/safe/gtxn0_under_groupsize_one.teal"
+  },
   "3287ce2afca4a70f": {
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/regression_tests_Verifier/src/Verifier.approval.teal"
@@ -752,13 +804,13 @@
    "diagnostics": [],
    "path": "mainnet-random-probes/app_3050259731.teal"
   },
-  "368eb0e9f21f26fb": {
-   "diagnostics": [],
-   "path": "tealtools/sec_guide/abi_method_selector/vuln/prog.teal"
-  },
   "36b514112377b00e": {
    "diagnostics": [],
    "path": "mainnet-random-probes/app_700103969.teal"
+  },
+  "36e2af75cbb6f5b1": {
+   "diagnostics": [],
+   "path": "benchmark/asset-close-to/vuln/asset_close_compared_to_sender.teal"
   },
   "378a847d0ca05600": {
    "diagnostics": [],
@@ -812,6 +864,10 @@
    "diagnostics": [],
    "path": "mainnet-random-probes/app_750485187.teal"
   },
+  "3c7703f4c57627bf": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-fund-flow/safe/sanitizer_returns_param.teal"
+  },
   "3c847e36e258b9dd": {
    "diagnostics": [],
    "path": "tealtools/box_key/safe_id_prefix/prog.teal"
@@ -835,6 +891,10 @@
   "3d843fa2ce131f78": {
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/regression_tests_UInt64TripleAddOverflow/src/UInt64TripleAddOverflow.approval.teal"
+  },
+  "3dea7657094845df": {
+   "diagnostics": [],
+   "path": "benchmark/unvalidated-group-sibling/vuln/proto_subs_one_arm_unpinned.teal"
   },
   "3ec08583206dda3f": {
    "diagnostics": [],
@@ -1024,6 +1084,10 @@
    "diagnostics": [],
    "path": "mainnet-random-probes/app_130875715.teal"
   },
+  "4b40a54be2959a1a": {
+   "diagnostics": [],
+   "path": "benchmark/unvalidated-group-sibling/vuln/receiver_pinned_to_sender_local_state.teal"
+  },
   "4cc64c8fe5c0ff3e": {
    "diagnostics": [],
    "path": "benchmark/partial-tainted-fund-flow/vuln/interprocedural_payment_in_sub.teal"
@@ -1031,6 +1095,14 @@
   "4d08041450ecadf4": {
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/compile_Hello/src/Hello.approval.teal"
+  },
+  "4d27c5dd2b05a5da": {
+   "diagnostics": [],
+   "path": "benchmark/abi-method-selector/vuln/selector_unchecked.teal"
+  },
+  "4e39134f3888e17f": {
+   "diagnostics": [],
+   "path": "benchmark/fee-validation/vuln/fee_lower_bound_only.teal"
   },
   "4e4bfe3139770a8c": {
    "diagnostics": [],
@@ -1047,6 +1119,10 @@
   "4fcdf66c21f1f1dd": {
    "diagnostics": [],
    "path": "tealtools/sec_guide/unsafe_lsig_args/vuln_callsub/prog.teal"
+  },
+  "500dd89895886929": {
+   "diagnostics": [],
+   "path": "benchmark/rekey-to/vuln/callee_verdict_leaks_across_callers.teal"
   },
   "502986cdc47eea83": {
    "diagnostics": [],
@@ -1067,6 +1143,10 @@
   "52a3261c71474b74": {
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/intrinsics_Optimizations/src/Optimizations.approval.teal"
+  },
+  "52df2e748b82c03d": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-fund-flow/vuln/caller_application_unpinned.teal"
   },
   "533e5f3e3b560778": {
    "diagnostics": [],
@@ -1095,6 +1175,10 @@
   "540bcba4da89d692": {
    "diagnostics": [],
    "path": "mainnet-random-probes/app_2200117730.teal"
+  },
+  "549fd0457c85212b": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-fund-flow/vuln/two_tainted_terms_one_bounded.teal"
   },
   "54a941889b0799cd": {
    "diagnostics": [],
@@ -1152,6 +1236,10 @@
    "diagnostics": [],
    "path": "mainnet-random-probes/app_206124696.teal"
   },
+  "587f81ba23f07f8b": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-fund-flow/safe/post_sink_return_verdict.teal"
+  },
   "58a1e6cc2523c232": {
    "diagnostics": [],
    "path": "handwritten/stack_shuffle_heavy.teal"
@@ -1167,6 +1255,10 @@
   "591bee9f179b3c2f": {
    "diagnostics": [],
    "path": "mainnet-random-probes/app_750512607.teal"
+  },
+  "5941f1f3d046fbd9": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-fund-flow/safe/guard_via_scratch_dead_end_store.teal"
   },
   "59499ec0ee4acef0": {
    "diagnostics": [],
@@ -1232,6 +1324,10 @@
    "diagnostics": [],
    "path": "mainnet-random-probes/app_1850333786.teal"
   },
+  "5d9cea4e7a698821": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-fund-flow/safe/post_sink_branch_to_err.teal"
+  },
   "5da1ebf55aa6ed3b": {
    "diagnostics": [],
    "path": "benchmark/tainted-fund-flow/safe/void_owner_check_helper.teal"
@@ -1239,6 +1335,10 @@
   "5de51deb94c7a319": {
    "diagnostics": [],
    "path": "mainnet-random-probes/app_2600186959.teal"
+  },
+  "5eaf46c4de24ad07": {
+   "diagnostics": [],
+   "path": "benchmark/unprotected-updatable/safe/phi_of_two_trusted_pins.teal"
   },
   "5f0c92acc4ddfbaf": {
    "diagnostics": [],
@@ -1292,9 +1392,17 @@
    "diagnostics": [],
    "path": "benchmark/tainted-fund-flow/safe/assert_after_submit.teal"
   },
+  "62ad0ec909a22143": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-fund-flow/safe/caller_application_pinned.teal"
+  },
   "637810365817c8f4": {
    "diagnostics": [],
    "path": "tealtools/sec_guide/tx_type_check/vuln/prog.teal"
+  },
+  "63d8d730037cdfde": {
+   "diagnostics": [],
+   "path": "benchmark/unprotected-updatable/vuln/sibling_sender_vs_caller_arg.teal"
   },
   "63eae75294c0f455": {
    "diagnostics": [],
@@ -1436,6 +1544,10 @@
    "diagnostics": [],
    "path": "benchmark/rekey-to/vuln/sibling_gtxn_unpinned_index.teal"
   },
+  "6c08c31dafc88f8a": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-fund-flow/safe/state_value_no_writer.teal"
+  },
   "6c76015750bd6005": {
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/tuple_support_TupleComparisons/src/TupleComparisons.approval.teal"
@@ -1520,6 +1632,10 @@
    "diagnostics": [],
    "path": "benchmark/tainted-asset-admin/safe/sender_gated.teal"
   },
+  "744f7ae867e04ad6": {
+   "diagnostics": [],
+   "path": "benchmark/abi-method-selector/safe/arg0_data_payload_no_router.teal"
+  },
   "74d8823eda837214": {
    "diagnostics": [],
    "path": "benchmark/group-size-check/vuln/gtxn_absolute_no_check.teal"
@@ -1600,9 +1716,17 @@
    "diagnostics": [],
    "path": "benchmark/unvalidated-group-sibling/vuln/gtxns_const_index_unpinned.teal"
   },
+  "79faf5131442d979": {
+   "diagnostics": [],
+   "path": "benchmark/fee-validation/safe/fee_upper_bound_reversed_spelling.teal"
+  },
   "7a1f6dcd2b273a27": {
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/large_box_operations_StructMultipleArrayUInt64/src/StructMultipleArrayUInt64.approval.teal"
+  },
+  "7a5762a20a9dfb38": {
+   "diagnostics": [],
+   "path": "benchmark/rekey-to/vuln/rekey_compared_to_sender.teal"
   },
   "7a6473dedf0a25f5": {
    "diagnostics": [],
@@ -1640,6 +1764,10 @@
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/iteration_TupleIterationTest/src/TupleIterationTest.approval.teal"
   },
+  "7bb5ce9c1ac3dac8": {
+   "diagnostics": [],
+   "path": "benchmark/is-updatable/safe/oc_via_gtxns_groupindex.teal"
+  },
   "7c0ffe936097d6a7": {
    "diagnostics": [],
    "path": "tealtools/sec_guide/lease_validation/fixed/prog.teal"
@@ -1667,6 +1795,10 @@
   "7f20c69982d4f114": {
    "diagnostics": [],
    "path": "tealtools/sec_guide/inner_txn_close_rekey/fixed/prog.teal"
+  },
+  "7fbccd5a4661e977": {
+   "diagnostics": [],
+   "path": "tealtools/sec_guide/delete_funds_check/vuln/prog.teal"
   },
   "7ffa96657f219e9d": {
    "diagnostics": [],
@@ -1707,6 +1839,10 @@
   "81d9480996a8fcf5": {
    "diagnostics": [],
    "path": "tealtools/loop_dig_deep/prog.teal"
+  },
+  "827e7dd7465f95cd": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-fund-flow/vuln/input_eq_state_unguarded_writer.teal"
   },
   "82a63e28423a62d8": {
    "diagnostics": [],
@@ -1755,6 +1891,10 @@
   "85391798d2394e7f": {
    "diagnostics": [],
    "path": "tealtools/sec_guide/rekey_to/direct__fixed/prog.teal"
+  },
+  "8542b1591d1c1e7a": {
+   "diagnostics": [],
+   "path": "benchmark/delete-funds-check/vuln/balance_minbalance_different_accounts.teal"
   },
   "855d812ad3871b02": {
    "diagnostics": [],
@@ -1832,6 +1972,10 @@
    "diagnostics": [],
    "path": "benchmark/unprotected-deletable/safe/create_dispatch_branch_spelling.teal"
   },
+  "8a055c35ff023b65": {
+   "diagnostics": [],
+   "path": "benchmark/unvalidated-group-sibling/safe/proto_helper_pinned_after_call.teal"
+  },
   "8a2b869d2588df5e": {
    "diagnostics": [],
    "path": "benchmark/unvalidated-group-sibling/vuln/unpinned_payment_min.teal"
@@ -1856,6 +2000,10 @@
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/regression_tests_ExtractLengthOOB/src/ExtractLengthOOB.approval.teal"
   },
+  "8adaf9904dc29b98": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-fund-flow/vuln/phi_two_inputs_one_bounded.teal"
+  },
   "8bacc61bebba2b1c": {
    "diagnostics": [],
    "path": "benchmark/close-remainder-to/vuln/sibling_gtxn_unpinned_index.teal"
@@ -1867,6 +2015,10 @@
   "8c88d60d7d4264cf": {
    "diagnostics": [],
    "path": "benchmark/tainted-asset-admin/vuln/unguarded_manager.teal"
+  },
+  "8c99f10567718e0e": {
+   "diagnostics": [],
+   "path": "benchmark/abi-method-selector/safe/pyteal_router_bare_create.teal"
   },
   "8ccb2c0d01168576": {
    "diagnostics": [],
@@ -1923,6 +2075,10 @@
   "9142b2c355a59a34": {
    "diagnostics": [],
    "path": "tealtools/box_key/vuln_extract/prog.teal"
+  },
+  "9175e8fb818030e4": {
+   "diagnostics": [],
+   "path": "benchmark/group-size-check/safe/gtxn_only_in_other_method.teal"
   },
   "91f8ed758735250f": {
    "diagnostics": [],
@@ -1984,6 +2140,10 @@
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/state_mutations_Contract/src/Contract.approval.teal"
   },
+  "964d68a062d139b8": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-fund-flow/vuln/bitor_constant_bypass.teal"
+  },
   "973c23ede2516eb0": {
    "diagnostics": [],
    "path": "mainnet-random-probes/app_1250294004.teal"
@@ -2039,6 +2199,18 @@
   "993ec3747870c69e": {
    "diagnostics": [],
    "path": "mainnet-random-probes/app_2900804157.teal"
+  },
+  "9979899b7d813560": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-fund-flow/vuln/state_value_unguarded_writer.teal"
+  },
+  "99f0e449500f56ea": {
+   "diagnostics": [],
+   "path": "benchmark/arbitrary-inner-asset/vuln/optin_shape_with_close_to.teal"
+  },
+  "9aa9aac9895c9eeb": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-fund-flow/vuln/two_tainted_terms_interproc.teal"
   },
   "9ace0677a26b6800": {
    "diagnostics": [],
@@ -2100,6 +2272,10 @@
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/dynamic_itxn_group_DynamicITxnGroup/src/DynamicITxnGroup.approval.teal"
   },
+  "9e7d72ffd528a6e5": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-state-write/safe/key_in_constant_set.teal"
+  },
   "9f184c5a30ca58a9": {
    "diagnostics": [],
    "path": "contracts/hostile-crossband/crossband.teal"
@@ -2111,6 +2287,10 @@
   "a05c786436fcf459": {
    "diagnostics": [],
    "path": "mainnet-random-probes/app_3100133227.teal"
+  },
+  "a06e4da5b83fe656": {
+   "diagnostics": [],
+   "path": "benchmark/delete-funds-check/safe/gated_delete_app_cannot_move_funds.teal"
   },
   "a0a30ccfaa510d6a": {
    "diagnostics": [],
@@ -2148,6 +2328,10 @@
    "diagnostics": [],
    "path": "mainnet-random-probes/app_137491307.teal"
   },
+  "a264a935d8354bfd": {
+   "diagnostics": [],
+   "path": "benchmark/close-remainder-to/safe/close_pinned_to_fixed_owner.teal"
+  },
   "a2cabc5f616a4d7b": {
    "diagnostics": [],
    "path": "mainnet-random-probes/app_1300665263.teal"
@@ -2171,6 +2355,10 @@
   "a3a29416f0078688": {
    "diagnostics": [],
    "path": "tealtools/sec_guide/hardcoded_min_balance/vuln/prog.teal"
+  },
+  "a46afa52e2904502": {
+   "diagnostics": [],
+   "path": "benchmark/is-updatable/safe/oc_relational_bound.teal"
   },
   "a4c0516d341a0ffb": {
    "diagnostics": [],
@@ -2284,6 +2472,10 @@
    "diagnostics": [],
    "path": "mainnet-random-probes/app_203122637.teal"
   },
+  "abd4be4c9dd2d1d3": {
+   "diagnostics": [],
+   "path": "benchmark/timelock-upgrade/safe/round_based_delay.teal"
+  },
   "ace32c763c1c7795": {
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/stubs_StringContract/src/StringContract.approval.teal"
@@ -2323,6 +2515,10 @@
   "aecda94473307b1a": {
    "diagnostics": [],
    "path": "mainnet-random-probes/app_1300665167.teal"
+  },
+  "af10ebb79c0306e5": {
+   "diagnostics": [],
+   "path": "benchmark/delete-funds-check/safe/drain_after_shared_helper.teal"
   },
   "af1c556c32a6ae26": {
    "diagnostics": [],
@@ -2396,6 +2592,10 @@
    "diagnostics": [],
    "path": "mainnet-random-probes/app_2500525325.teal"
   },
+  "b28bbc621d347ac9": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-fund-flow/safe/state_value_creator_guarded_writer.teal"
+  },
   "b35e90538a8f8404": {
    "diagnostics": [],
    "path": "benchmark/tainted-fund-flow/vuln/sender_pinned_to_caller_arg.teal"
@@ -2424,9 +2624,17 @@
    "diagnostics": [],
    "path": "tealtools/sec_guide/hardcoded_min_balance/fixed/prog.teal"
   },
+  "b610b80a220ec976": {
+   "diagnostics": [],
+   "path": "benchmark/unprotected-updatable/vuln/sibling_sender_is_stored_escrow.teal"
+  },
   "b6324fabd28600e4": {
    "diagnostics": [],
    "path": "mainnet-random-probes/app_900381763.teal"
+  },
+  "b652640051446966": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-fund-flow/safe/txn_vs_txna_same_slot.teal"
   },
   "b65647596bfeeeac": {
    "diagnostics": [],
@@ -2480,6 +2688,10 @@
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/large_box_operations_ArrayUInt64/src/ArrayUInt64.approval.teal"
   },
+  "ba0b9b46acc9a057": {
+   "diagnostics": [],
+   "path": "benchmark/abi-method-selector/safe/lifecycle_oc_paths_unpinned.teal"
+  },
   "ba0d02c766cc42a8": {
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/abi_routing_CustomApproval2/src/CustomApproval2.approval.teal"
@@ -2488,9 +2700,21 @@
    "diagnostics": [],
    "path": "experimental_IR_lift/explorer/app_1421213939/app_1421213939.teal"
   },
+  "ba3d6855bfce24be": {
+   "diagnostics": [],
+   "path": "benchmark/group-size-check/vuln/gtxn_in_shared_helper.teal"
+  },
+  "ba844362531bb650": {
+   "diagnostics": [],
+   "path": "tealtools/sec_guide/abi_method_selector/vuln/prog.teal"
+  },
   "babc9adc74448965": {
    "diagnostics": [],
    "path": "tealtools/sec_guide/abi_method_selector/fixed_match_router/prog.teal"
+  },
+  "bac1d4a3b9be382b": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-fund-flow/vuln/xor_inverted_sender_pin.teal"
   },
   "badcfb6810c58a90": {
    "diagnostics": [],
@@ -2596,10 +2820,6 @@
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/contains_MyContract/src/MyContract.approval.teal"
   },
-  "c1d540770cfe3f8c": {
-   "diagnostics": [],
-   "path": "tealtools/sec_guide/delete_funds_check/vuln_untied_ops/prog.teal"
-  },
   "c21d71dfe6aa9364": {
    "diagnostics": [],
    "path": "benchmark/tainted-fund-flow/safe/guard_result_via_phi.teal"
@@ -2632,6 +2852,10 @@
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/mutable_native_types_Case2WithImmStruct/src/Case2WithImmStruct.approval.teal"
   },
+  "c40f5941dabd534a": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-fund-flow/vuln/amount_gt_zero_only.teal"
+  },
   "c40fcf4406d39635": {
    "diagnostics": [],
    "path": "tealtools/box_df/validated_with_assert/prog.teal"
@@ -2651,6 +2875,10 @@
   "c4d03a325db6b778": {
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/avm_12_Contract/src/Contract.approval.teal"
+  },
+  "c529401144c0260b": {
+   "diagnostics": [],
+   "path": "benchmark/unvalidated-group-sibling/vuln/receiver_pinned_to_unsigned_sibling_escrow.teal"
   },
   "c53b99f1534d60fd": {
    "diagnostics": [],
@@ -2696,9 +2924,17 @@
    "diagnostics": [],
    "path": "mainnet-random-probes/app_3100029128.teal"
   },
+  "c7de35c4c42868b6": {
+   "diagnostics": [],
+   "path": "benchmark/asset-id-validation/vuln/asset_id_vs_arg.teal"
+  },
   "c85fea2a324a2c00": {
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/logic_signature_CheckCompiledSig/src/CheckCompiledSig.approval.teal"
+  },
+  "c876a17937333ff9": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-fund-flow/safe/state_value_creation_only_writer.teal"
   },
   "c92adaaf7e5c41f2": {
    "diagnostics": [],
@@ -2723,6 +2959,10 @@
   "ca3d74f85d53468d": {
    "diagnostics": [],
    "path": "tealtools/xcontract_sec_guide/rekey_unchecked_callee/caller/prog.teal"
+  },
+  "ca3fc85b2abb4ed4": {
+   "diagnostics": [],
+   "path": "benchmark/arbitrary-inner-asset/safe/optin_self_zero_amount.teal"
   },
   "ca53e0cc0acd8208": {
    "diagnostics": [],
@@ -2780,6 +3020,10 @@
    "diagnostics": [],
    "path": "tealtools/cfg/simple_branch/prog.teal"
   },
+  "cdcb56c891f42d64": {
+   "diagnostics": [],
+   "path": "benchmark/abi-method-selector/safe/puyapy_arc4_bare_handlers_real.teal"
+  },
   "cdcf59822efc10dd": {
    "diagnostics": [],
    "path": "benchmark/timelock-upgrade/safe/genuine_timelock.teal"
@@ -2823,6 +3067,10 @@
   "d151ab954622c79a": {
    "diagnostics": [],
    "path": "mainnet-random-probes/app_1050058216.teal"
+  },
+  "d1b049663767cd23": {
+   "diagnostics": [],
+   "path": "benchmark/unprotected-updatable/vuln/sender_pin_or_caller_flag.teal"
   },
   "d1bf9fd41c9c9c7e": {
    "diagnostics": [],
@@ -2900,6 +3148,10 @@
    "diagnostics": [],
    "path": "tealtools/auth_domination/vuln/prog.teal"
   },
+  "d661c5557a38b545": {
+   "diagnostics": [],
+   "path": "benchmark/group-size-check/safe/groupsize_upper_bound.teal"
+  },
   "d6f32424f5915310": {
    "diagnostics": [],
    "path": "mainnet-random-probes/app_203123309.teal"
@@ -2912,6 +3164,10 @@
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/large_box_operations_DynamicOffsetMiddle/src/DynamicOffsetMiddle.approval.teal"
   },
+  "d75d882058ad7918": {
+   "diagnostics": [],
+   "path": "benchmark/unprotected-updatable/safe/fixed_caller_application.teal"
+  },
   "d77dcb2d10a46e14": {
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/circular_dependency_B/src/B.approval.teal"
@@ -2923,6 +3179,14 @@
   "d82d48f317126269": {
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/diamond_mro_Base2/src/Base2.approval.teal"
+  },
+  "d8bc00f548583607": {
+   "diagnostics": [],
+   "path": "benchmark/unprotected-updatable/safe/creator_signed_sibling.teal"
+  },
+  "d8fa196c265ed51d": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-fund-flow/vuln/select_constant_arm_bypass.teal"
   },
   "d912671545177091": {
    "diagnostics": [],
@@ -2968,9 +3232,17 @@
    "diagnostics": [],
    "path": "tealtools/sec_guide/timelock_upgrade/fixed_complex_dispatch/prog.teal"
   },
+  "db94300d031b82bc": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-fund-flow/vuln/input_bounded_by_input.teal"
+  },
   "dbccd7a8f6b4b2fc": {
    "diagnostics": [],
    "path": "mainnet-random-probes/app_203122300.teal"
+  },
+  "dc32a6ffea266629": {
+   "diagnostics": [],
+   "path": "benchmark/asset-id-validation/vuln/asset_id_nonzero_only.teal"
   },
   "dcae097046f0f1f7": {
    "diagnostics": [],
@@ -3064,6 +3336,10 @@
    "diagnostics": [],
    "path": "experimental_IR_lift/explorer/app_531558171/app_531558171.teal"
   },
+  "e4a69500030a352e": {
+   "diagnostics": [],
+   "path": "benchmark/unprotected-updatable/safe/sender_pin_or_not_update.teal"
+  },
   "e5121eef420f04e0": {
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/simple_MyContract/src/MyContract.approval.teal"
@@ -3108,9 +3384,17 @@
    "diagnostics": [],
    "path": "handwritten/opcode_named_labels.teal"
   },
+  "e8b978652ca894ac": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-fund-flow/safe/post_call_assert_in_caller.teal"
+  },
   "e8fba4a26cb58ece": {
    "diagnostics": [],
    "path": "benchmark/rekey-to/safe/delegated_lsig_rekey_guarded.teal"
+  },
+  "e91a9d5bffa86dfc": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-fund-flow/vuln/gtxnsa_dynamic_txn_index.teal"
   },
   "e999924b01b59376": {
    "diagnostics": [],
@@ -3119,6 +3403,10 @@
   "e9bd47418d6ad98e": {
    "diagnostics": [],
    "path": "mainnet-random-probes/app_1300665696.teal"
+  },
+  "e9d8558252356045": {
+   "diagnostics": [],
+   "path": "benchmark/unsafe-lsig-args/vuln/arg_disequality_gate.teal"
   },
   "e9f0bd6ef745796e": {
    "diagnostics": [],
@@ -3248,6 +3536,10 @@
    "diagnostics": [],
    "path": "tealtools/sec_guide/rekey_to/gabe_fixed/prog.teal"
   },
+  "f1c91931cc805253": {
+   "diagnostics": [],
+   "path": "benchmark/delete-funds-check/safe/delete_drains_when_nonempty.teal"
+  },
   "f23af47f2b272f33": {
    "diagnostics": [],
    "path": "mainnet-random-probes/app_206124555.teal"
@@ -3255,6 +3547,10 @@
   "f291c85ed8d69c17": {
    "diagnostics": [],
    "path": "benchmark/unprotected-deletable/safe/admin_address_in_global_state.teal"
+  },
+  "f2b1df000a0a2aa3": {
+   "diagnostics": [],
+   "path": "benchmark/unvalidated-group-sibling/safe/receiver_pinned_to_creator_signed_escrow.teal"
   },
   "f2e7d7d9dbdc111f": {
    "diagnostics": [],
@@ -3316,9 +3612,21 @@
    "diagnostics": [],
    "path": "mainnet-random-probes/app_900349175.teal"
   },
+  "f6fbfbebbc131367": {
+   "diagnostics": [],
+   "path": "benchmark/delete-funds-check/safe/delete_drains_first.teal"
+  },
   "f70461e44a084dc6": {
    "diagnostics": [],
    "path": "benchmark/unprotected-updatable/safe/create_path_shared_router.teal"
+  },
+  "f70ddd8c6bf3a155": {
+   "diagnostics": [],
+   "path": "benchmark/unprotected-updatable/safe/bool_return_phi_pin_arm.teal"
+  },
+  "f7c26e714fe11071": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-fund-flow/vuln/guard_via_scratch_overwritten_on_path.teal"
   },
   "f7fda3ea9da25186": {
    "diagnostics": [],
@@ -3340,6 +3648,10 @@
    "diagnostics": [],
    "path": "mainnet-random-probes/app_1600520068.teal"
   },
+  "f8fc2fc8ef0b2fdc": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-fund-flow/vuln/receiver_overwritten_by_attacker.teal"
+  },
   "f937cb22a79f47aa": {
    "diagnostics": [],
    "path": "tealtools/itxn_report/simple_pay/prog.teal"
@@ -3351,6 +3663,10 @@
   "f9a62f3c3525577b": {
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/local_map_LocalMapUInt64/src/LocalMapUInt64.approval.teal"
+  },
+  "f9a89f8b06c09977": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-fund-flow/vuln/len_check_via_callee.teal"
   },
   "fa26a143f91624eb": {
    "diagnostics": [],
@@ -3368,6 +3684,10 @@
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/arc4_signature_ContractTwo/src/ContractTwo.approval.teal"
   },
+  "fb86da5da54372ae": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-fund-flow/safe/amount_bounded_by_sibling_payment.teal"
+  },
   "fb9a42649e814325": {
    "diagnostics": [],
    "path": "experimental_IR_lift/puya/bug_load_store_load_store_MyContract/src/MyContract.approval.teal"
@@ -3383,6 +3703,10 @@
   "fccd7b11501547d7": {
    "diagnostics": [],
    "path": "tealtools/sec_guide/timelock_upgrade/vuln_stored_timestamp/prog.teal"
+  },
+  "fce025538ca97b50": {
+   "diagnostics": [],
+   "path": "benchmark/close-remainder-to/vuln/close_compared_to_arg.teal"
   },
   "fcf6680ceb29d8a4": {
    "diagnostics": [],
@@ -3420,6 +3744,10 @@
    "diagnostics": [],
    "path": "mainnet-random-probes/app_251932073.teal"
   },
+  "fe5b61e7e1d902a4": {
+   "diagnostics": [],
+   "path": "benchmark/unprotected-updatable/vuln/callee_verdict_leaks_across_callers.teal"
+  },
   "fe81178bfa334f01": {
    "diagnostics": [],
    "path": "benchmark/asset-close-to/vuln/dropped_result_unenforced.teal"
@@ -3427,6 +3755,10 @@
   "fe8ac1e6174abd92": {
    "diagnostics": [],
    "path": "benchmark/asset-close-to/vuln/or_bypass_unrelated_arm.teal"
+  },
+  "ffdafec3a5209771": {
+   "diagnostics": [],
+   "path": "benchmark/tainted-fund-flow/safe/select_both_arms_sender_pin.teal"
   }
  },
  "representation": {

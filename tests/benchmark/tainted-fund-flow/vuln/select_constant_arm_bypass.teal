@@ -1,0 +1,20 @@
+#pragma version 10
+// VULN: assert(select(1, Sender==creator, btoi(arg0))) -> arg0 == 0 selects the constant 1
+int 1
+txn Sender
+global CreatorAddress
+==
+txna ApplicationArgs 0
+btoi
+select
+assert
+itxn_begin
+int pay
+itxn_field TypeEnum
+txna ApplicationArgs 1
+itxn_field Receiver
+int 1000
+itxn_field Amount
+itxn_submit
+int 1
+return

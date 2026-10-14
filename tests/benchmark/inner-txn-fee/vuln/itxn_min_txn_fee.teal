@@ -1,0 +1,15 @@
+#pragma version 10
+// Inner payment paying the network fee from the app account via MinTxnFee —
+// behaviourally identical to `int 1000`.
+itxn_begin
+int pay
+itxn_field TypeEnum
+txn Sender
+itxn_field Receiver
+int 1
+itxn_field Amount
+global MinTxnFee
+itxn_field Fee
+itxn_submit
+int 1
+return

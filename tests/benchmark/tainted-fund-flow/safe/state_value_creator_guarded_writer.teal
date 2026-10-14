@@ -1,0 +1,28 @@
+#pragma version 10
+// SAFE: the only writer of global "payee" runs under txn Sender == global
+// CreatorAddress, so the payee is the creator's choice, not the caller's.
+txna ApplicationArgs 0
+byte "set"
+==
+bnz set_payee
+itxn_begin
+int pay
+itxn_field TypeEnum
+byte "payee"
+app_global_get
+itxn_field Receiver
+int 1000
+itxn_field Amount
+itxn_submit
+int 1
+return
+set_payee:
+txn Sender
+global CreatorAddress
+==
+assert
+byte "payee"
+txna Accounts 1
+app_global_put
+int 1
+return

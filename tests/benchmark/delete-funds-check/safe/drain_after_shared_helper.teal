@@ -1,0 +1,41 @@
+#pragma version 8
+// SAFE: the Delete method closes the account out, then calls a helper the
+// other method also calls. A walk that follows the helper's `retsub` from the
+// OTHER method's call site into the Delete method's continuation stitches a
+// Delete path that skips the close — no execution takes it.
+txna ApplicationArgs 0
+byte "del"
+==
+bnz del
+callsub helper
+txn OnCompletion
+int NoOp
+==
+assert
+int 1
+return
+del:
+txn OnCompletion
+int DeleteApplication
+==
+assert
+callsub close
+callsub helper
+int 1
+return
+helper:
+byte "calls"
+byte "calls"
+app_global_get
+int 1
++
+app_global_put
+retsub
+close:
+itxn_begin
+int pay
+itxn_field TypeEnum
+global CreatorAddress
+itxn_field CloseRemainderTo
+itxn_submit
+retsub

@@ -77,8 +77,9 @@ class _Node:
         return self.code.split()[1:]
 
     def label_name(self) -> str:
-        """Bare label name (identifier before the ``:``)."""
-        return self.code.split(":", 1)[0].strip()
+        """Bare label name: the definition minus its TRAILING ``:`` (a name may
+        itself contain ``::`` -- puya-ts' ``contract.algo.ts::Main.method``)."""
+        return self.code.strip().removesuffix(":").strip()
 
 
 def _children(nodes) -> dict[str, list[_Node]]:

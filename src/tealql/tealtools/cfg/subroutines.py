@@ -199,8 +199,35 @@ def _identify_subroutines_uncached(prog: "SSAProgram") -> dict:
             }
             for entry, body in bodies.items()
         }
+        def _returns_through_a_foreign_entry(entry: BasicBlock) -> bool:
+            """Does ``entry`` reach a ``retsub`` by a PLAIN branch into another
+            sub's entry? ``_body`` never crosses an entry (a callee's blocks
+            are not the caller's), so a sub whose only ``retsub`` sits in a
+            tail it reaches by ``b other_sub`` looked like it never returns:
+            its callsub lost its continuation, and every value the call
+            produced was withdrawn. A branch pushes no return address, so
+            the foreign ``retsub`` pops THIS sub's — it does return."""
+            seen: set = set()
+            stack = [entry]
+            while stack:
+                bb = stack.pop()
+                if bb in seen:
+                    continue
+                seen.add(bb)
+                op = _terminator_op(bb)
+                if op == "retsub":
+                    return True
+                if op == "callsub":
+                    cont = continuations.get(bb)
+                    if cont is not None:
+                        stack.append(cont)
+                    continue
+                stack.extend(bb.successors)
+            return False
+
         has_retsub = {
-            entry: any(_terminator_op(bb) == "retsub" for bb in body)
+            entry: (any(_terminator_op(bb) == "retsub" for bb in body)
+                    or _returns_through_a_foreign_entry(entry))
             for entry, body in bodies.items()
         }
         # Fix mis-attributed continuations:
@@ -288,74 +315,166 @@ def infer_legacy_arities(
         p = proto_of(s)
         arity[s] = p if p is not None else (0, 0)
 
-    for _ in range(len(arity) + 4):
-        changed = False
-        for s in subs:
-            if proto_of(s) is not None:
-                continue
-            body = body_of(s)
-            entry = entry_of(s)
-            depth = {entry: 0}
-            order = [entry]
-            floor = 0
-            ret_ds: list = []
-            i = 0
-            while i < len(order):
-                b = order[i]
-                i += 1
-                d = mn = depth[b]
-                for o in ops_of(b):
-                    if o.op == "retsub":
-                        break
-                    # A legacy sub still has a frame: callsub anchors it at the
-                    # caller's current stack height. Negative frame slots are
-                    # implicit arguments even though frame_dig does not POP
-                    # them. Counting only stack-effect dips inferred nargs=0
-                    # and left `frame_dig -1` undefined in SSA and pre-IR. A
-                    # below-frame bury has the same fixed-band requirement in
-                    # addition to popping its value.
-                    if o.op in ("frame_dig", "frame_bury"):
-                        try:
-                            frame_slot = int((o.immediates or "").split()[0])
-                        except (ValueError, IndexError):
-                            frame_slot = 0
-                        if frame_slot < 0:
-                            mn = min(mn, frame_slot)
-                    if o.op == "callsub":
-                        pop, push = arity.get(callee_of(b), (0, 0))
-                    else:
-                        pop, push = op_arity(o)
-                    d -= pop
-                    mn = min(mn, d)
-                    d += push
-                floor = min(floor, mn)
-                ops = list(ops_of(b))
-                if ops and ops[-1].op == "retsub":
+    # TWO phases of the same fixpoint. Phase 1 reads every block at the
+    # depth it is FIRST reached (the historical rule) until the arities
+    # converge. Phase 2 continues from there with every further depth a
+    # block is reached at (``widen``), which is what finds a return reached
+    # at two heights. The order matters: early rounds assume (0, 0) for a
+    # recursive callee, so a path THROUGH it looks shallower than its
+    # siblings and the join after it conflicts spuriously; feeding that
+    # round's extra depth into ``nret`` makes the recursive path exactly
+    # that much deeper next round, and the wrong width confirms itself (a
+    # function-shaped (2, 1) varint encoder settled at (2, 2) and refused).
+    # Started from the converged first-reached arities, a conflict is real.
+    for widen in (False, True):
+        for _ in range(len(arity) + 4):
+            changed = _legacy_arity_round(
+                subs, arity, widen, entry_of=entry_of, proto_of=proto_of,
+                body_of=body_of, ops_of=ops_of, succs_of=succs_of,
+                callee_of=callee_of, op_arity=op_arity, divergent=divergent)
+            if not changed:
+                break
+    return arity
+
+
+def _legacy_arity_round(subs, arity, widen, *, entry_of, proto_of, body_of,
+                        ops_of, succs_of, callee_of, op_arity, divergent):
+    """One round of :func:`infer_legacy_arities`; ``True`` if any arity moved."""
+    changed = False
+    for s in subs:
+        if proto_of(s) is not None:
+            continue
+        body = body_of(s)
+        entry = entry_of(s)
+
+        def transfer(b, d):
+            """``(exit depth, lowest depth reached)`` running ``b`` from
+            entry depth ``d``."""
+            mn = d
+            for o in ops_of(b):
+                if o.op == "retsub":
+                    break
+                # A legacy sub still has a frame: callsub anchors it at the
+                # caller's current stack height. Negative frame slots are
+                # implicit arguments even though frame_dig does not POP
+                # them. Counting only stack-effect dips inferred nargs=0
+                # and left `frame_dig -1` undefined in SSA and pre-IR. A
+                # below-frame bury has the same fixed-band requirement in
+                # addition to popping its value.
+                if o.op in ("frame_dig", "frame_bury"):
+                    try:
+                        frame_slot = int((o.immediates or "").split()[0])
+                    except (ValueError, IndexError):
+                        frame_slot = 0
+                    if frame_slot < 0:
+                        mn = min(mn, frame_slot)
+                if o.op == "callsub":
+                    pop, push = arity.get(callee_of(b), (0, 0))
+                else:
+                    pop, push = op_arity(o)
+                d -= pop
+                mn = min(mn, d)
+                d += push
+            return d, mn
+
+        def ends_in_retsub(b):
+            ops = list(ops_of(b))
+            return bool(ops) and ops[-1].op == "retsub"
+
+        depth = {entry: 0}
+        order = [entry]
+        floor = 0
+        ret_ds: list = []
+        # Every FURTHER depth a block is reached at. ``depth`` keeps the
+        # first-reached height — it drives the dip (``floor``) and the
+        # walk order exactly as before. A second height at the same block
+        # is a height-conflicting join, and every ``retsub`` BELOW it is
+        # reached at both heights even when the retsub block itself is
+        # walked once: ``ret_ds`` saw only the first, so a recursive arm
+        # whose continuation is also a direct branch's target (the direct
+        # arm not consuming the argument) declared a 3-cell return as 2,
+        # was not divergent, and left the caller's residual one cell
+        # short on that path — a wrong value, not a missing one. The
+        # extra heights run through the same transfer, bounded.
+        heights = {entry: {0}}
+        extra: list = []
+        i = 0
+        while i < len(order):
+            b = order[i]
+            i += 1
+            d, mn = transfer(b, depth[b])
+            floor = min(floor, mn)
+            if ends_in_retsub(b):
+                ret_ds.append(d)
+            for su in succs_of(b, body):
+                if su not in depth:
+                    depth[su] = d
+                    heights[su] = {d}
+                    order.append(su)
+                elif d not in heights[su]:
+                    heights[su].add(d)
+                    extra.append((su, d))
+        exhausted = False
+        # Only a routine that returns at all has a return depth to get
+        # wrong; the main routine's own joins (common: a router's shared
+        # exit) never reach a ``retsub`` and skip this walk entirely.
+        if widen and extra and ret_ds:
+            budget = 4 * len(order) + 16
+            j = 0
+            while j < len(extra):
+                if j >= budget:
+                    # A loop with a net stack effect re-enters its header
+                    # one cell deeper (or shallower) per lap: its return
+                    # depth is lap-dependent and no finite set names it.
+                    exhausted = True
+                    break
+                b, d0 = extra[j]
+                j += 1
+                d, _mn = transfer(b, d0)
+                if ends_in_retsub(b):
                     ret_ds.append(d)
                 for su in succs_of(b, body):
-                    if su not in depth:
-                        depth[su] = d
-                        order.append(su)
-            # MAX over ALL retsub sites, not the first reached: a sub whose
-            # paths diverge would otherwise silently truncate a deeper path.
-            ret_d = max(ret_ds) if ret_ds else None
-            # HAZARD: reflect the CONVERGED iteration, so DISCARD as well as
-            # add. Early rounds assume (0, 0) for every legacy callee, which
-            # makes a path THROUGH one look shallower than its siblings —
-            # accumulating the mark would report a sub that is perfectly
-            # function-shaped once its callee's arity is known.
-            if divergent is not None:
-                if len(set(ret_ds)) > 1:
-                    divergent.add(s)
-                else:
-                    divergent.discard(s)
-            na, nr = -floor, (ret_d - floor if ret_d is not None else 0)
-            if arity[s] != (na, nr):
-                arity[s] = (na, nr)
-                changed = True
-        if not changed:
-            break
-    return arity
+                    known = heights.setdefault(su, set())
+                    if d not in known:
+                        known.add(d)
+                        extra.append((su, d))
+        # MAX over ALL retsub sites and ALL heights each is reached at,
+        # not the first reached: a sub whose paths diverge would
+        # otherwise silently truncate a deeper path.
+        ret_d = max(ret_ds) if ret_ds else None
+        conflict_returns = False
+        if exhausted:
+            # Which conflicting joins can still reach a ``retsub``? Only
+            # those make the cut-off a variable return depth.
+            rpreds: dict = {}
+            for b in order:
+                for su in succs_of(b, body):
+                    rpreds.setdefault(su, []).append(b)
+            reach: set = set()
+            work = [b for b in order if ends_in_retsub(b)]
+            while work:
+                b = work.pop()
+                if b in reach:
+                    continue
+                reach.add(b)
+                work.extend(rpreds.get(b, ()))
+            conflict_returns = any(
+                len(heights.get(b, ())) > 1 and b in reach for b in order)
+        # HAZARD: reflect the CONVERGED iteration, so DISCARD as well as
+        # add. Early rounds assume (0, 0) for every legacy callee, which
+        # makes a path THROUGH one look shallower than its siblings —
+        # accumulating the mark would report a sub that is perfectly
+        # function-shaped once its callee's arity is known.
+        if divergent is not None:
+            if len(set(ret_ds)) > 1 or conflict_returns:
+                divergent.add(s)
+            else:
+                divergent.discard(s)
+        na, nr = -floor, (ret_d - floor if ret_d is not None else 0)
+        if arity[s] != (na, nr):
+            arity[s] = (na, nr)
+            changed = True
+    return changed
 
 
 def is_retsub_block(bb: "BasicBlock") -> bool:
@@ -585,11 +704,22 @@ def pyblock_partition(blocks, corrected=None) -> dict:
         if b not in sub_entries and b not in mains:
             mains.append(b)
     bb_to_sub: dict = {}
+    # EVERY callsub target owns itself before any DFS runs. A routine that
+    # `b`-branches INTO another sub's entry (sharing its tail) used to claim
+    # that entry when it came first in the root order; the entry then owned
+    # nothing, `_callee_of` found no self-owned successor for the callsub
+    # that targets it, and the call ran as arity (0, 0): the caller's
+    # pre-call stack passed through verbatim (`itob` claimed the pushed
+    # argument where the AVM delivers the callee's sum). With the entry
+    # claimed first the branching routine sees a cross-routine edge, which
+    # the shared-tail execution bodies already run in every context.
+    for entry in sub_entries:
+        bb_to_sub[entry] = entry
     for root in mains + sorted(sub_entries, key=lambda x: x.key):
         stack = [root]
         while stack:
             b = stack.pop()
-            if b in bb_to_sub:
+            if b in bb_to_sub and b is not root:
                 continue
             bb_to_sub[b] = root
             for s in loc_succs[b]:

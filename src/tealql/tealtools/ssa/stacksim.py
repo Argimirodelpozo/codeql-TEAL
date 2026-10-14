@@ -375,6 +375,11 @@ def simulate(blocks, bb_to_sub, proto_io, return_point, phi_factory,
     # can push real results instead of threading the return edge.
     retsubs = {sub: [b for b in body if b.ops and b.ops[-1].op == 'retsub']
                for sub, body in by_sub.items() if sub is not None}
+    # Routines entered by `callsub`: their model bottom is a frame base with
+    # the caller's cells underneath, not the physical bottom (see
+    # `_run_routine.extend_backedge`).
+    sub_entries = frozenset(s for b in blocks if b.ops and b.ops[-1].op == "callsub"
+                            for s in b.succs)
 
     # CALLEES FIRST. A call site pushes the values its callee's `retsub` blocks
     # leave, so simulating a caller before its callee makes every call result
@@ -401,7 +406,8 @@ def simulate(blocks, bb_to_sub, proto_io, return_point, phi_factory,
         pending_start = len(local.frame_deferred)
         _run_routine(sub, body, local, arity, bb_to_sub, return_point,
                      retsubs, phi_factory, unsafe_callees, deferred, proto_io,
-                     instructions, context_poison, effect_summaries)
+                     instructions, context_poison, effect_summaries,
+                     sub_entries=sub_entries)
         context = snapshot(local, body, context_poison)
         res.contexts[sub] = context
         frame_pending.extend((ph, op, context)
@@ -632,6 +638,35 @@ def _return_value(st, j, slot, proto):
     return st[-slot] if len(st) >= slot else None
 
 
+def _merge_cells(cells, home, slot, res, phi_factory):
+    """One continuation cell from its per-path ``(present, value)`` truths.
+
+    ``present`` says whether that return path's physical stack HAS the cell
+    at all (a path returning fewer cells than the deepest, or a shorter
+    retained return stack); ``value`` is the cell on the paths that have it.
+    A present cell whose value is unknown withdraws the WHOLE cell — the
+    resolved subset would read as the whole answer. Paths WITHOUT the cell
+    do not: the cell is a phi over the paths that have it, marked
+    ``partial`` — the same contract a max-window join gives a shallow arm.
+    Returning ``None`` there (the former behaviour) was a withdrawal that a
+    later LOOP HEADER could not tell from "no value": the None became an
+    empty phi arm, and the deep path's real cell — the caller's 55 under a
+    one-cell return — vanished from the header's merge instead of surviving
+    as its partial arm, so the public phi claimed only the lap-1 values."""
+    present = [v for has, v in cells if has]
+    if not present or any(v is None for v in present):
+        return None
+    absent = len(present) < len(cells)
+    if not absent and len({id(v) for v in present}) == 1:
+        return present[0]
+    ph = phi_factory(home, slot)
+    ph.args.extend(present)
+    if absent:
+        ph.partial = True
+    res.phis.setdefault(home, []).append((slot, ph))
+    return ph
+
+
 def _callee_first(by_sub, bb_to_sub):
     """Routine entries ordered so a callee precedes its callers.
 
@@ -767,7 +802,8 @@ def _isucc(b, body, return_point, *, owned_only=True):
 
 def walk_routine(body_list, entry, *, successors, initial_stack, exit_stacks,
                  execute_block, merge_value, extend_backedge,
-                 orphan_stack=None, before_merge=None, edge_stack=None):
+                 orphan_stack=None, before_merge=None, edge_stack=None,
+                 merge_entry=False):
     """Run the shared CFG scheduler and top-aligned stack join for one routine.
 
     The stack *values* and phi representation deliberately stay caller-owned:
@@ -782,6 +818,16 @@ def walk_routine(body_list, entry, *, successors, initial_stack, exit_stacks,
     the block's instructions. ``before_merge`` is an optional observer used by
     the lift to preserve its dead-underflow-edge repair; it cannot alter the
     merge.  The return value is the local predecessor-count map.
+
+    ``merge_entry`` makes an entry that is ALSO a loop header (``legacy:``
+    ... ``bnz legacy``) take ``initial_stack`` as the FORWARD arm of the same
+    merge every other loop header gets, its back arm filled through
+    ``pending`` once the body has run. Off, the entry takes ``initial_stack``
+    verbatim and never consults the back edge: every later lap's cell read
+    as its lap-1 value (a ``store`` claimed the argument where lap 2 stores
+    the caller's next cell down). Opt-in because that forward arm has no
+    predecessor block — ``merge_value`` receives ``None`` for it — and an
+    adapter keying phi arms on a predecessor cannot represent it.
     """
     body = set(body_list)
 
@@ -850,8 +896,19 @@ def walk_routine(body_list, entry, *, successors, initial_stack, exit_stacks,
             p: edge_stack(p, block, exit_stacks[p]) if edge_stack else exit_stacks[p]
             for p in preds
         }
-        if block is entry:
+        if block is entry and not (merge_entry and bpred.get(block)):
             values = list(initial_stack)
+        elif block is entry:
+            depth = len(initial_stack)
+            values = []
+            for bottom_index in range(depth):
+                top_slot = depth - bottom_index
+                value, token = merge_value(
+                    block, top_slot, bottom_index,
+                    [(None, True, initial_stack[-top_slot])], True)
+                values.append(value)
+                for pred in bpred.get(block, ()):
+                    pending.append((token, top_slot, pred, block))
         elif not preds:
             values = list(orphan_stack(block))
         elif len(preds) == 1 and not (
@@ -901,10 +958,15 @@ def walk_routine(body_list, entry, *, successors, initial_stack, exit_stacks,
 def _run_routine(sub, body_list, res, arity, bb_to_sub, return_point,
                  retsubs, phi_factory, unsafe_callees=frozenset(),
                  deferred=None, proto_io=None, frame_instructions=None,
-                 poisoned=frozenset(), effect_summaries=None):
+                 poisoned=frozenset(), effect_summaries=None,
+                 sub_entries=frozenset()):
     divergent = res.divergent
     body = set(body_list)
     nargs = arity.get(sub, (0, 0))[0]
+    # Main's model bottom IS the physical bottom. A sub's is its frame base,
+    # with the caller's cells underneath — reachable by every plain stack op
+    # (the AVM bounds only frame ops by the frame; verified live).
+    is_main = sub not in sub_entries
 
     def merge_value(block, top_slot, bottom_index, incoming, _is_loop):
         ph = phi_factory(block, top_slot)
@@ -917,26 +979,28 @@ def _run_routine(sub, body_list, res, arity, bb_to_sub, return_point,
     def extend_backedge(ph, _pred, present, value):
         if present:
             ph.args.append(value)
-        else:
+        elif is_main:
             # A net-popping lap lacks this cell. Omitting that arm would make
-            # the forward value look definite on every iteration.
+            # the forward value look definite on every iteration. In main a
+            # read of it on lap >= 2 underflows, so `partial`'s panic-pruning
+            # contract holds: every execution past the read took a listed arm.
             ph.partial = True
+        else:
+            # In a SUB the cell a later lap lacks is BELOW the frame base: a
+            # plain op reading it gets the CALLER's cell, one deeper per lap
+            # — not an underflow, and not nameable from here. `partial` let
+            # the lap-1 value (the argument) stand as a definite constant on
+            # every lap, where lap 2 stores the caller's next cell down. An
+            # unknown arm makes the public phi refuse instead.
+            ph.args.append(None)
 
     def execute_block(block, stack, npred):
         def merge_returns(stacks):
-            values = []
-            for slot in range(max(map(len, stacks)), 0, -1):
-                cells = [st[-slot] if len(st) >= slot else None for st in stacks]
-                if any(v is None for v in cells):
-                    values.append(None)
-                elif all(v is cells[0] for v in cells):
-                    values.append(cells[0])
-                else:
-                    ph = phi_factory(block, slot)
-                    ph.args.extend(cells)
-                    res.phis.setdefault(block, []).append((slot, ph))
-                    values.append(ph)
-            return values
+            return [
+                _merge_cells([(len(st) >= slot, st[-slot] if len(st) >= slot else None)
+                              for st in stacks], block, slot, res, phi_factory)
+                for slot in range(max(map(len, stacks)), 0, -1)
+            ]
 
         for index, op in enumerate(block.ops):
             _exec(op, block, stack, nargs, res, bb_to_sub, retsubs, arity,
@@ -960,6 +1024,7 @@ def _run_routine(sub, body_list, res, arity, bb_to_sub, return_point,
         edge_stack=(lambda pred, target, default:
                     res.return_shapes.edges.get((pred, target), default))
         if res.return_shapes is not None else None,
+        merge_entry=True,
     )
 
 
@@ -1210,23 +1275,27 @@ def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
             # (heights kept) rather than let the pre-call values stand for
             # cells the shallow paths do not have.
             stack[:] = [None] * len(stack)
+        # The caller residual at the call, for the per-path shift below:
+        # position `k` (top-first) of the continuation on return path `st` is
+        # `st[-k]` when the path's exit is that deep, else the residual cell
+        # `k - len(st)` under it, else NOTHING — that path's whole physical
+        # stack is shorter (this frame owns no deeper cell).
+        base = list(stack)
+
+        def cell_at(st, k):
+            if k <= len(st):
+                return True, st[-k]
+            below = k - len(st)
+            if below <= len(base):
+                return True, base[-below]
+            return False, None
+
         pushes: list = []
         for j in range(r_out):
             slot = r_out - j                      # top-first within the returns
             if shifted and not pending_rets and can_merge:
-                vals = [st[-slot] if len(st) >= slot
-                        else (stack[len(st) - slot]
-                              if slot - len(st) <= len(stack) else None)
-                        for st in exits]
-                if not vals or any(v is None for v in vals):
-                    pushes.append(None)
-                elif len({id(v) for v in vals}) == 1:
-                    pushes.append(vals[0])
-                else:
-                    ph = phi_factory(cont, slot)
-                    ph.args.extend(vals)
-                    res.phis.setdefault(cont, []).append((slot, ph))
-                    pushes.append(ph)
+                pushes.append(_merge_cells([cell_at(st, slot) for st in exits],
+                                           cont, slot, res, phi_factory))
                 continue
             vals, band_refused = [], False
             for rb in rets:
@@ -1300,25 +1369,12 @@ def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
             # `r_out + d` holds a different caller cell per path — a phi per
             # cell down the residual, args all REAL values. A position past a
             # path's ENTIRE stack has no cell on that path (this frame owns
-            # nothing deeper); one unknowable arm withdraws the cell, because
-            # a phi that silently omits a path reads as clean to every
-            # may-analysis.
-            base = list(stack)
+            # nothing deeper): the cell is a `partial` phi over the paths
+            # that have it, never a silent omission (`_merge_cells`).
             for d in range(1, len(base) + 1):
                 k = r_out + d
-                args = [base[len(st) - k] if 0 < k - len(st) <= len(base)
-                        else None
-                        for st in exits]
-                if not args or any(a is None for a in args):
-                    v = None
-                elif len({id(a) for a in args}) == 1:
-                    v = args[0]
-                else:
-                    ph = phi_factory(cont, k)
-                    ph.args.extend(args)
-                    res.phis.setdefault(cont, []).append((k, ph))
-                    v = ph
-                stack[len(base) - d] = v
+                stack[len(base) - d] = _merge_cells(
+                    [cell_at(st, k) for st in exits], cont, k, res, phi_factory)
         stack.extend(pushes)
         return
     if o.op in ("proto", "intcblock", "bytecblock"):

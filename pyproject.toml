@@ -29,7 +29,10 @@ dependencies = [
     # dependencies, so publishing tealql to PyPI requires first publishing
     # tree-sitter-teal there and swapping this line for a version constraint.
     "tree-sitter>=0.25,<0.26",
-    "tree-sitter-teal @ git+https://github.com/Argimirodelpozo/tree-sitter-teal.git@4468a5acb379de12efd77ee4ddcb755fa054b24f",
+    # Grammar 0.2.0 (tree-sitter-teal PR #1, merged): AVM v13 vocabulary
+    # generated from the pinned langspec + the parse-defect fixes that let
+    # ast/parse.py drop its recovery layer.
+    "tree-sitter-teal @ git+https://github.com/Argimirodelpozo/tree-sitter-teal.git@81f7a4b245822a6a739cdab7031ba5363bf3d163",
 ]
 
 [project.optional-dependencies]

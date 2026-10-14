@@ -38,9 +38,15 @@ class TimelockUpgradeDetector(_ApprovalActionGuardDetector):
         auction deadline in the NoOp arm is a real, enforced timestamp check that
         delays NOTHING about the Update arm, and the former whole-program
         ``applies()`` let it silence the finding on exactly the DeFi contracts
-        most likely to carry timestamps (finding 1.6)."""
+        most likely to carry timestamps (finding 1.6).
+
+        ``global Round`` is a clock too: round-based delays (``Round >=
+        stored_unlock_round``) were the norm before ``LatestTimestamp`` was
+        reliable, and a delay spelled in rounds is as genuine as one in
+        seconds."""
         seeds = ssavar_outputs(
             global_field_reads(self.prog, "LatestTimestamp", file=self.file)
+            + global_field_reads(self.prog, "Round", file=self.file)
         )
         return _approval_exit_protected_for_seeds(
             self.prog, exit_bb, seeds, file=self.file)

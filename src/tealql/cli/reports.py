@@ -92,7 +92,13 @@ def _cmd_functional(args) -> int:
 
 def _cmd_path_predicates(args) -> int:
     from tealql.tealtools.cfg.path_predicates import PathPredicateAnalysis
-    pp = PathPredicateAnalysis(_load(args))
+    prog = _load(args)
+    pp = PathPredicateAnalysis(prog)
+    key = getattr(args, "partition", None)
+    if key:
+        from tealql.tealtools.cfg.partition import PartitionedPredicates
+        pp = PartitionedPredicates(
+            prog, key=key, budget=args.partition_budget, base=pp)
     return _emit_dict(pp.to_dict(), json_out=args.json_out, text=pp.render())
 
 
@@ -167,7 +173,14 @@ def register(sub, add) -> None:
              "instead of only the common shape across all exits")
     add("group-layout", "forced group size + per-position layout", _cmd_group_layout)
 
-    add("path-predicates", "per-BB path predicates", _cmd_path_predicates)
+    path_p = add("path-predicates", "per-BB path predicates", _cmd_path_predicates)
+    path_p.add_argument(
+        "--partition", default=None, choices=["method", "oncompletion", "both"],
+        help="trace-partition the predicates by dispatched ABI method and/or "
+             "OnCompletion (joins only within a partition)")
+    path_p.add_argument(
+        "--partition-budget", type=int, default=64, metavar="N",
+        help="max live partitions per block before it collapses (default 64)")
 
     dump_p = add(
         "dump",

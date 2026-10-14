@@ -4,6 +4,7 @@ from __future__ import annotations
 from tealql.security._lifted_taint_sink import (
     _LiftedTaintSinkDetector,
     _LiftedTaintSinkViolation,
+    _sources_text,
 )
 
 
@@ -17,7 +18,7 @@ class ArbitraryInnerAppcallDetector(_LiftedTaintSinkDetector):
     fields = {"ApplicationID": "HIGH"}
 
     def _message(self, finding, location):
-        sources = "+".join(sorted(finding.sources))
+        sources = _sources_text(finding)
         return (
             f"[{finding.severity}] attacker-controlled inner-app-call target "
             f"itxn {finding.field} <- {sources} ({location}, {finding.sub_id}); "

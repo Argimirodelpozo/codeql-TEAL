@@ -1,0 +1,36 @@
+#pragma version 10
+// VULNERABLE: with subroutines present the per-arm path check is disabled;
+// deposit() pins gtxn 0 Receiver, swap() credits gtxn 0 Amount without a pin.
+txn OnCompletion
+int NoOp
+==
+assert
+txna ApplicationArgs 0
+method "deposit()void"
+method "swap()void"
+match deposit swap
+err
+deposit:
+callsub deposit_impl
+int 1
+return
+swap:
+callsub swap_impl
+int 1
+return
+deposit_impl:
+proto 0 0
+gtxn 0 Receiver
+global CurrentApplicationAddress
+==
+assert
+byte "credit"
+gtxn 0 Amount
+app_global_put
+retsub
+swap_impl:
+proto 0 0
+byte "credit"
+gtxn 0 Amount
+app_global_put
+retsub

@@ -95,6 +95,7 @@ def test_fingerprint_line_insensitive(tmp_path):
     class _Shifted:
         detector_name = f.detector_name
         rel_path = f.rel_path
+        anchor = f.anchor
 
         class violation:
             @staticmethod

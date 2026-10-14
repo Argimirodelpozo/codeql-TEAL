@@ -342,12 +342,15 @@ def test_inner_transaction_fields_accumulate_across_next_and_submit():
 
 
 def test_unknown_parameter_field_is_incomplete_and_widens_family():
+    # A field outside the pinned spec is not assemblable, so the parser drops
+    # the instruction with a diagnostic (strict mode refuses it); the demand
+    # must still read as incomplete and widen the family.
     demand = resource_demand(_program("""
         int 1
         asset_params_get FutureAssetField
         pop
         pop
-    """))
+    """, strict=False))
 
     assert not demand.complete
     assert demand.unknowns

@@ -12,9 +12,90 @@ This is a *funds-safety* check, not an auth check. `unprotected-deletable` cover
 
 Two conditions:
 1. Approval exit reachable under `OnCompletion == 5` (the `is-deletable` test).
-2. `hasBalanceMinBalanceCheck()` is false globally — defined as "the program contains both a `balance` opcode and a `min_balance` opcode."
+2. Some realizable entry path to the exit that can carry `OnCompletion == DeleteApplication` crosses no block that ENFORCES a comparison or subtraction tying a `balance` output to a `min_balance` output OF THE SAME ACCOUNT (one on each side), no inner `itxn_field CloseRemainderTo` (a close-out drains the ALGO, and fails while assets are still held), and no edge proving `balance(CurrentApplicationAddress) == 0`.
 
-The presence-pair check is a proxy: it doesn't verify the two opcode outputs are actually compared, only that both appear. This matches the original QL form deliberately; tightening to a real comparison check is a follow-up.
+Opcode presence is not enough: two unrelated reads, a tie between two different accounts, or a tie whose result is popped, enforce nothing. The check is per exit — a funds check in another arm does not cover the Delete arm — and the walk carries a return stack, so a helper shared by two methods does not stitch one method's call site onto the other's continuation.
+
+Out of scope: an app whose program has no `itxn_submit` (TEAL < 5 has none) can never move its own funds, so a Delete gated to the creator / a preserved admin strands nothing it could have spent. An OPEN delete of such an app is still reported (it may strand an escrow that requires this app's call).
+
+## How to fix
+
+Before approving a Delete, require that the app account holds nothing beyond its minimum balance: `balance` and `min_balance` values must meet in the SAME comparison or subtraction (`==`, `!=`, `<`, `<=`, `>`, `>=`, `-`, or their `b`-prefixed byte forms), one on each side, and the result must be enforced (`assert` or branch to a rejection) on every path to the Delete exit. Two unrelated reads, or a comparison whose result is popped, are not credited; a funds check in another arm does not cover the Delete arm.
+
+<!-- verify: delete-funds-check clean -->
+```teal
+#pragma version 10
+txn OnCompletion
+int DeleteApplication
+==
+bnz delete
+txn OnCompletion
+int NoOp
+==
+assert
+int 1
+return
+delete:
+txn Sender
+global CreatorAddress
+==
+assert
+// every spendable microAlgo has been withdrawn first
+global CurrentApplicationAddress
+balance
+global CurrentApplicationAddress
+min_balance
+==
+assert
+int 1
+return
+```
+
+Vulnerable counterpart:
+
+<!-- verify: delete-funds-check finding -->
+```teal
+#pragma version 10
+txn OnCompletion
+int DeleteApplication
+==
+bnz delete
+txn OnCompletion
+int NoOp
+==
+assert
+itxn_begin
+int pay
+itxn_field TypeEnum
+txn Sender
+itxn_field Receiver
+int 1000
+itxn_field Amount
+itxn_submit
+int 1
+return
+delete:
+txn Sender
+global CreatorAddress
+==
+assert
+int 1
+return
+```
+
+```python
+app = Global.current_application_address
+assert app.balance == app.min_balance
+```
+
+Alternatively close the account out on the Delete path (an inner `pay` with `CloseRemainderTo`), which is credited. If a Delete with remaining funds is acceptable, suppress with `// tealql-ignore: delete-funds-check` on the flagged exit line or the line above it, or record it in a baseline (`--update-baseline` / `--baseline PATH`).
+
+## False positives
+
+- **Callee-combined OnCompletion test.** An OC comparison ANDed through `callsub` helpers loses its predicate, so a NoOp-only exit can read as reachable with Delete (`oc-test-combined-in-callee`).
+- **Shared Puya/Reach return tail.** A router whose methods all return through one `callsub; return` verdict can still be judged on a method arm whose verdict is 0.
+- **Balance read through `acct_params_get`** (`AcctBalance` / `AcctMinBalance`) is not recognised as the balance pair.
+- Fixed 2026-10-10 (field-measured): inner close-out before Delete, the `balance != 0` skip edge, the no-inner-txn app with a gated Delete, the different-accounts tie (an FN), and unrealizable paths through a shared helper.
 
 ## Examples
 
@@ -34,6 +115,7 @@ txn Sender
 global CreatorAddress
 ==
 assert
+// (an app that pays out with inner transactions, so it can hold funds)
 // Missing: balance == min_balance check
 // Funds locked permanently if not drained first
 int 1

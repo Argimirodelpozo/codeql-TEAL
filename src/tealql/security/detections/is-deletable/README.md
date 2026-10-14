@@ -1,6 +1,6 @@
 # Deletable Application
 
-**Severity:** high · **Applies to:** application
+**Severity:** informational · **Applies to:** application
 
 ## What it looks for
 
@@ -12,7 +12,52 @@ This detector is the *unguarded* version: it flags any reachable delete path reg
 
 **Per-exit OnCompletion-guard form.** For each approval exit, the dominating branch predicates are examined; the exit is "guarded" if some predicate constrains `OnCompletion` to exclude 5 (DeleteApplication). Otherwise the exit is reported.
 
-The QL form is deliberately conservative: dispatch via `match` / `switch` tables is not recognised as a guard (treated as if the exit were reachable from all OnCompletion values). The Python port preserves the same shape so its findings match the QL `.expected`.
+The walk is per edge (a shared exit is guarded when every incoming edge excludes 5), and `switch` / `match` dispatch edges on OnCompletion are recognised as guards, as are ordered bounds (`OnCompletion <= OptIn`) and an app-creation path (`txn ApplicationID == 0`).
+
+## How to fix
+
+Accept only the OnCompletion values the app supports: assert a whitelist (`txn OnCompletion; int NoOp; ==; assert`, a `!=`, or an ordered bound such as `OnCompletion <= OptIn`), or route with `switch` / `match` / `OnCompletion == K; bnz` / an `||` of `OnCompletion == K` tests, so that no path with `OnCompletion == 5` reaches an approving exit. The check is per edge: a shared `approve:` label reached only from DeleteApplication-excluding arms is clean. A path proven to be app creation (`txn ApplicationID == 0`) is excluded too.
+
+<!-- verify: is-deletable clean -->
+```teal
+#pragma version 10
+// Accept only the OnCompletion values the app supports.
+txn OnCompletion
+int NoOp
+==
+assert
+int 1
+return
+```
+
+Vulnerable counterpart — the non-NoOp arm lets DeleteApplication into the shared exit:
+
+<!-- verify: is-deletable finding -->
+```teal
+#pragma version 10
+txn OnCompletion
+int NoOp
+==
+bnz approve
+// the non-NoOp arm admits DeleteApplication into the shared exit
+txn OnCompletion
+int DeleteApplication
+==
+assert
+approve:
+int 1
+return
+```
+
+```python
+assert Txn.on_completion == OnCompleteAction.NoOp  # ARC4Contract: leave "DeleteApplication" out of allow_actions
+```
+
+If the app is meant to be deletable (this detector reports a property; whether *anyone* can do it is `unprotected-deletable`), suppress with `// tealql-ignore: is-deletable` on the flagged exit line or the line above it, or record the finding in a baseline (`--update-baseline` / `--baseline PATH`).
+
+## False positives
+
+None documented. The A6 (shared `approve:` label reached from several OnCompletion-excluding arms) and A13 (`txn GroupIndex; gtxns OnCompletion`, relational OnCompletion bounds) classes in `docs/REVIEW_2026_10_10.md` are fixed. A guard spelled in any form other than those listed above reads as absent, so the exit is reported.
 
 ## Examples
 

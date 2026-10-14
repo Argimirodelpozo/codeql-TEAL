@@ -1,0 +1,31 @@
+#pragma version 10
+// SAFE: assert(If(NumAppArgs == 0, Sender == Creator, Sender == Creator)) —
+// the same guard on both arms of a value-phi (PyTeal If-expression shape).
+txn OnCompletion
+int UpdateApplication
+==
+bz noop
+txn NumAppArgs
+bnz alt
+txn Sender
+global CreatorAddress
+==
+b join
+alt:
+txn Sender
+global CreatorAddress
+==
+join:
+assert
+int 1
+return
+noop:
+txn OnCompletion
+int NoOp
+==
+assert
+byte "k"
+app_global_get
+pop
+int 1
+return

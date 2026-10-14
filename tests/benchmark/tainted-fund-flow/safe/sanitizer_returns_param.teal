@@ -1,0 +1,22 @@
+#pragma version 10
+// SAFE (FP probe): sanitizer asserts a property of its param and RETURNS it; caller uses the result
+txna ApplicationArgs 1
+btoi
+callsub clamp
+itxn_begin
+int pay
+itxn_field TypeEnum
+global CreatorAddress
+itxn_field Receiver
+itxn_field Amount
+itxn_submit
+int 1
+return
+clamp:
+proto 1 1
+frame_dig -1
+int 100
+<=
+assert
+frame_dig -1
+retsub

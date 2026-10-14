@@ -168,10 +168,11 @@ def test_sender_guard_polarity_blindness_is_caught(monkeypatch):
 
     real = G._preds_prove_sender_guard
 
-    def polarity_blind(prog, conds):
-        return real(prog, conds) or any(
+    def polarity_blind(prog, conds, action_int=None):
+        return real(prog, conds, action_int) or any(
             c.kind in ("nonzero", "zero")
-            and G._trusted_sender_pin_op(c.value, prog) in ("==", "!=")
+            and (G._sender_pin_holds(c.value, prog, True)
+                 or G._sender_pin_holds(c.value, prog, False))
             for c in conds)
 
     _assert_caught(
@@ -274,3 +275,249 @@ def test_gtxns_any_index_as_signed_txn_is_caught(monkeypatch):
         any_index_is_self,
         "a gtxns read at ANY group index counts as the signed txn's own field",
     )
+
+
+# The 2026-10-10 review's two highest-priority decisions, each spelled as the
+# exact pre-fix behaviour so the gate measures the fixtures that landed with
+# the fix — a caller-blind callee-verdict credit and a join-level action guard.
+
+
+def test_callee_verdict_credited_for_any_caller_is_caught(monkeypatch):
+    """Review 1: `_acted_on` crediting the callee's `int 0; retsub` as a
+    rejection once ANY return-target phi acts on it. One `callsub check;
+    assert` caller then made the callee reject for a second caller that POPS
+    the verdict, and the popping arm read as guarded (reached the lifecycle
+    AND the field families)."""
+    import tealql.security._enforcement as E
+
+    real = E._acted_on
+
+    def any_caller(prog, var, depth=0, truthy=False):
+        return real(prog, var, depth, truthy) or any(
+            any(a is var for a in ph.args) and real(prog, ph, depth + 1, truthy)
+            for ph in prog.phis.values())
+
+    _assert_caught(
+        monkeypatch, "tealql.security._enforcement", "_acted_on", any_caller,
+        "a callee's returned 0 counts as a rejection once ANY caller acts on it",
+    )
+
+
+def test_action_guard_read_at_the_join_is_caught(monkeypatch):
+    """Review 6: `approval_exit_guarded_for_action` reading only the exit's
+    entry predicates (the INTERSECTION over incoming paths) instead of walking
+    EDGES — a shared `approve:` label reached from two OC-excluding arms then
+    read as reachable with Update/Delete."""
+    import tealql.security._action_guards as G
+
+    def intersection_only(prog, pp, exit_bb, action_int):
+        return G._block_excludes_action(prog, pp, exit_bb, action_int)
+
+    _assert_caught(
+        monkeypatch, "tealql.security._action_guards",
+        "approval_exit_guarded_for_action", intersection_only,
+        "the action guard is decided at the exit's join, not per edge",
+    )
+
+
+# 2026-10-10 precision pass (field-measured): each new scoping / authority /
+# safe-value rule, spelled as its pre-fix behaviour, must flip the benchmark.
+
+
+def _assert_attr_caught(monkeypatch, owner, name, replacement, what: str):
+    """`_assert_caught` for a CLASS attribute (a detector method) or a module
+    attribute bound only where it is defined."""
+    original = getattr(owner, name)
+    assert replacement is not original, f"{name}: mutation is a no-op"
+    monkeypatch.setattr(owner, name, replacement)
+    assert _scores() != _BASELINE, (
+        f"MUTATION SURVIVED: {what}. The ground-truth corpus scores identically "
+        f"with this broken, so nothing pins that decision.")
+
+
+def _detector_module(kebab: str):
+    import sys
+
+    from tealql.security import DETECTORS
+    return sys.modules[DETECTORS[kebab].__module__]
+
+
+def test_abi_selector_lifecycle_paths_in_scope_is_caught(monkeypatch):
+    """`lifecycle_oc_paths_unpinned`: create / OnCompletion != NoOp paths are
+    not method calls (211 mainnet FP cells)."""
+    cls = _detector_module("abi-method-selector").AbiMethodSelectorDetector
+    _assert_attr_caught(monkeypatch, cls, "_lifecycle_path",
+                        lambda self, conds: False,
+                        "create / non-NoOp OnCompletion paths need a selector")
+
+
+def test_abi_selector_read_is_routing_is_caught(monkeypatch):
+    """`arg0_data_payload_no_router`: reading arg 0 is not routing on it
+    (123 mainnet FP cells)."""
+    cls = _detector_module("abi-method-selector").AbiMethodSelectorDetector
+    _assert_attr_caught(monkeypatch, cls, "_routes_on_selector",
+                        lambda self: True,
+                        "any program reading ApplicationArgs 0 has a method table")
+
+
+def test_group_size_program_wide_scope_is_caught(monkeypatch):
+    """`gtxn_only_in_other_method`: one gtxn-reading method no longer puts
+    every exit in scope (195 mainnet FP cells)."""
+    mod = _detector_module("group-size-check")
+    _assert_attr_caught(monkeypatch, mod, "exits_after_absolute_group_read",
+                        lambda prog, exits, file: {id(e) for e in exits},
+                        "every exit is in scope once ANY absolute gtxn exists")
+
+
+def test_group_size_read_in_helper_missed_is_caught(monkeypatch):
+    """`gtxn_in_shared_helper`: the forward walk must follow the call into the
+    helper holding the read (a walk that skips callees loses the TP)."""
+    mod = _detector_module("group-size-check")
+
+    def caller_only(prog, read_bb, exits, gates=frozenset(), **k):
+        return [e for e in exits if e is read_bb]
+
+    _assert_attr_caught(monkeypatch, mod, "exits_reachable_through", caller_only,
+                        "an absolute gtxn read reaches only its own block's exit")
+
+
+def test_groupsize_lower_bound_credited_is_caught(monkeypatch):
+    """`groupsize_lower_bound_only` / `fee_lower_bound_only` / `rekey_
+    compared_to_sender` …: the safe-value rule. Mutant = any comparison of the
+    field is a check (the pre-fix reading)."""
+    import tealql.security._field_protection as FP
+
+    def any_comparison(prog, cmp, flows, rule):
+        return "truth"
+
+    _assert_attr_caught(monkeypatch, FP, "_safe_field_comparison", any_comparison,
+                        "any comparison of the field counts as constraining it")
+
+
+def test_untrusted_counterpart_credited_is_caught(monkeypatch):
+    """`close_compared_to_arg` / `asset_id_vs_arg`: the counterpart must be a
+    value no argument can choose."""
+    import tealql.security._field_protection as FP
+    _assert_attr_caught(monkeypatch, FP, "_trusted_scalar", lambda *a, **k: True,
+                        "a caller argument counts as a safe field value")
+
+
+def test_delete_closeout_not_credited_is_caught(monkeypatch):
+    """`delete_drains_first`: an inner CloseRemainderTo on the Delete path is
+    balance handling (67 mainnet FP cells)."""
+    mod = _detector_module("delete-funds-check")
+    _assert_attr_caught(monkeypatch, mod, "_closeout_blocks",
+                        lambda prog, file=None: set(),
+                        "a close-out inner txn before Delete is not balance handling")
+
+
+def test_delete_empty_balance_edge_not_credited_is_caught(monkeypatch):
+    """`delete_drains_when_nonempty`: the `balance != 0; bz skip` edge."""
+    mod = _detector_module("delete-funds-check")
+    _assert_attr_caught(monkeypatch, mod, "_proves_app_balance_zero",
+                        lambda prog, conds: False,
+                        "an edge proving the app balance is zero is not handling")
+
+
+def test_delete_funds_walk_not_realizable_is_caught(monkeypatch):
+    """`drain_after_shared_helper` (and every exit family): the shared
+    must-cross walk is REALIZABLE (return stack); the CFG-only backward walk
+    stitches another method's call site onto the Delete method's post-close
+    continuation."""
+    import tealql.security._program_shape as PS
+
+    def cfg_only(prog, exit_bb, *, block_closed, edge_closed=None, within=None):
+        return PS._backward_open_ancestors(
+            prog, exit_bb, block_closed=block_closed, edge_closed=edge_closed)[0]
+
+    _assert_attr_caught(monkeypatch, PS, "realizable_unguarded_path_exists",
+                        cfg_only,
+                        "the shared must-cross walk follows unrealizable retsub edges")
+
+
+def test_delete_app_cannot_move_funds_ignored_is_caught(monkeypatch):
+    """`gated_delete_app_cannot_move_funds` (54 mainnet FP cells)."""
+    mod = _detector_module("delete-funds-check")
+    _assert_attr_caught(monkeypatch, mod, "_app_cannot_move_funds",
+                        lambda prog: False,
+                        "an app with no inner txns is treated as able to move funds")
+
+
+def test_delete_balance_accounts_not_tied_is_caught(monkeypatch):
+    """`balance_minbalance_different_accounts` (FN): balance and min_balance
+    must read the SAME account."""
+    mod = _detector_module("delete-funds-check")
+    _assert_attr_caught(monkeypatch, mod, "_same_account", lambda *a: True,
+                        "balance(app) vs min_balance(Sender) counts as a funds check")
+
+
+def test_group_signer_not_credited_is_caught(monkeypatch):
+    """`creator_signed_sibling` / `gtxn_self_creator_pin` /
+    `receiver_pinned_to_creator_signed_escrow`: a fixed group member's sender
+    pinned to a signing principal authorises (signatures cover the group id).
+    Mutant = the pre-fix rule (current sender only), on BOTH engines."""
+    import tealql.security._action_guards as G
+    import tealql.tealtools.analysis.authority as AU
+    import tealql.tealtools.language.avm as AVM
+    import tealql.tealtools.lift.authority as LA
+    from tealql.tealtools.ssa.producers import is_current_sender_var
+    monkeypatch.setattr(G, "is_group_signer_var", is_current_sender_var)
+    monkeypatch.setattr(AU, "is_group_signer_var", is_current_sender_var)
+    monkeypatch.setattr(LA, "is_group_signer_read", AVM.is_current_sender_read)
+    assert _scores() != _BASELINE, "MUTATION SURVIVED: sibling signers credited"
+
+
+def test_sibling_signer_vs_any_trusted_address_is_caught(monkeypatch):
+    """`receiver_pinned_to_unsigned_sibling_escrow` / the escrow-lsig hazard:
+    a sibling signer authorises only against a SIGNING PRINCIPAL, not any
+    preserved address (an escrow lsig "signs" by its own logic)."""
+    import tealql.security._action_guards as G
+    _assert_attr_caught(monkeypatch, G, "_is_signer_principal",
+                        lambda prog, var: G._is_trusted_address(prog, var),
+                        "a sibling's sender pinned to ANY preserved address authorises")
+
+
+def test_fixed_caller_app_not_credited_is_caught(monkeypatch):
+    """`fixed_caller_application` / `caller_application_pinned`: a pinned
+    non-zero CallerApplicationID is an authority, on BOTH engines."""
+    import tealql.security._action_guards as G
+    import tealql.tealtools.lift.authority as LA
+    monkeypatch.setattr(G, "is_fixed_caller_app_pin", lambda x, y: False)
+    monkeypatch.setattr(LA, "caller_app_pin", lambda args, d: None)
+    assert _scores() != _BASELINE, "MUTATION SURVIVED: caller-app pins credited"
+
+
+def test_caller_app_zero_credited_is_caught(monkeypatch):
+    """`caller_application_zero_is_no_pin` / `caller_application_unpinned`:
+    `CallerApplicationID == 0` / `!= 0` pins no app."""
+    import tealql.security._action_guards as G
+    from tealql.tealtools.ssa import is_field_var
+
+    def any_caller_cmp(x, y):
+        return (is_field_var(x, "global", "CallerApplicationID")
+                or is_field_var(y, "global", "CallerApplicationID"))
+
+    _assert_attr_caught(monkeypatch, G, "is_fixed_caller_app_pin", any_caller_cmp,
+                        "CallerApplicationID compared to anything is a pin")
+
+
+def test_asset_optin_not_recognised_is_caught(monkeypatch):
+    """`optin_self_zero_amount`: a 0-amount axfer to the app itself is an
+    opt-in (24 mainnet FP cells)."""
+    import tealql.tealtools.lift.fund_flow as FF
+    _assert_attr_caught(monkeypatch, FF, "itxn_selector_lines_self_optin",
+                        lambda lifter, selector_field="XferAsset": set(),
+                        "a self opt-in axfer is an asset outflow")
+
+
+def test_asset_optin_ignores_close_is_caught(monkeypatch):
+    """`optin_shape_with_close_to`: an AssetCloseTo makes it an outflow."""
+    import tealql.tealtools.lift.fund_flow as FF
+    real_groups = FF._itxn_field_groups
+
+    def no_close(lifter):
+        return [{k: v for k, v in g.items() if k != "AssetCloseTo"}
+                for g in real_groups(lifter)]
+
+    _assert_attr_caught(monkeypatch, FF, "_itxn_field_groups", no_close,
+                        "a close-out on an opt-in-shaped axfer is ignored")

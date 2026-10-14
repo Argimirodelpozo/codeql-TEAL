@@ -296,6 +296,7 @@ class EcdsaVerifyOpcode(CryptoOpcode): mnemonic = "ecdsa_verify"
 class EcdsaPkDecompressOpcode(CryptoOpcode): mnemonic = "ecdsa_pk_decompress"
 class EcdsaPkRecoverOpcode(CryptoOpcode): mnemonic = "ecdsa_pk_recover"
 class VrfVerifyOpcode(CryptoOpcode): mnemonic = "vrf_verify"
+class FalconVerifyOpcode(CryptoOpcode): mnemonic = "falcon_verify"   # AVM v12
 
 
 # ----- Family: Elliptic curve primitives ------------------------------------
@@ -323,6 +324,7 @@ class Sha3_256Opcode(HashingOpcode): mnemonic = "sha3_256"
 # read as using the other.
 class Sha512Opcode(HashingOpcode): mnemonic = "sha512"
 class MimcOpcode(HashingOpcode): mnemonic = "mimc"
+class Poseidon2Opcode(HashingOpcode): mnemonic = "poseidon2"   # AVM v13
 
 
 # ----- Family: Global / application / asset / account state -----------------
@@ -347,6 +349,7 @@ class BalanceOpcode(GlobalStateOpcode): mnemonic = "balance"
 class MinBalanceOpcode(GlobalStateOpcode): mnemonic = "min_balance"
 class OnlineStakeOpcode(GlobalStateOpcode): mnemonic = "online_stake"
 class VoterParamsGetOpcode(GlobalStateOpcode): mnemonic = "voter_params_get"
+class AppParamsSetOpcode(GlobalStateOpcode): mnemonic = "app_params_set"   # AVM v13
 
 
 # ----- Family: Box storage --------------------------------------------------
@@ -362,6 +365,17 @@ class BoxGetOpcode(BoxStorageOpcode): mnemonic = "box_get"
 class BoxPutOpcode(BoxStorageOpcode): mnemonic = "box_put"
 class BoxSpliceOpcode(BoxStorageOpcode): mnemonic = "box_splice"
 class BoxResizeOpcode(BoxStorageOpcode): mnemonic = "box_resize"
+# AVM v13: the same box operations on ANOTHER application's boxes (the app id is
+# an extra, deepest argument), so they share the family but not the stack shape.
+class AppBoxCreateOpcode(BoxStorageOpcode): mnemonic = "app_box_create"
+class AppBoxExtractOpcode(BoxStorageOpcode): mnemonic = "app_box_extract"
+class AppBoxReplaceOpcode(BoxStorageOpcode): mnemonic = "app_box_replace"
+class AppBoxDelOpcode(BoxStorageOpcode): mnemonic = "app_box_del"
+class AppBoxLenOpcode(BoxStorageOpcode): mnemonic = "app_box_len"
+class AppBoxGetOpcode(BoxStorageOpcode): mnemonic = "app_box_get"
+class AppBoxPutOpcode(BoxStorageOpcode): mnemonic = "app_box_put"
+class AppBoxSpliceOpcode(BoxStorageOpcode): mnemonic = "app_box_splice"
+class AppBoxResizeOpcode(BoxStorageOpcode): mnemonic = "app_box_resize"
 
 
 # ----- Family: Transaction accessors ----------------------------------------

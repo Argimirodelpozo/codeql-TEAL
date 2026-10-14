@@ -1,0 +1,25 @@
+#pragma version 10
+// SAFE: creator-only update gated on a ROUND-based delay (global Round >=
+// stored unlock round) — a genuine timelock spelled in rounds, not seconds.
+txn OnCompletion
+int UpdateApplication
+==
+bnz update
+txn OnCompletion
+int NoOp
+==
+assert
+int 1
+return
+update:
+txn Sender
+global CreatorAddress
+==
+assert
+global Round
+byte "unlock_round"
+app_global_get
+>=
+assert
+int 1
+return

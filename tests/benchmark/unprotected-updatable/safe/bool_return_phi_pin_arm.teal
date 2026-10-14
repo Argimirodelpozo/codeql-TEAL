@@ -1,0 +1,26 @@
+#pragma version 10
+// SAFE (PuyaPy non-ARC4 shape, O0): approval_program() returns a bool; on
+// UpdateApplication it returns Sender == Creator, on NoOp it returns 1.
+main:
+callsub approval_program
+return
+approval_program:
+proto 0 1
+txn OnCompletion
+int UpdateApplication
+==
+bz noop
+txn Sender
+global CreatorAddress
+==
+retsub
+noop:
+txn OnCompletion
+int NoOp
+==
+assert
+byte "k"
+app_global_get
+pop
+int 1
+retsub

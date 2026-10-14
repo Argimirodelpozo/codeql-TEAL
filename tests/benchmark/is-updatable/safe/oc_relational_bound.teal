@@ -1,0 +1,11 @@
+#pragma version 10
+// SAFE: OnCompletion <= OptIn admits only NoOp (0) and OptIn (1).
+txn OnCompletion
+int OptIn
+<=
+assert
+byte "k"
+app_global_get
+pop
+int 1
+return

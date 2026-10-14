@@ -1,0 +1,40 @@
+#pragma version 6
+// SAFE: "deposit" bounds GroupSize, calls a helper shared with "ping", then
+// reads the absolute sibling. A walk that follows the helper's `retsub` from
+// "ping"'s call site into "deposit"'s continuation stitches an unbounded path
+// to the deposit exit that no execution takes.
+txn ApplicationID
+bz create
+txna ApplicationArgs 0
+byte "deposit"
+==
+bnz deposit
+callsub bump
+int 1
+return
+deposit:
+global GroupSize
+int 2
+==
+assert
+callsub bump
+gtxn 0 Receiver
+global CurrentApplicationAddress
+==
+assert
+byte "total"
+gtxn 0 Amount
+app_global_put
+int 1
+return
+bump:
+byte "calls"
+byte "calls"
+app_global_get
+int 1
++
+app_global_put
+retsub
+create:
+int 1
+return

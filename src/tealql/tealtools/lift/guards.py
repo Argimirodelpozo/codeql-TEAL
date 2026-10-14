@@ -10,8 +10,14 @@ from dataclasses import dataclass
 
 from . import pre_ir
 from .taint import _intr, source_label
-from ..language.avm import is_current_sender_read
+from ..language.avm import is_state_value_label
+from ..language.avm import is_current_sender_read, is_group_signer_read
 from ..diagnostics.evidence import GuardEvidence
+from ..analysis.guard_coverage import (
+    BOOL_AND, BOOL_OR, BOOL_PASS, CMP_OPS, EQ_OPS, NEQ_OPS, OPAQUE,
+    PREDICATE_OPS, SELF_CANCEL_OPS, VALUE_OPAQUE_OPS, Coverage, CoverageWalker,
+    NO_COVERAGE,
+)
 
 #: Reads of the CURRENT transaction's Sender. HAZARD: the ``gtxn*`` family is
 #: DELIBERATELY excluded -- whoever composes the group chooses `gtxn 1 Sender`,
@@ -20,18 +26,27 @@ from ..diagnostics.evidence import GuardEvidence
 #: creator are sound authorisation signals.
 _TXN_SENDER_FAM = frozenset({"txn", "txna", "txnas"})
 
-#: Ops whose result depends on the LENGTH, not the VALUE, of their operand: a
-#: guard reaching an input only through these bounds its length, not its value
-#: (see :func:`_classify`).
-_VALUE_OPAQUE_OPS = frozenset({"len", "bitlen", "bzero"})
+#: The op semantics (boolean combinators, comparison sense, existence
+#: predicates, length-vs-value, self-cancelling ops) live in the shared walker
+#: :mod:`tealql.tealtools.analysis.guard_coverage` with their HAZARDs; these
+#: aliases keep this module's walks on the same tables.
+_VALUE_OPAQUE_OPS = VALUE_OPAQUE_OPS
+_SELF_CANCEL_OPS = SELF_CANCEL_OPS
+_EQ_OPS = EQ_OPS
+_NEQ_OPS = NEQ_OPS
+_CMP_OPS = CMP_OPS
+_BOOL_AND = BOOL_AND
+_BOOL_OR = BOOL_OR
+_PREDICATE_OPS = PREDICATE_OPS
+_BOOL_PASS = BOOL_PASS
 
-#: Equality / inequality comparisons, uint64 and bytes. Which one encloses a
-#: sender read decides whether that read PINS the sender or merely excludes one
-#: address -- see the comparison-sense reasoning in :func:`_classify`.
-_EQ_OPS = frozenset({"==", "b=="})
-_NEQ_OPS = frozenset({"!=", "b!="})
-_CMP_OPS = _EQ_OPS | _NEQ_OPS | frozenset({
-    "<", "<=", ">", ">=", "b<", "b<=", "b>", "b>=",
+#: Reads of the current app's own global/local state — the slots whose WRITERS
+#: the storage-authority analysis can inspect. A `==` pin of an attacker input
+#: against one of these authorises only if every writer preserves authority;
+#: an unguarded `app_global_put "payee" <- Accounts[1]` lets anyone pass the
+#: later `assert(Accounts[1] == app_global_get "payee")`.
+_STATE_READ_OPS = frozenset({
+    "app_global_get", "app_global_get_ex", "app_local_get", "app_local_get_ex",
 })
 
 
@@ -44,10 +59,16 @@ _CMP_OPS = _EQ_OPS | _NEQ_OPS | frozenset({
 _WALK_MAX_DEPTH = 64
 
 
-def _walk(value, def_of, depth=0, seen=None, inv_ret=None):
+def _walk(value, def_of, depth=0, seen=None, inv_ret=None, *, value_only=False):
     """Yield ``(register, defining_op_or_None)`` for every register in the bounded
     def-expression tree behind ``value``, descending through a call result into
     the callee's returned values when ``inv_ret`` is given.
+
+    ``value_only`` stops below :data:`_VALUE_OPAQUE_OPS`: the registers under a
+    ``len`` contribute their LENGTH to the value, not their value, so a walk
+    asking "which values does this one depend on" must not list them — the
+    callee-side transfer did, and `check32(len(arg))` read as a VALUE check on
+    `arg` (the length-vs-value distinction `_classify` already draws).
 
     HAZARD: ``seen`` maps ``id(register) -> shallowest depth expanded at``, NOT a
     plain visited set. With a set, a register first reached near the depth limit
@@ -69,16 +90,42 @@ def _walk(value, def_of, depth=0, seen=None, inv_ret=None):
     if o is not None:
         src = _intr(o)
         if src is not None:
-            for a in src.args:
-                yield from _walk(a, def_of, depth + 1, seen, inv_ret)
+            if not (value_only and src.op in _VALUE_OPAQUE_OPS):
+                for a in src.args:
+                    yield from _walk(a, def_of, depth + 1, seen, inv_ret,
+                                     value_only=value_only)
         elif isinstance(o, pre_ir.Assignment) and isinstance(o.source, pre_ir.Register):
-            yield from _walk(o.source, def_of, depth + 1, seen, inv_ret)
+            yield from _walk(o.source, def_of, depth + 1, seen, inv_ret,
+                             value_only=value_only)
         elif isinstance(o, pre_ir.Phi):
             for pa in o.args:
-                yield from _walk(pa.value, def_of, depth + 1, seen, inv_ret)
+                yield from _walk(pa.value, def_of, depth + 1, seen, inv_ret,
+                                 value_only=value_only)
     if inv_ret:                       # descend into an asserted validation sub
         for rv in inv_ret.get(id(value), ()):
-            yield from _walk(rv, def_of, depth + 1, seen, inv_ret)
+            yield from _walk(rv, def_of, depth + 1, seen, inv_ret,
+                             value_only=value_only)
+
+
+def _value_children(value, def_of, inv_ret=None) -> list:
+    """The registers ``value``'s VALUE is computed from — one step of the
+    ``value_only`` walk, for walks that need to stop early."""
+    if not isinstance(value, pre_ir.Register):
+        return []
+    o = def_of.get(id(value))
+    out: list = []
+    if o is not None:
+        src = _intr(o)
+        if src is not None:
+            if src.op not in _VALUE_OPAQUE_OPS:
+                out.extend(a for a in src.args if isinstance(a, pre_ir.Register))
+        elif isinstance(o, pre_ir.Assignment) and isinstance(o.source, pre_ir.Register):
+            out.append(o.source)
+        elif isinstance(o, pre_ir.Phi):
+            out.extend(pa.value for pa in o.args if isinstance(pa.value, pre_ir.Register))
+    if inv_ret:
+        out.extend(rv for rv in inv_ret.get(id(value), ()) if isinstance(rv, pre_ir.Register))
+    return out
 
 
 def _is_sender_op(src) -> bool:
@@ -92,6 +139,22 @@ def _is_sender_op(src) -> bool:
         a0 = src.args[0] if src.args else None
         index = a0.value if isinstance(a0, pre_ir.UInt64Constant) else None
     return is_current_sender_read(src.op, src.immediates or [], index)
+
+
+def _is_authoriser_op(src) -> bool:
+    """A fixed-position group member's sender (``gtxn K Sender``, constant-index
+    ``gtxns Sender``) or ``global CallerApplicationID`` — the AUTHORISATION
+    leaves a pin accepted by :func:`_compute_sender_pin` may rest on. Never a
+    caller identity (see :func:`avm.is_group_signer_read`)."""
+    if not isinstance(src, pre_ir.Intrinsic):
+        return False
+    if src.op == "global":
+        return tuple(src.immediates or ()) == ("CallerApplicationID",)
+    index = None
+    if src.op == "gtxns":
+        a0 = src.args[0] if src.args else None
+        index = a0.value if isinstance(a0, pre_ir.UInt64Constant) else None
+    return is_group_signer_read(src.op, src.immediates or [], index)
 
 
 class _Definitions(dict):
@@ -113,6 +176,7 @@ class _GuardDefinitions(_Definitions):
         self.sender_cache = OrderedDict()
         self.guard_weight = 0
         self.guard_returns = None
+        self.guard_taint = None
         self.guard_hits = 0
 
     def remember(self, key, condition, value):
@@ -133,6 +197,13 @@ class Guard:
     checks_input: bool        # the condition tests the (same-source) tainted input
     checks_sender: bool       # the condition tests txn Sender / Global.CreatorAddress
     evidence: tuple[GuardEvidence, ...] = ()
+    #: WHICH of the sink's registers (by id) / input-slot keys the condition
+    #: constrains. ``checks_input`` says "some tainted value is checked"; the
+    #: sink needs EVERY tainted leaf of its value covered, and that is decided
+    #: from the union of these over all its guards (see
+    #: ``fund_flow._uncovered_leaves``). Empty for compatibility summaries.
+    regs: frozenset = frozenset()
+    keys: frozenset = frozenset()
 
     def __post_init__(self):
         if not self.evidence and (self.checks_input or self.checks_sender):
@@ -152,151 +223,118 @@ class Guard:
         return f"{self.kind}{p}:{'+'.join(tags) or 'other'}"
 
 
+def _const_arg(src, i):
+    """The ``i``-th stack operand of ``src`` as an int if it is a constant."""
+    a = src.args[i] if -len(src.args) <= i < len(src.args) else None
+    return a.value if isinstance(a, pre_ir.UInt64Constant) else None
+
+
+def _index_token(src, i):
+    """The ``i``-th stack operand of ``src`` as a slot-key token: a constant
+    index folds to its value; a REGISTER index keys on the register — two reads
+    through the same register read the same slot (`txnas Assets i` in a guard
+    and in the sink), two different registers may not; anything else is
+    ``None`` (no key)."""
+    c = _const_arg(src, i)
+    if c is not None:
+        return str(c)
+    a = src.args[i] if -len(src.args) <= i < len(src.args) else None
+    return ("reg", id(a)) if isinstance(a, pre_ir.Register) else None
+
+
 def _input_key(src):
-    """Identity of a specific user-input READ, e.g. ``("txn", ("ApplicationArgs",
-    "0"))``, so two reads of the SAME slot match but ApplicationArgs[0] vs [1]
-    don't; ``None`` if ``src`` isn't a user-input source op."""
+    """Identity of a specific user-input READ — the SLOT, not the spelling:
+    ``("txn", "ApplicationArgs", "1")`` for ``txn ApplicationArgs 1`` AND
+    ``txna ApplicationArgs 1`` (the lifter keeps both), ``("gtxn", "0",
+    "ApplicationArgs", "1")`` for ``gtxna 0 ApplicationArgs 1`` and for
+    ``int 0; gtxnsa ApplicationArgs 1`` alike — so two reads of the SAME slot
+    match but ApplicationArgs[0] vs [1] don't; ``None`` if ``src`` isn't a
+    user-input source op.
+
+    HAZARD: stack-index reads carry an index on the STACK, not in immediates.
+    ``gtxns``/``gtxnsa`` take the TXN index there, ``txnas``/``gtxnas`` the
+    array index, ``gtxnsas`` both. Keying them on immediates alone collapsed
+    different slots — `gtxnsa ApplicationArgs 1` of txn 0 and of txn 1 shared
+    one key, so a bound on txn 0's arg credited txn 1's. A constant stack index
+    folds into the key; anything else returns ``None`` so the read falls back
+    to register-identity matching."""
     if src is None or source_label(src) is None:
         return None
-    # HAZARD: dynamic-index reads carry the array INDEX on the stack, not in
-    # immediates, so two DIFFERENT-index reads share one (op, immediates) key and
-    # would collapse -- a guard on arg[0] crediting a use of arg[1]. Return None
-    # so they fall back to register-identity matching.
-    if src.op in ("txnas", "gtxnas", "gtxnsas", "gloadss"):
+    op = src.op
+    imm = [str(i) for i in (src.immediates or [])]
+    args = src.args or []
+    if op in ("txn", "txna"):
+        return ("txn", *imm)
+    if op == "txnas":
+        idx = _index_token(src, 0)
+        return None if idx is None else ("txn", *imm, idx)
+    if op in ("gtxn", "gtxna"):
+        return ("gtxn", *imm)
+    if op == "gtxnas":
+        idx = _index_token(src, 0)
+        return None if idx is None else ("gtxn", *imm, idx)
+    if op in ("gtxns", "gtxnsa"):
+        gidx = _index_token(src, 0)
+        return None if gidx is None else ("gtxn", gidx, *imm)
+    if op == "gtxnsas":
+        # TOP-FIRST operands: the array index was pushed last.
+        idx, gidx = _index_token(src, 0), _index_token(src, 1)
+        if idx is None or gidx is None or len(args) < 2:
+            return None
+        return ("gtxn", gidx, *imm, idx)
+    if op in ("itxn", "itxna"):
+        return ("itxn", *imm)
+    if op in ("gitxn", "gitxna"):
+        return ("gitxn", *imm)
+    if op in ("itxnas", "gitxnas", "gloadss"):
         return None
-    return (src.op, tuple(str(i) for i in (src.immediates or [])))
+    if op in ("arg_0", "arg_1", "arg_2", "arg_3"):
+        return ("arg", op[-1])
+    if op == "arg":
+        return ("arg", *imm)
+    if op == "args":
+        idx = _index_token(src, 0)
+        return None if idx is None else ("arg", idx)
+    return (op, tuple(imm))
 
 
-def _classify(kind, polarity, cond, def_of, sink_regs, sink_keys, inv_ret=None) -> Guard:
-    cache_key = None
-    if isinstance(def_of, _GuardDefinitions) and isinstance(cond, pre_ir.Register):
-        if def_of.guard_returns is not inv_ret:
-            def_of.guard_cache.clear()
-            def_of.sender_cache.clear()
-            def_of.guard_weight = 0
-            def_of.guard_returns = inv_ret
-        cache_key = (id(cond), polarity, frozenset(sink_regs), frozenset(sink_keys))
-        if cache_key in def_of.guard_cache:
-            _, (ci, cs, evidence), _ = def_of.guard_cache[cache_key]
-            def_of.guard_cache.move_to_end(cache_key)
-            def_of.guard_hits += 1
-            return Guard(kind, polarity, ci, cs, evidence)
-    # HAZARD: guard-classification soundness. Every rule below exists because
-    # crediting a check that does not actually constrain the sink's value
-    # suppresses a real, exploitable flow.
-    #
-    # VALUE-level, not source-FAMILY-level: the guard must test the SAME value the
-    # sink uses -- a shared register in their def-trees, or a read of the same
-    # specific input slot. Family-level overlap (any ApplicationArgs read) would
-    # read "validates SOME input" as "validates THIS value".
-    #
-    # BOOLEAN STRUCTURE: only a check the assert/branch GUARANTEES may be
-    # credited. `assert(A && B)` guarantees both; `assert(A || B)` guarantees
-    # NEITHER individually (A is bypassable whenever B holds), so everything below
-    # an `||` is marked un-guaranteed.
-    #
-    # LENGTH vs VALUE: `assert(len(arg) == 8)` before `btoi(arg)` shares the
-    # register and the input slot with the sink but bounds only the LENGTH -- the
-    # attacker still picks any 8-byte value. `value_ok` goes false under
-    # `_VALUE_OPAQUE_OPS` exactly as `guaranteed` goes false under `||`; a
-    # value-preserving conjunct (`len==8 && btoi(arg) <= max`) still credits.
-    #
-    # COMPARISON SENSE: a sender check authorises only when it RESTRICTS the
-    # sender. `Sender == creator` does; `Sender != creator` admits everyone BUT
-    # the creator, and a payout on the FALSE edge of `Sender == creator` runs
-    # precisely when the caller is not the creator. `sense` is what the enclosing
-    # condition must evaluate to for the guard to hold -- True normally, False on
-    # a branch whose FALSE edge reaches the sink; `!` flips it, and De Morgan
-    # swaps which connective destroys the guarantee.
-    # Memoise on the CONTEXT, not the register: one register can be reached
-    # under different (guaranteed, value_ok, sense, sender_ok) flags
-    # (`(A||B) && A`), and since the flags only weaken down a path, a stronger
-    # path must still credit after a weaker one was walked.
-    memo: dict = {}
-    active: set = set()       # id(register) on the current descent: cycle guard
-    sender_cache = def_of.sender_cache if isinstance(def_of, _GuardDefinitions) else OrderedDict()
-    authorities = set()
+class _LiftConditionModel:
+    """The pre-IR spelling of a condition tree for the shared
+    :class:`~..analysis.guard_coverage.CoverageWalker`: registers are nodes,
+    an intrinsic is an op over its TOP-FIRST args, a register copy is a copy,
+    a phi and a call's returned values (``inv_ret``) are joins; leaves credit
+    the sink's tainted registers / input-slot keys and the current Sender."""
 
-    def _compute_sender_pin(src):
-        """Exactly one operand is Sender and the other is a trusted identity.
+    def __init__(self, def_of, inv_ret, taint, sink_regs, sink_keys, sender_cache):
+        self.def_of, self.inv_ret, self.taint = def_of, inv_ret, taint
+        self.sink_regs, self.sink_keys = sink_regs, sink_keys
+        self.sender_cache = sender_cache
+        self.authorities: set = set()
+        self.input_authorities: set = set()
 
-        An attacker-supplied counterpart authorises nothing
-        (``Sender == ApplicationArgs[2]`` is satisfied by any caller who passes
-        their own address), nor does ``CreatorAddress == arg`` check Sender at
-        all. The Sender operand must preserve its exact identity through
-        copies and every join arm; a computation containing it is insufficient.
-        """
-        from .authority import address_authority, sender_identity
-        from ..analysis.authority import AddressAuthority
-        sender_arms = [sender_identity(a, def_of, inv_ret) for a in src.args]
-        if sum(sender_arms) != 1:
-            return AddressAuthority(False, 'comparison lacks one exact Sender operand')
-        other = src.args[0] if sender_arms[1] else src.args[1]
-        return address_authority(other, def_of, inv_ret)
+    def is_node(self, v) -> bool:
+        return isinstance(v, pre_ir.Register)
 
-    def _comparison_pins_sender(src) -> bool:
-        # This property depends on definitions and return edges, never on the
-        # current sink's taint set. A shared comparison must not re-walk its
-        # whole operand graph for every parameter and call-site obligation.
-        key = id(src)
-        if key not in sender_cache:
-            sender_cache[key] = (src, _compute_sender_pin(src))
-            if len(sender_cache) > 1024:
-                sender_cache.popitem(last=False)
-        else:
-            sender_cache.move_to_end(key)
-        authority = sender_cache[key][1]
-        authorities.add(authority)
-        return authority.preserved
+    def definition(self, v):
+        o = self.def_of.get(id(v))
+        src = _intr(o) if o is not None else None
+        if src is not None:
+            return "op", src.op, src.args
+        if isinstance(o, pre_ir.Assignment) and isinstance(o.source, pre_ir.Register):
+            return "copy", None, (o.source,)
+        if isinstance(o, pre_ir.Phi):
+            return "phi", None, tuple(pa.value for pa in o.args)
+        return None, None, ()
 
-    def _every_leaf_pins_sender(src, connective, sense) -> bool:
-        """``src`` is a ``connective`` tree (``||`` under a required-True
-        condition, ``&&`` under a required-False one) whose EVERY leaf is a
-        sender pin of the matching polarity (``==`` / ``!=``).
+    def returns(self, v):
+        return self.inv_ret.get(id(v), ()) if self.inv_ret else ()
 
-        `assert(Sender == creator || Sender == admin_state)` admits exactly the
-        union of two trusted identities — a real authorisation check, the
-        marketplace-template idiom — while `Sender == creator || btoi(arg)`
-        admits anyone who passes a nonzero arg. Any leaf that is not a pin
-        (an attacker-satisfiable term, an unknown, a deeper structure) keeps the
-        existing refusal: nothing under a disjunction is guaranteed."""
-        pin_ops = _EQ_OPS if sense else _NEQ_OPS
-        stack, budget = list(src.args), _WALK_MAX_DEPTH
-        while stack:
-            v = stack.pop()
-            budget -= 1
-            if budget < 0:
-                return False
-            oo = None
-            for _ in range(8):                          # through plain copies
-                oo = def_of.get(id(v)) if isinstance(v, pre_ir.Register) else None
-                if (isinstance(oo, pre_ir.Assignment)
-                        and isinstance(oo.source, pre_ir.Register)):
-                    v = oo.source
-                    continue
-                break
-            leaf = _intr(oo) if oo is not None else None
-            if leaf is None:
-                return False
-            if leaf.op == connective:
-                stack.extend(leaf.args)
-            elif not (leaf.op in pin_ops and len(leaf.args) == 2
-                      and _comparison_pins_sender(leaf)):
-                return False
-        return True
-
-    def _arm_credit(v, sense, flags, depth):
-        """Credit of ONE arm of a join (phi arm / `retsub` return), or ``None``
-        for an arm that cannot be taken under the required sense: a constant
-        whose truth contradicts it (`assert` of a `0` arm fails, so that path
-        never reaches the sink), or the join's own value carried round a loop
-        (by induction it equals a value already being conjoined)."""
-        # `materialize_phi_consts` has already turned a constant arm into a
-        # `let pc%N = <const>` register, so read the constant back through
-        # plain copies — otherwise every constant arm looks like an opaque
-        # register and the dead-arm rule below can never fire.
+    def arm_value(self, v):
+        """Read a join arm back through plain copies: `materialize_phi_consts`
+        has already turned a constant arm into a `let pc%N = <const>` register,
+        and an opaque register would hide the dead-arm rule."""
         for _ in range(8):
-            oo = def_of.get(id(v)) if isinstance(v, pre_ir.Register) else None
+            oo = self.def_of.get(id(v)) if isinstance(v, pre_ir.Register) else None
             if (isinstance(oo, pre_ir.Assignment) and not isinstance(
                     oo.source, (pre_ir.Register, pre_ir.Intrinsic, pre_ir.InvokeSubroutine))):
                 v = oo.source
@@ -306,121 +344,180 @@ def _classify(kind, polarity, cond, def_of, sink_regs, sink_keys, inv_ret=None) 
                 continue
             break
         if isinstance(v, pre_ir.UInt64Constant):
-            if (v.value == 0) if sense else (v.value != 0):
-                return None                             # dead under `sense`
-            return (False, False)                       # LIVE constant: bypass
-        if not isinstance(v, pre_ir.Register):
-            return (False, False)                       # bytes / unknown: no credit
-        if id(v) in active:
-            return None
-        return visit(v, *flags, depth=depth)
+            return v.value
+        return v if isinstance(v, pre_ir.Register) else OPAQUE
 
-    def _join_credit(arms, sense, flags, depth):
-        """A join is an OR of its arms, so the assert guarantees a check only
-        if EVERY live arm carries it. This is the phi / multi-return twin of
-        the `||` rule: `assert(phi(1, Sender == creator))` — PuyaPy's inlining
-        of `if n == 3: return True; return sender == creator` — is bypassable
-        on the constant arm, exactly like `assert(1 || Sender == creator)`."""
-        credits = [c for c in (_arm_credit(v, sense, flags, depth) for v in arms)
-                   if c is not None]
-        if not credits:
-            return (False, False)
-        return (all(c[0] for c in credits), all(c[1] for c in credits))
+    def literal_int(self, v):
+        return v.value if isinstance(v, pre_ir.UInt64Constant) else None
 
-    def visit(value, guaranteed, value_ok, sense, sender_ok, input_ok=True, depth=0):
-        if not isinstance(value, pre_ir.Register) or depth > _WALK_MAX_DEPTH:
-            return (False, False)
-        key = (id(value), guaranteed, value_ok, sense, sender_ok, input_ok)
-        if key in memo:
-            return memo[key]
-        if id(value) in active:
-            return (False, False)         # a cycle contributes nothing new
-        active.add(id(value))
-        try:
-            out = _visit_body(value, guaranteed, value_ok, sense, sender_ok,
-                              input_ok, depth)
-        finally:
-            active.discard(id(value))
-        memo[key] = out
-        return out
-
-    def _visit_body(value, guaranteed, value_ok, sense, sender_ok, input_ok, depth):
+    def leaf_credit(self, v, op, self_truthy, sender_ok):
         ci = cs = False
-        o = def_of.get(id(value))
-        src = _intr(o) if o is not None else None
-        if (src is not None and src.op in _CMP_OPS and len(src.args) == 2
-                and src.args[0] is src.args[1]):
-            return (False, False)               # x OP x is a constant predicate
-        if (src is not None and src.op == "%" and len(src.args) == 2
-                and isinstance(src.args[0], pre_ir.UInt64Constant)
-                and src.args[0].value == 1):
-            return (False, False)               # x % 1 is always zero
-        if guaranteed and value_ok and input_ok:
-            if id(value) in sink_regs:
-                ci = True
-            if src is not None:
-                if _is_sender_op(src) and sender_ok:
-                    cs = True
-                if _input_key(src) in sink_keys:
-                    ci = True
-        # De Morgan: `||` breaks the guarantee under a required-True condition,
-        # `&&` under a required-False one.
-        breaks = "||" if sense else "&&"
-        child_guar = guaranteed and not (src is not None and src.op == breaks)
-        # ... unless EVERY leaf of that tree pins the sender: the union of
-        # trusted identities is itself a sender guard.
-        if (guaranteed and src is not None and src.op == breaks
-                and _every_leaf_pins_sender(src, breaks, sense)):
-            cs = True
-        child_val = value_ok and not (src is not None and src.op in _VALUE_OPAQUE_OPS)
-        child_sense = (not sense) if (src is not None and src.op == "!") else sense
-        # An equality that must hold PINS a sender read below it; one that must
-        # NOT hold (or a `!=` that must) only excludes one address.
-        child_sender = sender_ok
-        if src is not None and src.op in _EQ_OPS:
-            child_sender = child_sense and _comparison_pins_sender(src)
-        elif src is not None and src.op in _NEQ_OPS:
-            child_sender = (not child_sense) and _comparison_pins_sender(src)
-        # A relation that only EXCLUDES one value restricts nothing about which
-        # value the sink gets. `assert(recipient != ZeroAddress)` says the payee is
-        # not the zero address; every other address still passes, so it is not a
-        # check on WHO gets paid. Ordering relations (`<=`, `<`, …) and a pinning
-        # `==` do constrain, and keep the credit. This mirrors what `sender_ok`
-        # already does for the sender — the asymmetry was the bug: one side of
-        # `_EQ_OPS`/`_NEQ_OPS` x sense was implemented, the other was not.
-        child_input = input_ok
-        if src is not None and (
-                (src.op in _NEQ_OPS and child_sense)
-                or (src.op in _EQ_OPS and not child_sense)):
-            child_input = False
-        flags = (child_guar, child_val, child_sense, child_sender, child_input)
-        # An intrinsic's operands are conjuncts of one expression: `A && B`
-        # guarantees both, so the credits OR together. A JOIN (phi arms, the
-        # `retsub` set of an asserted callee) is the opposite: its arms are
-        # alternatives, so they AND — see `_join_credit`.
-        if src is not None:
-            for a in src.args:
-                a_ci, a_cs = visit(a, *flags, depth=depth + 1)
-                ci, cs = ci or a_ci, cs or a_cs
-        elif isinstance(o, pre_ir.Assignment) and isinstance(o.source, pre_ir.Register):
-            a_ci, a_cs = visit(o.source, *flags, depth=depth + 1)
-            ci, cs = ci or a_ci, cs or a_cs
-        elif isinstance(o, pre_ir.Phi):
-            a_ci, a_cs = _join_credit([pa.value for pa in o.args], child_sense,
-                                      flags, depth + 1)
-            ci, cs = ci or a_ci, cs or a_cs
-        if inv_ret:                       # descend into an asserted validation sub
-            rvs = inv_ret.get(id(value), ())
-            if rvs:
-                a_ci, a_cs = _join_credit(rvs, child_sense, flags, depth + 1)
-                ci, cs = ci or a_ci, cs or a_cs
-        return (ci, cs)
+        regs = keys = frozenset()
+        if id(v) in self.sink_regs and not self_truthy:
+            ci, regs = True, frozenset({id(v)})
+        if op is not None:
+            src = _intr(self.def_of.get(id(v)))
+            if sender_ok and (_is_sender_op(src) or _is_authoriser_op(src)):
+                # Under a pin `pins_sender` accepted: the pinned side may also
+                # be a fixed group member's sender or the caller app id.
+                cs = True
+            k = _input_key(src)
+            if k is not None and k in self.sink_keys:
+                ci, keys = True, frozenset({k})
+        return Coverage(ci, cs, regs, keys) if (ci or cs) else NO_COVERAGE
 
-    ci, cs = visit(cond, True, True, polarity != "false", False)
+    def pins_sender(self, v) -> bool:
+        """Exactly one operand is Sender and the other a trusted identity.
+
+        An attacker-supplied counterpart authorises nothing
+        (``Sender == ApplicationArgs[2]`` is satisfied by any caller who passes
+        their own address), nor does ``CreatorAddress == arg`` check Sender at
+        all. The Sender operand must preserve its exact identity through
+        copies and every join arm; a computation containing it is insufficient.
+        This depends on definitions and return edges, never on the sink's
+        taint set, so it is cached across sinks."""
+        src = _intr(self.def_of.get(id(v)))
+        key = id(src)
+        cache = self.sender_cache
+        if key not in cache:
+            cache[key] = (src, _compute_sender_pin(src, self.def_of, self.inv_ret))
+            if len(cache) > 1024:
+                cache.popitem(last=False)
+        else:
+            cache.move_to_end(key)
+        authority = cache[key][1]
+        self.authorities.add(authority)
+        return authority.preserved
+
+    def dependent(self, v, state_ok=False) -> bool:
+        """``v`` is (possibly) attacker-chosen: tainted per ``taint``, or —
+        without an oracle — computed from a source op or a parameter.
+
+        ``state_ok``: a ``StateValue`` source alone does not count. Set for an
+        ``==`` pin that must hold, whose own-state counterpart is judged by
+        :meth:`counterpart_ok` (the a07 rule: address pins need writer
+        authority, a bytes key pinned to stored state is credited) — one
+        arbiter for state-backed pins, not two. An ORDERING bound against
+        attacker-writable state is no bound: the attacker raises the cap in
+        one call and spends it in the next."""
+        if isinstance(v, pre_ir.Undefined):
+            return True
+        if not isinstance(v, pre_ir.Register):
+            return False
+        if self.taint is not None:
+            sources = self.taint.get(id(v)) or ()
+            if state_ok:
+                return any(not is_state_value_label(x) for x in sources)
+            return bool(sources)
+        for _, oo in _walk(v, self.def_of, inv_ret=self.inv_ret):
+            if oo is None or source_label(_intr(oo)) is not None:
+                return True
+        return False
+
+    def counterpart_ok(self, a, other) -> bool:
+        """``other`` is a fit counterpart for pinning the ADDRESS ``a``: either
+        no own-state read feeds it, or every writer of that state preserves
+        authority (the sender-pin provenance rule, applied to the input side).
+
+        Address-typed pins only (`Receiver == app_global_get "payee"`): the
+        storage analysis is an ADDRESS authority — a dynamic-key write anywhere
+        in the program leaves every slot unproven, which is the right
+        conservatism for who-gets-paid and a false alarm for
+        `assert(key == app_global_get "allowed_key")` on a bytes key."""
+        if not isinstance(other, pre_ir.Register):
+            return True
+        if "account" not in (getattr(a, "ir_type", None), getattr(other, "ir_type", None)):
+            return True
+        if not any(_intr(oo) is not None and _intr(oo).op in _STATE_READ_OPS
+                   for _, oo in _walk(other, self.def_of, inv_ret=self.inv_ret,
+                                      value_only=True)):
+            return True
+        from .authority import address_authority
+        authority = address_authority(other, self.def_of, self.inv_ret)
+        self.input_authorities.add(authority)
+        return authority.preserved
+
+    def arm_dead(self, v, sense) -> bool:
+        return False
+
+
+def _compute_sender_pin(src, def_of, inv_ret):
+    from .authority import (address_authority, caller_app_pin, sender_identity,
+                            signer_principal)
+    from ..analysis.authority import AddressAuthority
+    if src is None:
+        return AddressAuthority(False, 'not a comparison')
+    pinned = caller_app_pin(src.args, def_of)
+    if pinned is not None:
+        return pinned
+    sender_arms = [sender_identity(a, def_of, inv_ret) for a in src.args]
+    if sum(sender_arms) == 1:
+        other = src.args[0] if sender_arms[1] else src.args[1]
+        return address_authority(other, def_of, inv_ret)
+    if sum(sender_arms) == 0:
+        # A fixed-position group member's sender authorises (its signature
+        # covers the group id) — only against a SIGNING PRINCIPAL, never as
+        # caller identity (an escrow lsig "signs" by its own logic).
+        signer_arms = [sender_identity(a, def_of, inv_ret, signer=True) for a in src.args]
+        if sum(signer_arms) == 1:
+            other = src.args[0] if signer_arms[1] else src.args[1]
+            if signer_principal(other, def_of, inv_ret):
+                return address_authority(other, def_of, inv_ret)
+            return AddressAuthority(False, 'sibling signer pinned to a non-principal address')
+    return AddressAuthority(False, 'comparison lacks one exact Sender operand')
+
+
+def _classify(kind, polarity, cond, def_of, sink_regs, sink_keys, inv_ret=None,
+              taint=None) -> Guard:
+    """Classify one condition against a sink's value: which of ``sink_regs`` /
+    ``sink_keys`` it constrains (``Guard.regs`` / ``Guard.keys``), whether it
+    pins the sender. ``taint`` (``{id(Register): sources}``) is the oracle for
+    "is this operand attacker-dependent"; without it a structural walk of the
+    operand's def tree (any source op or parameter) stands in."""
+    cache_key = None
+    if isinstance(def_of, _GuardDefinitions) and isinstance(cond, pre_ir.Register):
+        if def_of.guard_returns is not inv_ret or def_of.guard_taint is not taint:
+            def_of.guard_cache.clear()
+            def_of.sender_cache.clear()
+            def_of.guard_weight = 0
+            def_of.guard_returns = inv_ret
+            def_of.guard_taint = taint
+        cache_key = (id(cond), polarity, frozenset(sink_regs), frozenset(sink_keys))
+        if cache_key in def_of.guard_cache:
+            _, (ci, cs, evidence, regs, keys), _ = def_of.guard_cache[cache_key]
+            def_of.guard_cache.move_to_end(cache_key)
+            def_of.guard_hits += 1
+            return Guard(kind, polarity, ci, cs, evidence, regs, keys)
+    # HAZARD: guard-classification soundness. Every rule exists because
+    # crediting a check that does not actually constrain the sink's value
+    # suppresses a real, exploitable flow. The REPRESENTATION-INDEPENDENT rules
+    # — conjunction = union, join = intersection (phi / `retsub` set / `select`
+    # arms / an OR-like op that must hold), boolean-vs-value position, `!`,
+    # length-vs-value, comparison sense and exclusions, vacuous `x OP x`, the
+    # input-vs-input withdrawal — live in the shared walker
+    # (:mod:`..analysis.guard_coverage`, HAZARDs there). What stays here is how
+    # the pre-IR spells a condition tree (:class:`_LiftConditionModel`):
+    #
+    # VALUE-level, not source-FAMILY-level: the guard must test the SAME value the
+    # sink uses -- a shared register in their def-trees, or a read of the same
+    # specific input slot. Family-level overlap (any ApplicationArgs read) would
+    # read "validates SOME input" as "validates THIS value".
+    #
+    # An `==` pin against the app's OWN state additionally needs that state's
+    # writers to preserve authority — `payee` set by anyone is no pin (see
+    # `_STATE_READ_OPS`).
+    model = _LiftConditionModel(def_of, inv_ret, taint, sink_regs, sink_keys,
+                                def_of.sender_cache if isinstance(def_of, _GuardDefinitions)
+                                else OrderedDict())
+    ci, cs, regs, keys, _excluded = CoverageWalker(
+        model, max_depth=_WALK_MAX_DEPTH).cover(cond, polarity != "false")
+    authorities, input_authorities = model.authorities, model.input_authorities
     evidence = []
     if ci:
         evidence.append(GuardEvidence(str(cond), 'constraint-dependency',
-                        scope=('sink input',)))
+                        scope=('sink input',),
+                        assumptions=tuple(sorted({premise for result in input_authorities
+                                                  for premise in result.assumptions}))))
     if cs:
         evidence.append(GuardEvidence('txn Sender', 'member-of-authority-set', str(cond),
             scope=('successful paths through this guard',), basis='must-predicate',
@@ -428,5 +525,5 @@ def _classify(kind, polarity, cond, def_of, sink_regs, sink_keys, inv_ret=None) 
                                       for premise in result.assumptions}))))
     evidence = tuple(evidence)
     if cache_key is not None:
-        def_of.remember(cache_key, cond, (ci, cs, evidence))
-    return Guard(kind, polarity, ci, cs, evidence)
+        def_of.remember(cache_key, cond, (ci, cs, evidence, regs, keys))
+    return Guard(kind, polarity, ci, cs, evidence, regs, keys)

@@ -1,0 +1,80 @@
+#pragma version 11
+#pragma typetrack false
+
+// algopy.arc4.ARC4Contract.approval_program() -> uint64:
+main:
+    // contract.py:4
+    // class App(ARC4Contract):
+    txn NumAppArgs
+    bz main_bare_routing@5
+    pushbytes 0x5a4ead86 // method "hello(uint64)uint64"
+    txna ApplicationArgs 0
+    match main_hello_route@3
+    err
+
+main_hello_route@3:
+    // contract.py:13
+    // @arc4.abimethod
+    txn OnCompletion
+    !
+    txn ApplicationID
+    &&
+    assert
+    b hello
+
+main_bare_routing@5:
+    // contract.py:4
+    // class App(ARC4Contract):
+    pushints 0 4 // NoOp, UpdateApplication
+    txn OnCompletion
+    match main_create@6 main_update@7
+    err
+
+main_update@7:
+    // contract.py:9
+    // @arc4.baremethod(allow_actions=["UpdateApplication"])
+    txn ApplicationID
+    assert
+    // contract.py:11
+    // assert Txn.sender == Global.creator_address
+    txn Sender
+    global CreatorAddress
+    ==
+    assert
+    // contract.py:9
+    // @arc4.baremethod(allow_actions=["UpdateApplication"])
+    pushint 1
+    return
+
+main_create@6:
+    // contract.py:5
+    // @arc4.baremethod(create="require")
+    txn ApplicationID
+    !
+    return
+
+
+// contract.App.hello[routing]() -> void:
+hello:
+    // contract.py:13
+    // @arc4.abimethod
+    txna ApplicationArgs 1
+    dup
+    len
+    pushint 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    // contract.py:15
+    // return x + 1
+    pushint 1
+    +
+    // contract.py:13
+    // @arc4.abimethod
+    itob
+    pushbytes 0x151f7c75
+    swap
+    concat
+    log
+    pushint 1
+    return

@@ -357,6 +357,20 @@ def predicates_contradict(conditions, facts=None) -> bool:
     return False
 
 
+def call_stable_predicates(preds, *, executed, memo: dict) -> set:
+    """The subset of a call site's ``preds`` that survives the call (see
+    :func:`_rooted_in_immutable_fields`); ``executed`` = the blocks the call may
+    execute, ``memo`` = a per-call-site memo. Shared with
+    :mod:`.partition`, which applies it per partition."""
+    return {
+        c for c in preds
+        if _rooted_in_immutable_fields(c.value, memo=memo, executed=executed)
+        and all(
+            _rooted_in_immutable_fields(a, memo=memo, executed=executed)
+            for a in c.args if isinstance(a, (SSAVar, Phi)))
+    }
+
+
 # Branch / assert opcodes that contribute predicates.
 _ASSERT = "assert"
 #: ``switch`` is named on its own because its arms are POSITIONAL (arm k means
@@ -608,15 +622,9 @@ class PathPredicateAnalysis:
         caller_preds = bb_preds[caller]
         if caller_preds is _TOP:
             return None
-        executed = executed_during.get(caller)
-        memo = rooted_memos.setdefault(caller, {})
-        return {
-            c for c in caller_preds
-            if _rooted_in_immutable_fields(c.value, memo=memo, executed=executed)
-            and all(
-                _rooted_in_immutable_fields(a, memo=memo, executed=executed)
-                for a in c.args if isinstance(a, (SSAVar, Phi)))
-        }
+        return call_stable_predicates(
+            caller_preds, executed=executed_during.get(caller),
+            memo=rooted_memos.setdefault(caller, {}))
 
     def _callsub_return_maps(self):
         """``(caller_of, return_target_of)`` under :func:`.subroutines.sound_return_targets`."""

@@ -1,0 +1,24 @@
+#pragma version 8
+// SAFE: the Delete arm closes the app account out whenever it holds ALGO
+// (`balance != 0`); the skip edge proves the balance is already zero.
+txn OnCompletion
+int DeleteApplication
+==
+bnz delete
+int 1
+return
+delete:
+global CurrentApplicationAddress
+balance
+int 0
+!=
+bz done
+itxn_begin
+int pay
+itxn_field TypeEnum
+global CreatorAddress
+itxn_field CloseRemainderTo
+itxn_submit
+done:
+int 1
+return

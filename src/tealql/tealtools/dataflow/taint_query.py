@@ -9,7 +9,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
-from ..language.avm import FUND_FIELDS, LSIG_ARG_OPS, TXN_SOURCE_OPS
+from ..language.avm import (
+    FUND_FIELDS, LSIG_ARG_OPS, STATE_VALUE_READ_OPS, TXN_SOURCE_OPS,
+)
 from ..language.effects import STATE_EFFECTS
 from ..diagnostics.location import InstructionPoint
 from .taint_graph import Node, TaintGraph
@@ -172,12 +174,35 @@ class TaintQuery:
         # ref matches by exact path or basename.
         return sorted({ln for _, ln in self.teal_locations_for_source(src_file, src_line)})
 
-    def teal_locations_for_source(self, src_file: str, src_line: int) -> list[tuple[str, int]]:
-        """All matching source-map locations, retaining their program identities."""
+    def source_files_matching(self, src_file: Optional[str]) -> list[str]:
+        """The high-level source files in the map that ``src_file`` names: an exact
+        path, a path suffix, or a bare basename; ``None``/``""`` names them all."""
+        files = {f for (f, _ln) in self._rev}
+        if not src_file:
+            return sorted(files)
+        return sorted(f for f in files
+                      if f == src_file or f.endswith("/" + src_file)
+                      or f.split("/")[-1] == src_file)
+
+    def teal_locations_for_source(self, src_file: Optional[str], src_line: int
+                                  ) -> list[tuple[str, int]]:
+        """All matching source-map locations, retaining their program identities.
+
+        ``src_file`` empty means "any mapped source file" (the documented
+        ``[FILE:]LINE`` form). HAZARD: a bare basename that names SEVERAL
+        distinct source files (``a/contract.py`` and ``b/contract.py``) is
+        ambiguous and matches NOTHING rather than silently unioning two
+        programs' lines — check :meth:`source_files_matching` to report it."""
+        if src_file:
+            selected = self.source_files_matching(src_file)
+            if len(selected) > 1 and src_file not in selected:
+                return []                       # ambiguous basename: refuse
+        else:
+            selected = self.source_files_matching(None)
+        chosen = set(selected)
         matches = set()
         for (f, ln), tls in self._rev.items():
-            if ln == src_line and (f == src_file or f.endswith("/" + src_file)
-                                   or f.split("/")[-1] == src_file):
+            if ln == src_line and f in chosen:
                 matches.update(tls)
         return sorted(matches)
 
@@ -192,16 +217,41 @@ class TaintQuery:
         """Every dangerous sink in the program, most-severe first."""
         return self._hits(self.g.nodes())
 
+    def _state_value_points(self) -> dict:
+        """``{(file, line): StateValue label}`` — own-state reads the lifted
+        taint seeds as sources because an untrusted caller can write their
+        slot (:func:`tealql.tealtools.lift.taint.state_value_sources`).
+        Deciding that needs the slot's writers, so it comes from the lift;
+        a program that does not lift contributes none."""
+        cached = getattr(self, "_svp", None)
+        if cached is None:
+            from ..lift import build_lifter
+            from ..lift.taint import state_value_sources
+            files = getattr(self.prog, "source_files", ()) or ()
+            names = list(files) if self.file is None and len(files) > 1 else [self.file]
+            cached = {}
+            for name in names:
+                lifter = build_lifter(self.prog, file=name)
+                if lifter is not None:
+                    cached.update(state_value_sources(lifter))
+            self._svp = cached
+        return cached
+
+    def _is_source_node(self, n) -> bool:
+        op = self.g.op_of(n)
+        if is_source(op, self.g.immediates_of(n)) or self.g.is_unknown_scratch(n):
+            return True
+        return op in STATE_VALUE_READ_OPS and (n.file, n.line) in self._state_value_points()
+
     def all_sources(self) -> list[Node]:
         """Every attacker-input source node.
 
         Includes unknown-scratch loads: a load whose MAY value the SSA could
         not name is TOP for a conservative MAY analysis — it may return
         anything an attacker stored, so skipping it reads the unknown as
-        clean."""
-        return sorted((n for n in self.g.nodes()
-                       if is_source(self.g.op_of(n), self.g.immediates_of(n))
-                       or self.g.is_unknown_scratch(n)),
+        clean. Includes ``StateValue`` reads: own state an untrusted caller
+        can write (see :meth:`_state_value_points`)."""
+        return sorted((n for n in self.g.nodes() if self._is_source_node(n)),
                       key=lambda n: (n.file, n.line))
 
     # -- reachability ---------------------------------------------------
@@ -231,9 +281,7 @@ class TaintQuery:
         reach: set = set()
         for sink in self._nodes(line=line, file=file):
             reach |= self.g.reachable_to(sink)
-        return sorted((n for n in reach
-                       if is_source(self.g.op_of(n), self.g.immediates_of(n))
-                       or self.g.is_unknown_scratch(n)),
+        return sorted((n for n in reach if self._is_source_node(n)),
                       key=lambda n: (n.file, n.line))
 
     def tainted_sinks(self, sources: Optional[Iterable[Node]] = None,

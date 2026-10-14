@@ -1,0 +1,27 @@
+#pragma version 10
+// VULN: the sender check round-trips through slot 0, but a second `store 0`
+// on a path that REACHES the load overwrites it with 1 -- with NumAppArgs == 5
+// the assert passes for anyone. Control for the dead-end-store relaxation.
+txn Sender
+global CreatorAddress
+==
+store 0
+txn NumAppArgs
+int 5
+==
+bz go
+int 1
+store 0
+go:
+load 0
+assert
+itxn_begin
+int pay
+itxn_field TypeEnum
+txna Accounts 1
+itxn_field Receiver
+int 1000
+itxn_field Amount
+itxn_submit
+int 1
+return

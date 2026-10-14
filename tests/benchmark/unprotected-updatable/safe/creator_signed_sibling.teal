@@ -1,0 +1,15 @@
+#pragma version 6
+// SAFE: Update requires the creator to have SIGNED transaction 1 of this
+// group. Every signature covers the group id, which commits to every member,
+// so the creator approved this very call (the `global_lend` template shape).
+txn OnCompletion
+int UpdateApplication
+==
+bz done
+gtxn 1 Sender
+global CreatorAddress
+==
+assert
+done:
+int 1
+return

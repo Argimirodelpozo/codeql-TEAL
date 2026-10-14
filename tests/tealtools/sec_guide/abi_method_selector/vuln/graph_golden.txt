@@ -1,15 +1,30 @@
 ## nodes
-prog.teal	1	0	8	6	Source
+prog.teal	1	0	13	6	Source
 prog.teal	5	0	5	22	TxnaOpcode
-prog.teal	6	0	6	3	PopOpcode
-prog.teal	7	0	7	5	SingleNumericArgumentOpcode
-prog.teal	8	0	8	6	ReturnOpcode
+prog.teal	6	0	6	20	PushbytesOpcode
+prog.teal	7	0	7	2	EqualsComparisonOpcode
+prog.teal	8	0	8	9	BnzOpcode
+prog.teal	9	0	9	5	SingleNumericArgumentOpcode
+prog.teal	10	0	10	6	ReturnOpcode
+prog.teal	11	0	11	6	Label
+prog.teal	12	0	12	5	SingleNumericArgumentOpcode
+prog.teal	13	0	13	6	ReturnOpcode
 ## cfgEdges
 prog.teal	5	prog.teal	6	normal
 prog.teal	6	prog.teal	7	normal
 prog.teal	7	prog.teal	8	normal
+prog.teal	8	prog.teal	9	false
+prog.teal	8	prog.teal	11	true
+prog.teal	9	prog.teal	10	normal
+prog.teal	11	prog.teal	12	normal
+prog.teal	12	prog.teal	13	normal
 ## basicBlocks
 prog.teal	5	5	8
 prog.teal	6	5	8
 prog.teal	7	5	8
 prog.teal	8	5	8
+prog.teal	9	9	10
+prog.teal	10	9	10
+prog.teal	11	11	13
+prog.teal	12	11	13
+prog.teal	13	11	13

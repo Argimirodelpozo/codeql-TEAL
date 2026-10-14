@@ -74,14 +74,19 @@ def shared_execution_blocks(prog: SSAProgram) -> dict:
     interpreter records each routine separately and joins its public operands.
     :func:`unresolved_shared_execution_blocks` identifies incomplete records.
     """
-    from ..cfg.subroutines import pyblock_partition, _pyblock_return_point
     from ..ssa import stacksim
 
     py = getattr(prog, "_pyssa", None)
     if py is None:
         return {}
-    partition = pyblock_partition(py.blocks)
-    return_points = _pyblock_return_point(py.blocks)
+    # THE CONSTRUCTION partition and return points — what the execution
+    # contexts (`_stack_result.contexts`) are keyed by. Recomputing a NAIVE
+    # pair here (source-next continuations, no never-returning callees)
+    # described a different program: `callsub halt` followed in source by
+    # another sub's label read as main flowing into that sub, a false
+    # overlap that the entry's own routine record cannot "resolve".
+    partition = py._bb_to_sub
+    return_points = py._return_point
     every = set(py.blocks)
     hits: dict = {}
     for entry in (block for block in py.blocks if partition.get(block) is block):

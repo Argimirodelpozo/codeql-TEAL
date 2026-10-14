@@ -1,0 +1,21 @@
+#pragma version 10
+// SAFE: GroupSize == 1 means this lsig's txn is gtxn 0, so `gtxn 0 Fee` is its
+// own fee.
+global GroupSize
+int 1
+==
+assert
+gtxn 0 Fee
+int 1000
+<=
+assert
+txn RekeyTo
+global ZeroAddress
+==
+assert
+txn CloseRemainderTo
+global ZeroAddress
+==
+assert
+int 1
+return

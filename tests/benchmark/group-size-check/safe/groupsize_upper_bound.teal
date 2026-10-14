@@ -1,0 +1,15 @@
+#pragma version 6
+// SAFE: `GroupSize <= 2` caps the group, so padding is impossible.
+global GroupSize
+int 2
+<=
+assert
+gtxn 0 Receiver
+global CurrentApplicationAddress
+==
+assert
+byte "total"
+gtxn 0 Amount
+app_global_put
+int 1
+return

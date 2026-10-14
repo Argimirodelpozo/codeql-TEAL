@@ -18,7 +18,6 @@ MODULE_VIEW_COVERAGE: dict[str, tuple[str, ...]] = {
     "analysis.resource_sufficiency": ("analysis.resource_bounds",),
     "analysis.box_permissions": ("analysis.box_permissions",),
     "analysis.resource_requirements": ("analysis.resource_requirements",),
-    "ast.protocol": ("repr.ast",),
     "diagnostics.evidence": ("analysis.path_predicates",),
     "lift.taint_flow": ("analysis.taint",),
     "analysis._bigints": ("analysis.facts.bigint-ranges", "pass.ssa.bytemath_ranges"),
@@ -53,6 +52,7 @@ MODULE_VIEW_COVERAGE: dict[str, tuple[str, ...]] = {
     "cfg.group": ("analysis.group",),
     "cfg.labels": ("analysis.path_predicates", "repr.structure"),
     "cfg.path_predicates": ("analysis.path_predicates",),
+    "cfg.partition": ("analysis.path_predicates_partitioned",),
     "cfg.structure": ("repr.structure",),
     "cfg.subroutines": ("repr.structure", "analysis.callee_effects"),
     "cfg.super_auth": ("analysis.caller_guard_bypass",),
@@ -120,6 +120,7 @@ MODULE_VIEW_COVERAGE: dict[str, tuple[str, ...]] = {
 NON_PRODUCT_MODULES: dict[str, str] = {
     "analysis.execution_trace": "bounded physical-instruction walker shared by policy and resource consumers",
     "analysis.relations": "parameterized integer proof kernel consumed by security policy obligations",
+    "analysis.guard_coverage": "pure condition-tree guard walker; its coverage is evidence of the lifted and SSA guard consumers",
     "language.spec": "pinned versioned metadata; consumed by represented analyses",
     "language.effects": "shared operand-role metadata; consumed by represented analyses",
     "diagnostics.location": "structured instruction identity and diagnostic location parsing",

@@ -1,0 +1,18 @@
+#pragma version 10
+// SAFE: a 0-amount axfer of the caller-named asset to the app ITSELF with no
+// close-out — an opt-in. Nothing leaves the app.
+    itxn_begin
+    int axfer
+    itxn_field TypeEnum
+    txna ApplicationArgs 1
+    btoi
+    itxn_field XferAsset
+    global CurrentApplicationAddress
+    itxn_field AssetReceiver
+    int 0
+    itxn_field AssetAmount
+    int 0
+    itxn_field Fee
+    itxn_submit
+    int 1
+    return

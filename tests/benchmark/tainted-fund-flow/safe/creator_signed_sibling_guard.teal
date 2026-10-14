@@ -1,0 +1,18 @@
+#pragma version 10
+// SAFE: the payout requires the creator to have SIGNED transaction 0 of this
+// group (its signature covers the group id, so the creator approved this call).
+gtxn 0 Sender
+global CreatorAddress
+==
+assert
+itxn_begin
+int pay
+itxn_field TypeEnum
+txna Accounts 1
+itxn_field Receiver
+txna ApplicationArgs 0
+btoi
+itxn_field Amount
+itxn_submit
+int 1
+return

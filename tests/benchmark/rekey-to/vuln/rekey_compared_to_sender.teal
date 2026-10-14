@@ -1,0 +1,11 @@
+#pragma version 8
+// VULNERABLE: RekeyTo is COMPARED (to the sender) but not pinned to
+// ZeroAddress — any other rekey target passes `RekeyTo != Sender`.
+txn RekeyTo
+txn Sender
+!=
+assert
+txn TypeEnum
+int pay
+==
+return

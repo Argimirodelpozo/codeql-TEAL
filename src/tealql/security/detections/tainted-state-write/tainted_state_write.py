@@ -4,6 +4,7 @@ from __future__ import annotations
 from tealql.security._lifted_taint_sink import (
     _LiftedTaintSinkDetector,
     _LiftedTaintSinkViolation,
+    _sources_text,
 )
 
 _STATE_KIND = {
@@ -30,7 +31,7 @@ class TaintedStateWriteDetector(_LiftedTaintSinkDetector):
         )
 
     def _message(self, finding, location):
-        sources = "+".join(sorted(finding.sources))
+        sources = _sources_text(finding)
         kind = _STATE_KIND.get(finding.field, "state")
         return (
             f"[{finding.severity}] attacker-controlled {kind}-state write KEY "

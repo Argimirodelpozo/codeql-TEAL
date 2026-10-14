@@ -51,8 +51,20 @@ def value_is_zero_address(
 def inner_txn_sets_nonzero_fee(
     prog: SSAProgram, field_set: InnerTxnFieldSet,
 ) -> bool:
-    """Whether a ``Fee`` write is provably a non-zero integer constant."""
+    """Whether a ``Fee`` write is provably non-zero: an integer constant, or a
+    ``global MinTxnFee`` read — the protocol minimum is a non-zero constant
+    (1000 µALGO today), and PyTeal's ``TxnField.fee: Global.min_txn_fee()`` is
+    the COMMONEST way "the app pays the inner fee" is written."""
     if field_set.field != "Fee":
         return False
     value = const_int(_constant_facts_cached(prog).constant(field_set.value))
-    return value is not None and value != 0
+    if value is not None:
+        return value != 0
+    seeds = {
+        output
+        for assignment in global_field_reads(prog, "MinTxnFee")
+        for output in assignment.outputs
+        if isinstance(output, SSAVar)
+    }
+    return bool(seeds and _operand_flows_from_field_var(
+        prog, field_set.value, seeds))

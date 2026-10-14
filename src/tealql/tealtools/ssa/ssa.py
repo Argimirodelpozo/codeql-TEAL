@@ -744,9 +744,26 @@ def _to_ssaprogram(py: PySSA, source: SSAProgram) -> SSAProgram:
     return prog
 
 
-def _collapse_phi_args_to_leaves(py: PySSA, phi_map: dict, var_map: dict) -> None:
+def _collapse_phi_args_to_leaves(py: PySSA, phi_map: dict, var_map: dict) -> set:
     """Collapse each ``Phi``'s args to the transitive ``SSAVar`` leaves reachable
-    through the ``PyPhi.args`` graph (SCC condensation, memoized per SCC)."""
+    through the ``PyPhi.args`` graph (SCC condensation, memoized per SCC).
+
+    Two marks travel the same closure, because a public phi stands for every
+    value its private chain can deliver:
+
+    * ``partial`` — any reachable ``PyPhi`` marked partial marks the public
+      phi partial. A loop header whose back arm is the partial residual cell
+      of a divergent call used to publish a definite ``{0, 1}`` while its
+      chain said "or the 55 the deep path left" — the mark was dropped with
+      the chain.
+    * UNKNOWN — any reachable ``PyPhi`` with an arm that is not a value (a
+      withdrawn ``None`` cell, a sub's below-frame back arm) or with no leaf
+      at all. Such a phi names only a subset of what the cell can hold, so
+      its SSAVar leaves are NOT published: the returned set holds the keys of
+      these phis and the operand build drops them from ``inputs`` (a missing
+      operand, which every census and the health report count) instead of
+      letting the resolved subset read as the whole answer.
+    """
     import networkx as nx
     # Nodes are integer indices, not PyPhis, purely to avoid millions of
     # `(bb_key, slot)` rehashes. networkx iterates in INSERTION order, so
@@ -771,11 +788,17 @@ def _collapse_phi_args_to_leaves(py: PySSA, phi_map: dict, var_map: dict) -> Non
         if _su != _sv:
             _scc_succs[_su].add(_sv)
     _scc_direct: list[list[PyVar]] = [[] for _ in _sccs]
+    _scc_partial = [False] * len(_sccs)
+    _scc_unknown = [False] * len(_sccs)
     for _i, _py_p in enumerate(_phis):
         _s = _scc_of[_i]
+        if _py_p.partial:
+            _scc_partial[_s] = True
         for _arg in _py_p.args:
             if isinstance(_arg, PyVar):
                 _scc_direct[_s].append(_arg)
+            elif not isinstance(_arg, PyPhi):
+                _scc_unknown[_s] = True
     _cond = nx.DiGraph()
     _cond.add_nodes_from(range(len(_sccs)))
     for _u, _ss in enumerate(_scc_succs):
@@ -794,18 +817,35 @@ def _collapse_phi_args_to_leaves(py: PySSA, phi_map: dict, var_map: dict) -> Non
                 if id(_v) not in _seen_ids:
                     _seen_ids.add(id(_v))
                     _out.append(_v)
+            if _scc_partial[_succ]:
+                _scc_partial[_s] = True
+            if _scc_unknown[_succ]:
+                _scc_unknown[_s] = True
         _scc_leaves[_s] = _out
+        if not _out:
+            # No value reachable at all: nothing a consumer could soundly
+            # read, however the phi came to be empty.
+            _scc_unknown[_s] = True
 
     # Resolve each SCC's leaves ONCE — phis in an SCC share a leaf set, so the
     # per-phi lookup was ~33M calls. Same SSAVars, same order.
     _scc_leaf_ssa = [[s for _pv in _leaves if (s := var_map.get(_pv)) is not None]
                      for _leaves in _scc_leaves]
+    unknown: set = set()
     for py_p, p in phi_map.items():
-        p.args.extend(_scc_leaf_ssa[_scc_of[_key2i[py_p.key()]]])
+        _s = _scc_of[_key2i[py_p.key()]]
+        if _scc_unknown[_s]:
+            unknown.add(py_p.key())
+            continue
+        p.args.extend(_scc_leaf_ssa[_s])
+        if _scc_partial[_s]:
+            p.partial = True
+    return unknown
 
 
 def _build_assignments(prog: SSAProgram, py: PySSA, var_map: dict,
-                       phi_map: dict, bb_map: dict) -> tuple[dict, dict]:
+                       phi_map: dict, bb_map: dict,
+                       unknown_phis: frozenset = frozenset()) -> tuple[dict, dict]:
     """Build ``prog.assignments`` (+ ``bb.assignments``, def/use back-refs,
     and spec-fixed const seeds) from the PySSA ops.
 
@@ -822,7 +862,10 @@ def _build_assignments(prog: SSAProgram, py: PySSA, var_map: dict,
         if isinstance(o, PyVar):
             return var_map.get(o)
         if isinstance(o, PyPhi):
-            return phi_map.get(o)
+            # An UNKNOWN phi (see `_collapse_phi_args_to_leaves`) is not an
+            # operand: the op keeps a missing input rather than a phi whose
+            # listed arms are only part of what the cell can hold.
+            return None if o.key() in unknown_phis else phi_map.get(o)
         return o
 
     pyop_to_assignment: dict = {}
@@ -1139,7 +1182,13 @@ def _apply_pyssa_to(
             p.basic_block = bb
             bb.phis.append(p)
 
-    # 4.5) Surface each BB's exit stack, translated to public operands, in
+    # 4.5) Collapse each Phi's args to the transitive SSAVar leaves. Runs
+    # BEFORE the exit stacks and operands are translated: the phis whose
+    # chain cannot name every value the cell can hold are published as
+    # missing slots/inputs, not as phis over the nameable subset.
+    unknown_phis = frozenset(_collapse_phi_args_to_leaves(py, phi_map, var_map))
+
+    # 5) Surface each BB's exit stack, translated to public operands, in
     # VERBATIM bottom-first order with dead slots left None. Out-of-SSA /
     # block-arg lowering reads `pred.exit_stack[k]` for the value a successor's
     # slot-k phi gets on that edge — which `Phi.args` (dedup'd) no longer has.
@@ -1150,19 +1199,16 @@ def _apply_pyssa_to(
                 translated.append(None)
             elif o in var_map:
                 translated.append(var_map[o])
-            elif o in phi_map:
+            elif o in phi_map and o.key() not in unknown_phis:
                 translated.append(phi_map[o])
             else:
                 translated.append(None)
         bb.exit_stack = translated
 
-    # 5) Collapse each Phi's args to the transitive SSAVar leaves.
-    _collapse_phi_args_to_leaves(py, phi_map, var_map)
-
     # 6) Build Assignments (+ bb back-refs, def/use links, spec-fixed seeds).
     (prog._pyop_id_to_assignment,
      prog._assignment_to_pyop) = _build_assignments(
-        prog, py, var_map, phi_map, bb_map,
+        prog, py, var_map, phi_map, bb_map, unknown_phis,
     )
 
     # NB inner-txn field grouping, scratch reaching-definitions and const/

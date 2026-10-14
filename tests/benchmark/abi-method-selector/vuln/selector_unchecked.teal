@@ -1,5 +1,15 @@
 #pragma version 10
+// VULNERABLE: the router matches one method but an UNKNOWN selector falls
+// through to an approving exit instead of `err`.
 txna ApplicationArgs 0
+method "hello(string)string"
+==
+bnz hello
+int 1
+return
+hello:
+byte "k"
+app_global_get
 pop
 int 1
 return

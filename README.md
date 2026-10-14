@@ -135,6 +135,13 @@ tealql dump <target> [--view KEY ...] [-o artifact-dir] [--no-svg]
 
 # Everything at once (all detectors + all reports)
 tealql all             <target>
+
+# Agent-oriented surface (see docs/AGENT_INTEGRATION.md)
+tealql brief           <target> [--json]        # one-call contract brief: ABI, lifecycle, storage,
+                                                # inner txns, group shape, attack surface + verdicts
+tealql explain         <target> --line N        # everything known about one TEAL line
+tealql diff            <old> <new> [--json]     # findings added/removed + bounded semantic equivalence
+tealql mcp [--list-tools]                       # Model Context Protocol server over stdio
 ```
 
 Common flags accepted by every analysis subcommand:
@@ -143,6 +150,25 @@ Common flags accepted by every analysis subcommand:
 | --- | --- |
 | `--json` | emit JSON instead of text |
 | `-v` / `-vv` | progress logging to stderr — `-v` for INFO milestones (target resolution, SSA build, per-detection counts), `-vv` adds DEBUG analysis timings |
+
+### AI / agent integration
+
+`src/tealql/agent/` exposes the analysis to LLM agents as **typed tools** with
+JSON-Schema inputs (`tealql.agent.tools.TOOLS`, `call_tool(name, args)`), a
+**contract brief** (`tealql brief`) that composes the ABI surface, lifecycle,
+storage schema, inner transactions, forced group shape, attacker-reachable sinks
+with verdicts and the detector findings into one document, and a
+dependency-free **MCP server** (`tealql mcp`; the repository's `.mcp.json`
+registers it for Claude Code). Every payload carries the same completeness
+envelope the CLI uses (`complete` + `notifications`), and reachability results
+label themselves as over-approximate so a model never reads a reachable sink as
+a verdict. Details: [docs/AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md).
+
+Machine output elsewhere is uniform: `detections` / `all` / `detections-scan`
+`--json` emit the versioned finding record (`rule_id, severity, confidence,
+message, file, line, …`); SARIF results carry `partialFingerprints` (the same
+line-insensitive v2 fingerprint `--baseline` uses) and rule `helpUri`/`help`;
+`taint-query --json` is an envelope with `complete`/`notifications`.
 
 ### Analysis contexts
 
@@ -329,7 +355,9 @@ The published table lives in [`docs/PRECISION.md`](docs/PRECISION.md)
 (regenerate with `uv run python -m tests.gen_precision`); see
 [`tests/benchmark/README.md`](tests/benchmark/README.md) to add cases. Note the
 caveat there — perfect scores on a curated corpus are a *specification*, not a
-field false-positive rate.
+field false-positive rate. The field number is
+[`docs/FIELD_PRECISION.md`](docs/FIELD_PRECISION.md): every finding of the
+mainnet ratchet labelled TP/FP/INTENDED/UNKNOWN (`tests/mainnet_triage.json`).
 
 ### Snapshot harness
 

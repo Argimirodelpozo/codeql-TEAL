@@ -1,0 +1,51 @@
+#pragma version 6
+// SAFE: the method table (selector == "bid" / "drain", else err) gates every
+// NoOp call. The create path and the OnCompletion handlers (Delete, OptIn)
+// approve without a selector — they are not method calls.
+txn ApplicationID
+int 0
+==
+bnz create
+txn OnCompletion
+int DeleteApplication
+==
+bnz delete
+txn OnCompletion
+int OptIn
+==
+bnz optin
+txna ApplicationArgs 0
+byte "bid"
+==
+bnz bid
+txna ApplicationArgs 0
+byte "drain"
+==
+bnz drain
+err
+create:
+byte "Creator"
+txn Sender
+app_global_put
+int 1
+return
+delete:
+txn Sender
+global CreatorAddress
+==
+return
+optin:
+int 1
+return
+bid:
+byte "bids"
+txna ApplicationArgs 1
+btoi
+app_global_put
+int 1
+return
+drain:
+txn Sender
+global CreatorAddress
+==
+return

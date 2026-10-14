@@ -4,6 +4,7 @@ from __future__ import annotations
 from tealql.security._lifted_taint_sink import (
     _LiftedTaintSinkDetector,
     _LiftedTaintSinkViolation,
+    _sources_text,
 )
 
 
@@ -17,7 +18,7 @@ class TaintedFreezeDetector(_LiftedTaintSinkDetector):
     fields = {"FreezeAssetAccount": "HIGH", "FreezeAsset": "MEDIUM"}
 
     def _message(self, finding, location):
-        sources = "+".join(sorted(finding.sources))
+        sources = _sources_text(finding)
         effect = (
             "freeze any account it names"
             if finding.field == "FreezeAssetAccount"

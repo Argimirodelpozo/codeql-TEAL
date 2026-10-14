@@ -1,0 +1,17 @@
+#pragma version 8
+// VULNERABLE: the asset id is compared to an ARGUMENT the submitter chooses.
+txn TypeEnum
+int axfer
+==
+assert
+txn XferAsset
+arg 0
+btoi
+==
+assert
+txn AssetAmount
+int 100
+<=
+assert
+int 1
+return

@@ -1,0 +1,31 @@
+#pragma version 10
+// SAFE (context hazard probe for review 5): helper reads gtxn 0 Amount with no
+// pin inside; caller A pins BEFORE the call, caller B pins AFTER it. Both arms
+// enforce the pin before approving.
+txna ApplicationArgs 0
+method "a()void"
+method "b()void"
+match arm_a arm_b
+err
+arm_a:
+gtxn 0 Receiver
+global CurrentApplicationAddress
+==
+assert
+callsub credit
+int 1
+return
+arm_b:
+callsub credit
+gtxn 0 Receiver
+global CurrentApplicationAddress
+==
+assert
+int 1
+return
+credit:
+proto 0 0
+byte "credit"
+gtxn 0 Amount
+app_global_put
+retsub

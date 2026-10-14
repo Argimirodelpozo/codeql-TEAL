@@ -7,7 +7,7 @@ from typing import Optional
 
 from .models import Assignment, SSAVar
 from .operands import const_int
-from ..language.avm import is_current_sender_read
+from ..language.avm import is_current_sender_read, is_group_signer_read
 
 
 def producing_op(op) -> Optional[Assignment]:
@@ -38,3 +38,26 @@ def is_current_sender_var(op) -> bool:
     if a.op == "txnas":
         index = const_int(a.inputs[0]) if a.inputs else None
     return is_current_sender_read(a.op, a.immediates or "", index)
+
+
+def is_group_signer_var(op) -> bool:
+    """``True`` when ``op`` holds the sender of a FIXED-position member of this
+    group (``txn Sender`` included) — the AUTHORISATION face of
+    :func:`avm.is_group_signer_read`. Never use it for caller identity."""
+    a = producing_op(op)
+    if a is None:
+        return False
+    index = None
+    if a.op in ("txnas", "gtxns"):
+        index = const_int(a.inputs[0]) if a.inputs else None
+    return is_group_signer_read(a.op, a.immediates or "", index)
+
+
+def is_fixed_caller_app_pin(x, y) -> bool:
+    """``(x, y)`` is ``global CallerApplicationID`` against a NON-ZERO constant
+    (either order): only that fixed app can be this call's inner-txn caller."""
+    for a, b in ((x, y), (y, x)):
+        if is_field_var(a, "global", "CallerApplicationID"):
+            k = const_int(b)
+            return k is not None and k != 0
+    return False

@@ -1,0 +1,18 @@
+#pragma version 10
+// VULN: assert((Sender==creator) | 1) is always true
+txn Sender
+global CreatorAddress
+==
+int 1
+|
+assert
+itxn_begin
+int pay
+itxn_field TypeEnum
+txna ApplicationArgs 1
+itxn_field Receiver
+int 1000
+itxn_field Amount
+itxn_submit
+int 1
+return

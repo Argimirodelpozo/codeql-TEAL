@@ -1,0 +1,28 @@
+#pragma version 4
+// VULN: the "Escrow" writer pins a sibling's RECEIVER (not its signer) to the
+// creator — anyone can pay the creator and set the escrow to their own
+// address, then credit payments sent to themselves.
+txna ApplicationArgs 0
+byte "set_escrow"
+==
+bnz set_escrow
+gtxn 1 Receiver
+byte "Escrow"
+app_global_get
+==
+assert
+byte "credit"
+gtxn 1 Amount
+app_global_put
+int 1
+return
+set_escrow:
+gtxn 1 Receiver
+global CreatorAddress
+==
+assert
+byte "Escrow"
+txna ApplicationArgs 1
+app_global_put
+int 1
+return

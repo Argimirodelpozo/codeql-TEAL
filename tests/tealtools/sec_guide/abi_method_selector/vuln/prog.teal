@@ -1,8 +1,13 @@
 #pragma version 10
-// ABI-shaped app: it reads the method selector (so it looks like an ABI
-// router) but approves unconditionally without ever comparing it — an
-// unrecognised method reaches the bare approval. Flagged.
+// ABI-shaped app: it routes one method on the selector, but an unrecognised
+// selector falls through to an approving exit instead of `err`. Flagged.
+// (A program that only READS arg 0 without routing on it is out of scope.)
 txna ApplicationArgs 0
-pop
+method "hello()void"
+==
+bnz hello
+int 1
+return
+hello:
 int 1
 return

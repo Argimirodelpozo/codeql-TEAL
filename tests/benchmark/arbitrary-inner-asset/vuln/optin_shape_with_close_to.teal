@@ -1,0 +1,19 @@
+#pragma version 10
+// VULNERABLE: shaped like an opt-in (0 to the app itself) but it also sets
+// AssetCloseTo to a caller-named account — the whole holding of the
+// caller-named asset leaves the app.
+    itxn_begin
+    int axfer
+    itxn_field TypeEnum
+    txna ApplicationArgs 1
+    btoi
+    itxn_field XferAsset
+    global CurrentApplicationAddress
+    itxn_field AssetReceiver
+    int 0
+    itxn_field AssetAmount
+    txna Accounts 1
+    itxn_field AssetCloseTo
+    itxn_submit
+    int 1
+    return

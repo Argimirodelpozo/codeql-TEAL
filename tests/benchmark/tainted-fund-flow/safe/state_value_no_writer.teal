@@ -1,0 +1,25 @@
+#pragma version 10
+// SAFE: no transaction ever writes global "payee" (it is provisioned out of
+// band); the unguarded "note" writer stores caller input under a DIFFERENT
+// constant key, which cannot alias "payee".
+txna ApplicationArgs 0
+byte "note"
+==
+bnz set_note
+itxn_begin
+int pay
+itxn_field TypeEnum
+byte "payee"
+app_global_get
+itxn_field Receiver
+int 1000
+itxn_field Amount
+itxn_submit
+int 1
+return
+set_note:
+byte "note"
+txna ApplicationArgs 1
+app_global_put
+int 1
+return

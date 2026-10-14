@@ -22,6 +22,7 @@ from tealql.security._field_protection import (
 )
 from tealql.security._program_shape import (
     approving_exits,
+    exits_reachable_through,
     file_match,
     global_field_reads,
     loc,
@@ -31,7 +32,8 @@ from tealql.security._value_flow import (
     _operand_flows_from_field_var,
     cached_path_predicates,
 )
-from tealql.tealtools.ssa import SSAProgram, SSAVar, const_int, operand_const
+from tealql.tealtools.ssa import (Assignment, SSAProgram, SSAVar, const_int,
+                                  operand_const)
 
 # Value field -> the receiver field that must be pinned for that transfer kind.
 _VALUE_TO_RECEIVER = {
@@ -90,6 +92,24 @@ class UnvalidatedGroupSiblingViolation:
     receiver_field: str = ""
     location: str = ""
     message: str = ""
+    # The offending value READ; `file` / `line` derive from it so SARIF / JSON
+    # consumers get a structured anchor (the `location` string alone rendered
+    # every finding at line 1).
+    read: Optional[Assignment] = None
+
+    @property
+    def file(self) -> Optional[str]:
+        if self.read is not None:
+            return self.read.location.file
+        return self.location.rsplit(":", 1)[0] if ":" in self.location else None
+
+    @property
+    def line(self) -> Optional[int]:
+        # Must mirror `location` (the read's `file:line`).
+        if self.read is not None:
+            return self.read.location.line
+        tail = self.location.rsplit(":", 1)[-1] if ":" in self.location else ""
+        return int(tail) if tail.isdigit() else None
 
     def pretty(self) -> str:
         return self.message
@@ -100,6 +120,8 @@ class UnvalidatedGroupSiblingViolation:
             "value_field": self.value_field,
             "receiver_field": self.receiver_field,
             "location": self.location,
+            "file": self.file,
+            "line": self.line,
             "message": self.message,
         }
 
@@ -121,12 +143,17 @@ class UnvalidatedGroupSiblingDetector:
     def detect(self) -> list:
         reads = self._gtxn_index_reads()                 # (index, field) -> [assigns]
         app_seeds = self._safe_receiver_targets()
-        # HAZARD: the per-arm PATH check is gated on there being NO subroutines.
-        # `retsub` returns context-insensitively, so a read inside a sub spuriously
-        # "reaches" approving exits in unrelated callers and the path check turns
-        # into an FP machine. With subs present, fall back to the whole-program
-        # EXISTENCE check — never worse than the legacy behaviour.
-        inline = not self._has_subroutines()
+        # HAZARD: the per-arm PATH check is gated on there being NO LEGACY
+        # (pre-`proto`) subroutines. A legacy `retsub` returns
+        # context-insensitively, so a read inside such a sub spuriously
+        # "reaches" approving exits in unrelated callers and the path check
+        # turns into an FP machine; with one present, fall back to the
+        # whole-program EXISTENCE check — never worse than the legacy
+        # behaviour. `proto` subs have sound per-call-site return edges, and
+        # every modern compiler emits them — gating on ANY sub meant the
+        # flow-sensitive mode never ran on real contracts, so a router whose
+        # `deposit()` pins and whose `swap()` credits unpinned read as safe.
+        inline = not self._has_legacy_subroutines()
         out: list = []
         for (index, field), assigns in sorted(reads.items()):
             if field not in _VALUE_TO_RECEIVER:
@@ -141,9 +168,17 @@ class UnvalidatedGroupSiblingDetector:
                 if escape is None:
                     continue                 # every approving path crosses the pin
             # else: the receiver is NEVER pinned+enforced anywhere — legacy finding.
-            if self._type_excludes_field(index, field, assigns, reads, app_seeds):
+            # HAZARD: judge inertness over the reads that actually ESCAPE the
+            # pin, not the whole (index, field) pair. An axfer-typed arm reading
+            # `gtxn 1 Amount` (inert: pinned AssetReceiver) next to a pay-typed
+            # arm reading it under a Receiver pin is two safe reads — the pair
+            # evaluated jointly fails BOTH tests and flagged real contracts the
+            # moment the per-arm mode ran on `proto` programs.
+            unpinned = ([a for a in assigns if self._unpinned_path([a], gates) is not None]
+                        if inline else assigns) or assigns
+            if self._type_excludes_field(index, field, unpinned, reads, app_seeds):
                 continue                     # inert read: sibling pinned to another type
-            a = assigns[0]
+            a = unpinned[0]
             location = loc(a)
             pin = (f"gtxn {index} {recv_field} == "
                    f"Global.CurrentApplicationAddress")
@@ -159,13 +194,25 @@ class UnvalidatedGroupSiblingDetector:
                        f"{pin} — the pin exists on another arm, but this arm "
                        f"trusts a sibling transfer that may not pay it")
             out.append(UnvalidatedGroupSiblingViolation(
-                self.prog, index, field, recv_field, location, msg))
+                self.prog, index, field, recv_field, location, msg, read=a))
         return out
 
-    def _has_subroutines(self) -> bool:
-        return any(a.op in ("callsub", "retsub", "proto")
-                   and file_match(a.location.file, self.file)
-                   for a in self.prog.assignments)
+    def _has_legacy_subroutines(self) -> bool:
+        """Some file-matched ``callsub`` targets a sub that does not open with
+        ``proto`` (or whose target could not be resolved at all — unknown
+        fails towards the whole-program fallback)."""
+        from tealql.tealtools.cfg.subroutines import identify_subroutines
+        targets = identify_subroutines(self.prog)["callsub_target"]
+        for bb in self.prog.blocks.values():
+            if not file_match(bb.file, self.file) or not bb.assignments:
+                continue
+            if bb.assignments[-1].op != "callsub":
+                continue
+            entry = targets.get(bb)
+            if entry is None or not any(
+                    a.op == "proto" for a in entry.assignments[:1]):
+                return True
+        return False
 
     # -- internals ------------------------------------------------------
 
@@ -204,20 +251,37 @@ class UnvalidatedGroupSiblingDetector:
 
     def _safe_receiver_targets(self) -> set:
         """SSAVars holding an address the ATTACKER CANNOT CHOOSE: the app's/creator's
-        address, or a read of the app's OWN state (the escrow pattern). Constants are
-        handled in :meth:`_pin_gates`.
+        address, or a read of the app's OWN state whose every writer is under an
+        established authority (the escrow pattern). Constants are handled in
+        :meth:`_pin_gates`.
 
         HAZARD: this is a POSITIVE safe-set, not "X is not user-tainted". An
         unmodelled address form must fail SAFE (still flagged), never be trusted —
-        pinning ``Receiver`` to ``ApplicationArgs``/``Sender`` protects nothing."""
+        pinning ``Receiver`` to ``ApplicationArgs``/``Sender`` protects nothing.
+
+        HAZARD: a state read is NOT safe by opcode. ``app_local_get(Sender,
+        "payee")`` is caller-owned the moment any arm writes it from caller
+        input (an opt-in storing ``txna Accounts 1``): the attacker opts in
+        with payee = self, pays self, is credited. The authority layer answers
+        this by WRITER provenance — the same question the lifecycle family asks
+        of a stored admin — so it is asked here rather than whitelisting ops."""
+        from tealql.tealtools.analysis.authority import authority_for
         seeds: set = set()
         for gf in ("CurrentApplicationAddress", "CreatorAddress"):
             seeds |= self._global_seeds(gf)
+        # `app_params_get AppAddress` of a preserved app id is the account of
+        # an application whose program the authority layer trusts (premise
+        # recorded there) — the managed-sub-app escrow pattern.
         state_ops = ("app_global_get", "app_local_get",
-                     "app_global_get_ex", "app_local_get_ex")
+                     "app_global_get_ex", "app_local_get_ex", "app_params_get")
+        authority = None
         for a in self.prog.assignments:
             if a.op in state_ops and file_match(a.location.file, self.file):
-                seeds |= {o for o in a.outputs if isinstance(o, SSAVar)}
+                if authority is None:
+                    authority = authority_for(self.prog)
+                for o in a.outputs:
+                    if isinstance(o, SSAVar) and authority.address(o).preserved:
+                        seeds.add(o)
         return seeds
 
     def _pin_gates(self, index: int, recv_field: str, reads: dict,
@@ -285,7 +349,7 @@ class UnvalidatedGroupSiblingDetector:
                 continue                     # pin enforced in the read's own block
             if gates and _all_entry_paths_cross(self.prog, rbb, gates):
                 continue                     # every way to reach the read is gated
-            hit = self._gate_free_exit(rbb, gates, exits)
+            hit = self._gate_free_exit_through(rbb, gates, exits)
             if hit is None:
                 continue                     # every way to approve is gated
             if method_of is None:
@@ -295,21 +359,16 @@ class UnvalidatedGroupSiblingDetector:
             return line, method_of(hit)
         return None
 
-    @staticmethod
-    def _gate_free_exit(start, gates: set, exits: set):
-        """First approving exit reachable from ``start`` crossing no gate, or ``None``."""
-        seen = {start}
-        stack = [start]
-        while stack:
-            b = stack.pop()
-            if b in exits:
-                return b
-            for s in b.successors:
-                if s in gates or s in seen:
-                    continue
-                seen.add(s)
-                stack.append(s)
-        return None
+    def _gate_free_exit_through(self, read_bb, gates: set, exits: set):
+        """First approving exit reachable THROUGH ``read_bb`` crossing no gate,
+        or ``None`` — :func:`exits_reachable_through` (return-stack walk), with
+        call sites whose own prefix is gated skipped."""
+        hit = exits_reachable_through(
+            self.prog, read_bb, exits, gates,
+            site_gated=lambda cs: bool(gates) and _all_entry_paths_cross(
+                self.prog, cs, gates),
+            first=True)
+        return hit[0] if hit else None
 
     # -- type-precision suppression -------------------------------------
 

@@ -6,6 +6,7 @@ from tealql.tealtools.language.avm import FUND_FIELDS
 from tealql.security._lifted_taint_sink import (
     _LiftedTaintSinkDetector,
     _LiftedTaintSinkViolation,
+    _sources_text,
 )
 
 
@@ -19,7 +20,7 @@ class TaintedFundFlowDetector(_LiftedTaintSinkDetector):
     fields = FUND_FIELDS
 
     def _message(self, finding, location):
-        sources = "+".join(sorted(finding.sources))
+        sources = _sources_text(finding)
         return (
             f"[{finding.severity}] attacker-controlled itxn {finding.field} <- "
             f"{sources} ({location}, {finding.sub_id}); no dominating check of "

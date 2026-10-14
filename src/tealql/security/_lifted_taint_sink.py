@@ -11,6 +11,13 @@ from dataclasses import dataclass
 from typing import ClassVar, Optional
 
 
+def _sources_text(finding) -> str:
+    """The ``<-`` side of a lifted finding's message: its sources, with the
+    untrusted writer lines of every ``StateValue`` source."""
+    render = getattr(finding, "sources_text", None)
+    return render() if render is not None else "+".join(sorted(finding.sources))
+
+
 @dataclass
 class _LiftedTaintSinkViolation:
     field: str = ""

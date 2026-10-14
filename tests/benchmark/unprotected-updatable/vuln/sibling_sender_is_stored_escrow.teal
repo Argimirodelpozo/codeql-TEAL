@@ -1,0 +1,36 @@
+#pragma version 4
+// VULN: Update "requires" transaction 1 to come from the stored escrow — but
+// the escrow is a LOGICSIG address the creator configured, and its program
+// signs whenever this app is called. Anyone can assemble that group, so the
+// sibling's sender authorises nothing (`gtxn 1 Sender == Escrow`).
+txn ApplicationID
+bz create
+txna ApplicationArgs 0
+byte "set_escrow"
+==
+bnz set_escrow
+txn OnCompletion
+int UpdateApplication
+==
+bz done
+gtxn 1 Sender
+byte "Escrow"
+app_global_get
+==
+assert
+done:
+int 1
+return
+set_escrow:
+txn Sender
+global CreatorAddress
+==
+assert
+byte "Escrow"
+txna Accounts 1
+app_global_put
+int 1
+return
+create:
+int 1
+return

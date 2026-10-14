@@ -10,7 +10,51 @@ The correct pattern uses `txn Sender` (or fields covered by the AVM signature) f
 
 ## How it works
 
-**Per-opcode finding** — every `arg N` (or `args`) read that flows into a comparison opcode (`==`, `!=`, `<`, `>`, `<=`, `>=`) is reported. The detection is data-flow-based: the arg's SSAVar has to actually be one of the comparison's input operands, not just appear in the same program.
+**Per-arg finding** — every `arg N` / `arg_N` / `args` read whose value reaches an equality-key op (`==`, `b==`, `!=`, `b!=`, `match`, `switch`) is reported once, at the `arg` line. Reachability is over the interprocedural taint graph (def-use, phi, scratch and `proto` frame edges), so an arg stashed in scratch, passed through subroutines or hashed before the comparison is still caught. Ordering comparisons (`<`, `>`, `<=`, `>=`) and verify opcodes are not sinks.
+
+## How to fix
+
+Never authorise with an equality on a logicsig argument (`==`, `b==`, `!=`, `b!=`, `match`, `switch`), even after hashing. Authenticate with a signature instead: pass the signature as an arg and verify it against a public key baked into the program (`ed25519verify`, `ecdsa_verify`), with the authorisation itself coming from fields the signer commits to. The detector follows the arg through scratch, subroutines, and hashing, but an arg that reaches only non-equality ops (a verify opcode, an ordering comparison such as `<`) is not reported.
+
+<!-- verify: unsafe-lsig-args clean -->
+```teal
+#pragma version 8
+txn TxID
+arg 0
+addr AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ
+ed25519verify
+assert
+txn Fee
+global MinTxnFee
+<=
+return
+```
+
+Still flagged — hashing does not make the comparison a credential:
+
+<!-- verify: unsafe-lsig-args finding -->
+```teal
+#pragma version 8
+arg 0
+sha256
+byte 0x2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824
+==
+return
+```
+
+```python
+assert op.ed25519verify(Txn.tx_id, op.arg(0), TemplateVar[Bytes]("SIGNER_PK"))
+```
+
+If the equality is not an access-control gate (see False positives), put `// tealql-ignore: unsafe-lsig-args` on the flagged `arg` line (or the line above it), or record the finding in a baseline (`--update-baseline` / `--baseline PATH`).
+
+## False positives
+
+The detector flags ANY arg value reaching an equality-key op, not only access-control gates:
+
+- A length/format check on an arg (`arg 0; len; int 64; ==; assert`) is reported.
+- An arg used only to select a code path (`arg 0; btoi; switch ...` / `match`) is reported, even when every selected path is independently validated.
+- A hash-time-lock preimage check (`arg 0; sha256; byte <hash>; ==`) is reported by design: the preimage is public once revealed, so this is only safe when the logicsig also bounds what a replay can do.
 
 ## Examples
 
@@ -68,7 +112,6 @@ return
 
 ## Files
 
-- `unsafe_lsig_args.py` — the detector.
+- `src/tealql/security/detections/unsafe-lsig-args/unsafe_lsig_args.py` — the detector.
 
-Test fixtures — `vuln` / `fixed` `.teal` programs and the expected detector output — live under
-`tests/tealtools/sec_guide/unsafe_lsig_args/`, one directory per case.
+Precision / recall fixtures — `vuln/` and `safe/` `.teal` programs — live under `tests/benchmark/unsafe-lsig-args/`.

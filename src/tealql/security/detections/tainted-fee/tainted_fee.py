@@ -4,6 +4,7 @@ from __future__ import annotations
 from tealql.security._lifted_taint_sink import (
     _LiftedTaintSinkDetector,
     _LiftedTaintSinkViolation,
+    _sources_text,
 )
 
 
@@ -17,7 +18,7 @@ class TaintedFeeDetector(_LiftedTaintSinkDetector):
     fields = {"Fee": "MEDIUM"}
 
     def _message(self, finding, location):
-        sources = "+".join(sorted(finding.sources))
+        sources = _sources_text(finding)
         return (
             f"[{finding.severity}] attacker-controlled inner-txn fee itxn "
             f"{finding.field} <- {sources} ({location}, {finding.sub_id}); the "

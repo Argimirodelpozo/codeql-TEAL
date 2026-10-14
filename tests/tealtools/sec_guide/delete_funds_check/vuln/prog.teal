@@ -4,6 +4,15 @@ txn OnCompletion
 int 5
 ==
 bnz delete_handler
+// the app pays out with inner transactions, so its account can hold funds
+itxn_begin
+int pay
+itxn_field TypeEnum
+txn Sender
+itxn_field Receiver
+int 1000
+itxn_field Amount
+itxn_submit
 int 1
 return
 delete_handler:

@@ -111,13 +111,26 @@ def test_fixed_creator_replacement_is_authority_preserving():
     assert authority_for(prog).address(stored_address(prog)).preserved
 
 
-@pytest.mark.parametrize('app, trusted', [(0, True), (99, False)])
-def test_foreign_state_and_existence_flags_are_not_local_authorities(app, trusted):
+@pytest.mark.parametrize('app, foreign', [(0, False), (99, True)])
+def test_foreign_state_and_existence_flags_are_not_local_authorities(app, foreign):
+    """The existence flag is never an authority. A FIXED foreign app's key is
+    preserved only under the explicit premise that that application governs
+    it (2026-10-10 precision pass) — never as a local (own-state) proof; an
+    attacker-chosen app id is covered by the next test."""
     prog = program(f'int {app}\nbyte "admin"\napp_global_get_ex\npop\nlog\nint 1\nreturn')
     read = next(a for a in prog.assignments if a.op == 'app_global_get_ex')
     analysis = authority_for(prog)
     assert not analysis.address(read.outputs[0]).preserved
-    assert analysis.address(read.outputs[1]).preserved is trusted
+    result = analysis.address(read.outputs[1])
+    assert result.preserved
+    assert not result.proved
+    assert any('foreign key' in a for a in result.assumptions) is foreign
+
+
+def test_foreign_state_of_a_caller_chosen_app_is_not_an_authority():
+    prog = program('txna Applications 1\nbyte "admin"\napp_global_get_ex\npop\nlog\nint 1\nreturn')
+    read = next(a for a in prog.assignments if a.op == 'app_global_get_ex')
+    assert not authority_for(prog).address(read.outputs[1]).preserved
 
 
 def test_authority_writers_do_not_cross_file_identity(tmp_path):

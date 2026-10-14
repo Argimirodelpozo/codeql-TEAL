@@ -1,0 +1,20 @@
+#pragma version 10
+// SAFE control: both select arms are the sender pin
+txn Sender
+global CreatorAddress
+==
+dup
+txna ApplicationArgs 0
+btoi
+select
+assert
+itxn_begin
+int pay
+itxn_field TypeEnum
+txna ApplicationArgs 1
+itxn_field Receiver
+int 1000
+itxn_field Amount
+itxn_submit
+int 1
+return

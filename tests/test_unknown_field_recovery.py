@@ -236,36 +236,37 @@ def _labels(prog):
 
 
 def test_label_named_after_an_opcode_is_defined(tmp_path):
-    """`pop:` tokenized as the `pop` OPCODE plus a stray `:`, so the label was
-    never defined and every branch to it lost its CFG edge. Puya names router
-    labels after ABI methods, and `get` / `set` / `pop` / `append` are ordinary
-    method names."""
+    """`pop:` used to tokenize as the `pop` OPCODE plus a stray `:`, so the
+    label was never defined and every branch to it lost its CFG edge. Puya
+    names router labels after ABI methods, and `get` / `set` / `pop` /
+    `append` are ordinary method names. The grammar's label token now carries
+    its colon, so the label keeps its own name -- no rename."""
     prog = _prog(tmp_path, "int 0\nb pop\npop:\n", version=10)
     assert list(getattr(prog, "parse_diagnostics", ()) or []) == []
-    assert _labels(prog) == ["pop_label"]
+    assert _labels(prog) == ["pop"]
 
 
 def test_match_dispatch_to_opcode_named_labels(tmp_path):
     prog = _prog(tmp_path, "int 0\nmatch pop concat\npop:\nint 1\nreturn\nconcat:\n",
                  version=10)
     assert list(getattr(prog, "parse_diagnostics", ()) or []) == []
-    assert _labels(prog) == ["concat_label", "pop_label"]
+    assert _labels(prog) == ["concat", "pop"]
 
 
-def test_rename_never_touches_the_opcode_token(tmp_path):
-    """A label named `b`, branched to with `b b`: the operand must be renamed
-    and the branch opcode left alone. A substring sweep would eat both."""
+def test_branch_to_a_label_named_like_its_own_opcode(tmp_path):
+    """A label named `b`, branched to with `b b`: the operand is the label and
+    the first token stays the branch opcode."""
     prog = _prog(tmp_path, "int 0\nb b\nb:\n", version=10)
     assert list(getattr(prog, "parse_diagnostics", ()) or []) == []
-    assert _labels(prog) == ["b_label"]
-    assert ("b", "b_label") in _ops(prog)
+    assert _labels(prog) == ["b"]
+    assert ("b", "b") in _ops(prog)
 
 
 def test_the_real_pop_opcode_still_pops(tmp_path):
     prog = _prog(tmp_path, "int 0\nint 1\npop\nb store\nstore:\n", version=10)
     assert list(getattr(prog, "parse_diagnostics", ()) or []) == []
     assert ("pop", "") in _ops(prog)
-    assert _labels(prog) == ["store_label"]
+    assert _labels(prog) == ["store"]
 
 
 def test_ordinary_labels_are_not_renamed(tmp_path):
@@ -340,12 +341,13 @@ def test_non_template_identifier_is_not_absorbed(tmp_path):
 
 
 def test_stray_identifier_is_reported_not_swallowed(tmp_path):
-    """A stray identifier parses as a `label` whose `:` tree-sitter had to
-    INVENT. It was then dropped by reachability gating, so the token vanished
-    with NO diagnostic and the operand list it came from quietly truncated."""
+    """A stray identifier used to parse as a `label` whose `:` tree-sitter had
+    to INVENT, then vanish under reachability gating with NO diagnostic while
+    the operand list it came from quietly truncated. It now parses as an
+    explicit `unknown_opcode`, which is dropped WITH a diagnostic naming it."""
     prog = _prog(tmp_path, 'bytecblock "a" somethingelse\nbytec_0\npop\n', version=10)
     diags = list(getattr(prog, "parse_diagnostics", ()) or [])
-    assert diags and "stray token" in diags[0].snippet
+    assert diags and "somethingelse" in diags[0].snippet
 
 
 def test_real_labels_are_not_reported(tmp_path):
@@ -442,16 +444,6 @@ def test_backslash_before_quote_keeps_the_assemblers_string_state(tmp_path):
     assert ("pushbytes", '"a\\\\"') in _ops(ok)
 
 
-def test_blanking_preserves_line_length():
-    """Comments are blanked with spaces, not deleted, so every column span on
-    the line stays valid."""
-    from tealql.tealtools.frontend.graph import _blank_quoted_comments
-    src = 'pushbytes "asa_"   // [name, "asa_"]\nint 1\n'
-    out = _blank_quoted_comments(src)
-    for a, b in zip(src.split("\n"), out.split("\n")):
-        assert len(a) == len(b)
-
-
 # ---------------------------------------------------------------------------
 # Bare template pushes — the last two, and the span bug behind them
 # ---------------------------------------------------------------------------
@@ -514,7 +506,7 @@ def test_corpus_parse_completes(content_hash, path):
 
 
 # ---------------------------------------------------------------------------
-# Structural: one definition of "template variable", one recovery registry
+# Structural: one definition of "template variable"
 # ---------------------------------------------------------------------------
 
 
@@ -546,23 +538,3 @@ def test_template_predicate_has_exactly_one_definition():
              or 'startswith("TMPL_")' in t)
     ]
     assert offenders == [], offenders
-
-
-def test_every_recovery_is_in_a_registry():
-    """Each grammar gap is recovered as either a STANDALONE instruction or a
-    TAIL merged into the preceding opcode. Keeping both families as registries
-    means the next AVM version is one tuple entry, not another clause in two
-    `or` chains that can drift out of step."""
-    import inspect
-
-    from tealql.tealtools.ast import parse as P
-
-    assert len(P._STANDALONE_RECOVERIES) >= 3
-    assert len(P._TAIL_RECOVERIES) >= 3
-    # UNIFORM SIGNATURES are the whole point: standalone takes (node, src),
-    # tail takes (prev, node, src). Before the registries these had three
-    # different arities and each new gap grew another bespoke `or` clause.
-    for fn in P._STANDALONE_RECOVERIES:
-        assert len(inspect.signature(fn).parameters) == 2, fn.__name__
-    for fn in P._TAIL_RECOVERIES:
-        assert len(inspect.signature(fn).parameters) == 3, fn.__name__

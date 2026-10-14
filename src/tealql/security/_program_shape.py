@@ -62,11 +62,16 @@ def unguarded_entry_path_exists(
     block_closed,
     edge_closed=None,
 ) -> bool:
-    """Some path from a PROGRAM ENTRY reaches ``exit_bb`` crossing no closed
-    block (and, when ``edge_closed`` is given, no closed edge).
+    """Some REALIZABLE path from a PROGRAM ENTRY reaches ``exit_bb`` crossing no
+    closed block (and, when ``edge_closed`` is given, no closed edge).
 
-    THE shared backward must-cross walk — every "is this exit protected" family
-    delegates here rather than re-rolling the traversal.
+    THE shared must-cross walk — every "is this exit protected" family
+    delegates here rather than re-rolling the traversal. Two phases: the
+    backward CFG walk (cheap; "no path" is final), then, only when it finds
+    one, a forward walk with a RETURN STACK restricted to the blocks the
+    backward walk reached (:func:`realizable_unguarded_path_exists`) — so a
+    path entering a shared helper from one call site cannot leave it through
+    another call site's continuation.
 
     HAZARD: entries come from ``prog.entry_blocks()``, never from "has no
     predecessors". TEAL's entry is the FIRST block, and both mis-derivations of
@@ -76,15 +81,30 @@ def unguarded_entry_path_exists(
     the entry (a one-block always-approve program) has no predecessors at all,
     so a walk that only tests predecessors never runs and falls through to its
     default. A predecessor-less NON-first block, by contrast, is dead code — a
-    "path" through it is not a real execution and does not witness anything."""
-    if block_closed(exit_bb):
+    "path" through it is not a real execution and does not witness anything.
+
+    HAZARD: the CFG's ``retsub`` edges fan out to EVERY caller's continuation;
+    the backward phase alone stitches unrealizable paths through them (a
+    GroupSize bound asserted before one call of a shared helper read as absent
+    on another caller's exit — field class ``groupsize-bounded-on-path``)."""
+    found, ancestors = _backward_open_ancestors(
+        prog, exit_bb, block_closed=block_closed, edge_closed=edge_closed)
+    if not found:
         return False
+    return realizable_unguarded_path_exists(
+        prog, exit_bb, block_closed=block_closed, edge_closed=edge_closed,
+        within=ancestors)
+
+
+def _backward_open_ancestors(prog, exit_bb, *, block_closed, edge_closed=None):
+    """``(an entry reaches exit_bb over open CFG edges, the open ancestor ids)``."""
+    if block_closed(exit_bb):
+        return False, set()
     entry_ids = {id(b) for b in prog.entry_blocks() if b.file == exit_bb.file}
-    if id(exit_bb) in entry_ids:
-        return True                # the exit IS the entry: a zero-length path
+    seen = {id(exit_bb)}
+    found = id(exit_bb) in entry_ids          # the exit IS the entry
     visited_edges: set = set()
     stack: list = [exit_bb]
-    seen = {id(exit_bb)}
     while stack:
         bb = stack.pop()
         for pred in bb.predecessors:
@@ -97,10 +117,146 @@ def unguarded_entry_path_exists(
             if block_closed(pred):
                 continue
             if id(pred) in entry_ids:
-                return True
+                found = True
             if id(pred) not in seen:
                 seen.add(id(pred))
                 stack.append(pred)
+    return found, seen
+
+
+#: Return-stack depth kept by :func:`exits_reachable_through`; deeper
+#: contexts fall back to every ``retsub`` successor (towards a finding).
+RETURN_STACK_CAP = 8
+
+
+def exits_reachable_through(
+    prog: SSAProgram,
+    read_bb: BasicBlock,
+    exits,
+    gates=frozenset(),
+    *,
+    site_gated=None,
+    first: bool = False,
+) -> list:
+    """Approving ``exits`` reachable by a realizable path THROUGH ``read_bb``
+    crossing no block in ``gates`` — a forward walk carrying an explicit
+    RETURN STACK. With ``first`` it stops at (and returns) the first exit hit
+    in DFS order; otherwise every such exit, in discovery order.
+
+    HAZARD: the CFG's ``retsub`` edges fan out to EVERY caller's continuation.
+    A read inside a helper called from two arms then "reaches" the other arm's
+    exits — a path no execution takes. So the walk is per CALL SITE of the
+    read's enclosing sub: it starts at the sub's entry with that site's
+    continuation pushed (skipping a site in ``gates`` or for which
+    ``site_gated(cs_bb)`` holds), pushes on ``callsub`` and pops on ``retsub``.
+    Only an EMPTY stack (an unknown outer context, or the cap) falls back to
+    every ``retsub`` successor — conservative, i.e. towards a finding."""
+    from tealql.tealtools.cfg.subroutines import identify_subroutines
+    subs = identify_subroutines(prog)
+    bodies, conts, targets = (subs["bodies"], subs["continuations"],
+                              subs["callsub_target"])
+    owner = next((e for e, body in bodies.items() if read_bb in body), None)
+    if owner is None:
+        starts = [(read_bb, (), True)]
+    else:
+        starts = []
+        for cs_bb, entry in targets.items():
+            if entry is not owner or cs_bb in gates:
+                continue
+            if site_gated is not None and site_gated(cs_bb):
+                continue
+            starts.append((owner, (conts.get(cs_bb),), False))
+    seen: set = set()
+    found: list = []
+    found_ids: set = set()
+    stack = list(starts)
+    while stack:
+        bb, rstack, passed = stack.pop()
+        passed = passed or bb is read_bb
+        key = (id(bb), tuple(id(b) for b in rstack), passed)
+        if key in seen:
+            continue
+        seen.add(key)
+        if passed and bb in exits and id(bb) not in found_ids:
+            if first:
+                return [bb]
+            found_ids.add(id(bb))
+            found.append(bb)
+        term = bb.assignments[-1].op if bb.assignments else None
+        if term == "callsub" and targets.get(bb) is not None:
+            tgt = targets[bb]
+            new = (rstack + (conts.get(bb),))[-RETURN_STACK_CAP:]
+            if tgt not in gates:
+                stack.append((tgt, new, passed))
+            continue
+        if term == "retsub" and rstack and rstack[-1] is not None:
+            if rstack[-1] not in gates:
+                stack.append((rstack[-1], rstack[:-1], passed))
+            continue
+        rest = rstack[:-1] if term == "retsub" and rstack else rstack
+        for s in bb.successors:
+            if s not in gates:
+                stack.append((s, rest, passed))
+    return found
+
+
+def realizable_unguarded_path_exists(
+    prog: SSAProgram,
+    exit_bb: BasicBlock,
+    *,
+    block_closed,
+    edge_closed=None,
+    within=None,
+) -> bool:
+    """:func:`unguarded_entry_path_exists` over REALIZABLE paths only: a forward
+    walk from the program entries carrying an explicit return stack, so a path
+    that enters a helper from one call site cannot leave it through another
+    call site's continuation.
+
+    HAZARD: the CFG's ``retsub`` edges fan out to EVERY caller's continuation.
+    A backward walk over them stitches a method arm that never drains onto the
+    Delete arm's continuation and reports a "path" no execution takes. Only an
+    EMPTY stack (unknown outer context, or the cap) falls back to every
+    ``retsub`` successor — conservative, i.e. towards a finding.
+
+    ``within`` (block ids) prunes the walk to blocks that can still reach the
+    exit — :func:`unguarded_entry_path_exists` passes its backward set."""
+    from tealql.tealtools.cfg.subroutines import identify_subroutines
+    subs = identify_subroutines(prog)
+    conts, targets = subs["continuations"], subs["callsub_target"]
+    entries = [b for b in prog.entry_blocks() if b.file == exit_bb.file]
+    seen: set = set()
+    stack = [(b, ()) for b in entries
+             if not block_closed(b) and (within is None or id(b) in within)]
+
+    def _push(pred, succ, rstack):
+        if succ is None or (within is not None and id(succ) not in within):
+            return
+        if edge_closed is not None and edge_closed(pred, succ):
+            return
+        if block_closed(succ):
+            return
+        stack.append((succ, rstack))
+
+    while stack:
+        bb, rstack = stack.pop()
+        if bb is exit_bb:
+            return True
+        key = (id(bb), tuple(id(b) for b in rstack))
+        if key in seen:
+            continue
+        seen.add(key)
+        term = bb.assignments[-1].op if bb.assignments else None
+        if term == "callsub" and targets.get(bb) is not None:
+            new = (rstack + (conts.get(bb),))[-RETURN_STACK_CAP:]
+            _push(bb, targets[bb], new)
+            continue
+        if term == "retsub" and rstack and rstack[-1] is not None:
+            _push(bb, rstack[-1], rstack[:-1])
+            continue
+        rest = rstack[:-1] if term == "retsub" and rstack else rstack
+        for s in bb.successors:
+            _push(bb, s, rest)
     return False
 
 

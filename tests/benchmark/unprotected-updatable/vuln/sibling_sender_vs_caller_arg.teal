@@ -1,0 +1,14 @@
+#pragma version 8
+// VULN: a sibling's sender compared to an address the CALLER supplies —
+// the attacker signs transaction 1 themselves and passes their own address.
+txn OnCompletion
+int UpdateApplication
+==
+bz done
+gtxn 1 Sender
+txna ApplicationArgs 1
+==
+assert
+done:
+int 1
+return

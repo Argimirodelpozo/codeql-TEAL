@@ -1,0 +1,17 @@
+#pragma version 10
+// SAFE: only NoOp and OptIn can reach `approve`; everything else errs.
+txn OnCompletion
+int NoOp
+==
+bnz approve
+txn OnCompletion
+int OptIn
+==
+bnz approve
+err
+approve:
+byte "k"
+app_global_get
+pop
+int 1
+return

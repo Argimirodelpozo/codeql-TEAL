@@ -163,8 +163,46 @@ def confidence_of(detector_name: str) -> str:
     return getattr(cls, "confidence", DEFAULT_CONFIDENCE) if cls is not None else DEFAULT_CONFIDENCE
 
 
+# --- detector documentation ------------------------------------------------
+#
+# ``detections/<kebab>/README.md`` is the one human-readable home per detector;
+# SARIF rules, the agent tool catalogue and the CLI all read it from here.
+_README_URL = ("https://github.com/Argimirodelpozo/codeql-TEAL/blob/main/src/tealql/"
+               "security/detections/{name}/README.md")
+
+
+def readme_of(detector_name: str) -> str:
+    """The detector's README text, or ``""`` when it has none."""
+    p = _DETECTIONS_ROOT / detector_name / "README.md"
+    try:
+        return p.read_text() if p.exists() else ""
+    except OSError:
+        return ""
+
+
+def description_of(detector_name: str) -> str:
+    """The first prose paragraph of the README (headings and the severity line
+    skipped), whitespace-collapsed — a one-paragraph description; the name when
+    there is no README."""
+    import re as _re
+    for para in _re.split(r"\n\s*\n", readme_of(detector_name)):
+        para = para.strip()
+        if not para or para.startswith("#") or para.startswith("**Severity"):
+            continue
+        return " ".join(para.split())
+    return detector_name
+
+
+def help_uri_of(detector_name: str) -> str:
+    """Where a reader can learn what the detector means (its README on GitHub)."""
+    return _README_URL.format(name=detector_name)
+
+
 __all__ = [
     "DETECTORS",
+    "readme_of",
+    "description_of",
+    "help_uri_of",
     "xcontract",
     "SEVERITY_LEVELS",
     "DEFAULT_SEVERITY",

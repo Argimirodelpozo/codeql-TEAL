@@ -16,6 +16,51 @@ Two conjoined per-exit checks:
 
 If both hold, the exit is reported. The implementation uses `PathPredicateAnalysis` and the sender/creator guards owned by `_action_guards.py`.
 
+## How to fix
+
+On every path that can run DeleteApplication, pin `txn Sender` to an address the caller cannot choose and enforce it (`assert`, or branch to a rejection). Credited addresses: `global CreatorAddress`, `app_params_get AppCreator`, a constant address literal, and an admin address read from global state that only trusted paths write (credited under stated premises — the run reports an `authority-assumption` notification and `complete: false`). The guard may sit on the Delete branch even when the exit is shared, may be `Sender == A || Sender == B` with every leaf trusted, `Sender == Creator || OnCompletion != DeleteApplication`, a `!=`-then-reject, or a callee's verdict that THIS caller asserts. A comparison against a caller-supplied value (`txna ApplicationArgs N`) is not a check.
+
+<!-- verify: unprotected-deletable clean -->
+```teal
+#pragma version 10
+txn OnCompletion
+int DeleteApplication
+==
+bz done
+txn Sender
+global CreatorAddress
+==
+assert
+done:
+int 1
+return
+```
+
+Vulnerable counterpart:
+
+<!-- verify: unprotected-deletable finding -->
+```teal
+#pragma version 10
+txn OnCompletion
+int DeleteApplication
+==
+bz done
+// no sender check: any account can delete
+done:
+int 1
+return
+```
+
+```python
+assert Txn.sender == Global.creator_address
+```
+
+If anyone-can-delete is intended (e.g. governance enforced by a co-signed group transaction this detector does not model), suppress with `// tealql-ignore: unprotected-deletable` on the flagged exit line or the line above it, or record it in a baseline (`--update-baseline` / `--baseline PATH`).
+
+## False positives
+
+None documented. The A8 (creator pin returned through a `retsub` phi), A9 (phi of two separately computed trusted pins) and A10 (`assert(Sender == Creator || OC != UpdateApplication)`) classes in `docs/REVIEW_2026_10_10.md` are fixed. Authorisation that does not pin `txn Sender` — a multisig/lsig co-signer or a sibling transaction in the group — is not modelled and reads as absent.
+
 ## Examples
 
 Vulnerable — the detector flags this:

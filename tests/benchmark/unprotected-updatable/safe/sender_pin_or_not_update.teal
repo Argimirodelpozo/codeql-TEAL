@@ -1,0 +1,16 @@
+#pragma version 10
+// SAFE: assert(Sender == Creator || OC != UpdateApplication) — every Update
+// path is creator-checked.
+txn Sender
+global CreatorAddress
+==
+txn OnCompletion
+int UpdateApplication
+!=
+||
+assert
+byte "k"
+app_global_get
+pop
+int 1
+return

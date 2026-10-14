@@ -49,14 +49,40 @@ def _arc56_method_table(arc56):
         return None
 
 
-def _method_at(ranges, violation) -> Optional[str]:
-    """The ABI method name a violation sits in (by its source line), or ``None``."""
-    if not ranges:
+class _PartitionFallback:
+    """Lazily-built method partitions for one program (OPTIONAL enrichment:
+    any failure means no fallback attribution, never a broken scan)."""
+
+    def __init__(self, prog, file: str, method_table=None):
+        self.prog, self.file, self.method_table = prog, file, method_table
+        self._built = False
+        self._pp = None
+
+    def get(self):
+        if not self._built:
+            self._built = True
+            try:
+                from tealql.tealtools.cfg.partition import PartitionedPredicates
+                self._pp = PartitionedPredicates(
+                    self.prog, key="method", method_table=self.method_table)
+            except Exception:
+                self._pp = None
+        return self._pp
+
+
+def _method_at(ranges, violation, fallback: "_PartitionFallback | None" = None) -> Optional[str]:
+    """The ABI method name a violation sits in (by its source line), or ``None``;
+    when the line spans miss, the trace partitions may attribute it."""
+    if not ranges and fallback is None:
         return None
     try:
-        from tealql.tealtools.metadata.abi import method_at_line
+        from tealql.tealtools.metadata.abi import method_at_line_or_partition
         from .findings import violation_line
-        m = method_at_line(ranges, violation_line(violation))
+        line = violation_line(violation)
+        m = method_at_line_or_partition(ranges, line)
+        if m is None and fallback is not None and line is not None:
+            m = method_at_line_or_partition(
+                ranges, line, partitions=fallback.get(), file=fallback.file)
         return m.name if m is not None else None
     except Exception:
         return None
@@ -284,6 +310,10 @@ class ScanFinding:
     severity_override: Optional[str] = None  # set by scan from DetectionOptions
     # OPTIONAL — None on raw bytecode / non-ABI code; set by scan when available.
     method_name: Optional[str] = None
+    #: Source context around the anchored line (see ``suppress.anchor_text``):
+    #: what makes the baseline fingerprint distinguish two findings whose
+    #: messages differ only by line number. ``""`` for whole-program findings.
+    anchor: str = ""
 
     @property
     def severity(self) -> str:
@@ -313,11 +343,10 @@ class ScanFinding:
     @cached_property
     def _normalized(self):
         """Normalize to the stable versioned :class:`.findings.Finding` record."""
-        from .findings import normalize
-        return normalize(
-            self.violation, rule_id=self.detector_name,
-            rel_path=self.rel_path, severity=self.severity,
-            confidence=self.confidence, method=self.method_name,
+        from .findings import normalize_violation
+        return normalize_violation(
+            self.violation, self.detector_name, rel_path=self.rel_path,
+            method=self.method_name, severity_override=self.severity_override,
         )
 
     def to_finding(self):
@@ -342,15 +371,17 @@ class ScanNotification:
     message: str
     rel_path: Optional[str] = None
     detector: Optional[str] = None
+    line: Optional[int] = None
 
     def format(self) -> str:
-        where = f" {self.rel_path}" if self.rel_path else ""
+        where = (f" {self.rel_path}:{self.line}" if self.rel_path and self.line
+                 else f" {self.rel_path}" if self.rel_path else "")
         who = f" [{self.detector}]" if self.detector else ""
         return f"[DEGRADED]{where}{who}: {self.message}"
 
     def to_dict(self) -> dict:
         return {"kind": self.kind, "message": self.message,
-                "file": self.rel_path, "detector": self.detector}
+                "file": self.rel_path, "line": self.line, "detector": self.detector}
 
 
 @dataclass(frozen=True, init=False)
@@ -362,7 +393,7 @@ class ScanResults(AnalysisResult):
     def __init__(self, findings=(), notifications=()):
         notifications = tuple(notifications)
         super().__init__(tuple(findings), AnalysisHealth(tuple(
-            AnalysisDegradation(n.kind, n.message, n.rel_path, detector=n.detector)
+            AnalysisDegradation(n.kind, n.message, n.rel_path, n.line, detector=n.detector)
             for n in notifications)))
         object.__setattr__(self, 'notifications', notifications)
 
@@ -403,9 +434,43 @@ def scan(
     reconstructed is SKIPPED, both with a warning only. ``strict=True`` raises
     instead, so CI can refuse a clean bill for input that was never analyzed."""
     options = options or DetectionOptions()
-    method_table = _arc56_method_table(arc56)
     root = Path(root).resolve()
     by_dir = discover_teal_files(root)
+    return _scan_discovered(root, by_dir, options=options, strict=strict, arc56=arc56)
+
+
+def scan_target(
+    target: "str | Path",
+    *,
+    options: "Optional[DetectionOptions]" = None,
+    strict: bool = False,
+    arc56=None,
+) -> ScanResults:
+    """:func:`scan` for the CLI's universal ``<target>``: a directory (walked
+    recursively, paths relative to it) OR a single ``.teal`` file (scanned alone,
+    reported by basename).
+
+    :func:`discover_teal_files` deliberately refuses a file as a scan ROOT — a
+    mistyped CI root must not scan nothing and pass. A single file named
+    explicitly is a different intent, so it is honoured here without relaxing
+    that guard; a non-``.teal`` file still raises."""
+    path = Path(target).resolve()
+    if path.is_dir():
+        return scan(path, options=options, strict=strict, arc56=arc56)
+    if not path.exists():
+        raise TargetNotFoundError(f"target does not exist: {target}")
+    if path.suffix != ".teal":
+        raise TargetError(f"{target}: not a .teal file or a directory")
+    return _scan_discovered(path.parent, {path.parent: [path]},
+                            options=options or DetectionOptions(),
+                            strict=strict, arc56=arc56)
+
+
+def _scan_discovered(root: Path, by_dir: "dict[Path, list[Path]]", *,
+                     options: DetectionOptions, strict: bool, arc56) -> ScanResults:
+    """The scan proper over already-discovered files; ``rel_path`` is each
+    file's path relative to ``root``."""
+    method_table = _arc56_method_table(arc56)
     n_files = sum(len(v) for v in by_dir.values())
     logger.info("scan: %d .teal file(s) across %d director(ies) under %s",
                 n_files, len(by_dir), root)
@@ -455,7 +520,8 @@ def scan(
                     continue  # Detailed parse handling above preserves TealParseError.
                 if strict:
                     raise TealQLError(f'incomplete input {rel}: {degradation.message}')
-                notes.append(ScanNotification(degradation.code, degradation.message, str(rel)))
+                notes.append(ScanNotification(degradation.code, degradation.message, str(rel),
+                                              line=degradation.line))
             names = options.detectors_for(str(rel))
             try:
                 mode = options.mode_for(str(rel), prog=prog, file=teal.name)
@@ -472,6 +538,11 @@ def scan(
                         rel, mode or "unfiltered", len(names))
             # OPTIONAL: map each finding's line to the ABI method it sits in.
             method_ranges = _method_ranges_for(teal, method_table)
+            method_fallback = _PartitionFallback(prog, teal.name, method_table)
+            try:
+                source_lines = Path(teal).read_text(errors="ignore").splitlines()
+            except OSError:
+                source_lines = []
             for name in names:
                 cls = DETECTORS.get(name)
                 if cls is None:
@@ -514,10 +585,13 @@ def scan(
                         detector=name, message=degraded))
                 for v in violations:
                     try:
+                        from .findings import violation_line
+                        from .suppress import anchor_text
                         finding = ScanFinding(
                             rel_path=rel, detector_name=name, violation=v,
                             severity_override=sev,
-                            method_name=_method_at(method_ranges, v),
+                            method_name=_method_at(method_ranges, v, method_fallback),
+                            anchor=anchor_text(source_lines, violation_line(v)),
                         )
                         # Normalize once inside the failure boundary. All output
                         # formats then use the same validated finding snapshot.
@@ -574,49 +648,58 @@ def render_json(findings: ScanResults) -> str:
 
 
 def render_sarif(findings: ScanResults) -> str:
-    """SARIF 2.1.0 — the format GitHub code scanning / most CI dashboards ingest."""
-    from . import severity_of
+    """SARIF 2.1.0 — the format GitHub code scanning / most CI dashboards ingest.
+
+    Each result carries ``partialFingerprints`` (the v2 baseline fingerprint, so
+    code scanning dedups across commits the same way ``--baseline`` does), each
+    rule a ``helpUri`` + ``help`` (the detector README), and a whole-program
+    finding has NO region (SARIF allows an artifact-only location) plus
+    ``properties.wholeProgram`` — forcing it to line 1 made every such finding
+    look like a line-1 annotation."""
+    from . import description_of, help_uri_of, readme_of, severity_of
     from .findings import SCHEMA_VERSION
+    from .suppress import FINGERPRINT_VERSION, fingerprints
 
     # SARIF level is a 3-value scale; map our 5 onto it.
     _LEVEL = {"critical": "error", "high": "error", "medium": "warning",
               "low": "note", "informational": "note"}
 
-    detections_root = Path(__file__).resolve().parent / "detections"
-
-    def _readme(name: str) -> str:
-        # detections/<kebab>/README.md sits beside the detector module.
-        p = detections_root / name / "README.md"
-        try:
-            return p.read_text().strip() if p.exists() else name
-        except Exception:
-            return name
-
     rules: dict[str, dict] = {}
+    rule_index: dict[str, int] = {}
     results: list[dict] = []
-    for f in findings:
+    fps = fingerprints(findings)
+    for f, fp in zip(findings, fps):
         rid = f"sec-guide/{f.detector_name}"
         if rid not in rules:
-            rules[rid] = {
+            readme = readme_of(f.detector_name)
+            rule = {
                 "id": rid,
                 "name": f.detector_name,
                 "shortDescription": {"text": f.detector_name},
-                "fullDescription": {"text": _readme(f.detector_name).split("\n\n")[0][:1000]},
+                "fullDescription": {"text": description_of(f.detector_name)[:1000]},
+                "helpUri": help_uri_of(f.detector_name),
                 "defaultConfiguration": {"level": _LEVEL.get(severity_of(f.detector_name), "warning")},
             }
+            if readme:
+                rule["help"] = {"text": description_of(f.detector_name), "markdown": readme}
+            rule_index[rid] = len(rules)
+            rules[rid] = rule
         fnd = f.to_finding()
-        region = {"startLine": fnd.line} if fnd.line else {"startLine": 1}
-        physical = {
-            "artifactLocation": {"uri": fnd.file or str(f.rel_path)},
-            "region": region,
-        }
+        physical: dict = {"artifactLocation": {"uri": (fnd.file or str(f.rel_path)).replace("\\", "/")}}
+        if fnd.line:
+            physical["region"] = {"startLine": fnd.line}
+        props = {"confidence": f.confidence, "severity": f.severity,
+                 **({"method": fnd.method} if fnd.method else {})}
+        if not fnd.line:
+            props["wholeProgram"] = True
         result = {
             "ruleId": rid,
+            "ruleIndex": rule_index[rid],
             "level": _LEVEL.get(f.severity, "warning"),
             "message": {"text": fnd.message},
             "locations": [{"physicalLocation": physical}],
-            "properties": {"confidence": f.confidence, "severity": f.severity,
-                           **({"method": fnd.method} if fnd.method else {})},
+            "partialFingerprints": {f"tealqlFingerprint/v{FINGERPRINT_VERSION}": fp},
+            "properties": props,
         }
         if fnd.witness and fnd.witness.get("sources"):
             # HAZARD: every threadFlowLocation MUST carry a physicalLocation or a
@@ -646,8 +729,9 @@ def render_sarif(findings: ScanResults) -> str:
                 "message": {"text": n.format()},
                 "descriptor": {"id": n.kind},
                 **({"locations": [{"physicalLocation": {
-                    "artifactLocation": {"uri": n.rel_path}}}]}
-                   if n.rel_path else {}),
+                    "artifactLocation": {"uri": n.rel_path},
+                    **({"region": {"startLine": n.line}} if n.line else {}),
+                }}]} if n.rel_path else {}),
             }
             for n in notes
         ]
@@ -663,7 +747,8 @@ def render_sarif(findings: ScanResults) -> str:
             }},
             "invocations": [invocation],
             "results": results,
-            "properties": {"tealqlSchemaVersion": SCHEMA_VERSION},
+            "properties": {"tealqlSchemaVersion": SCHEMA_VERSION,
+                           "fingerprintVersion": FINGERPRINT_VERSION},
         }],
     }
     return json.dumps(doc, indent=2)

@@ -35,6 +35,8 @@ class AssetIdValidationDetector(_ApprovalExitProtectedDetector):
     # asset — a delegated-logicsig concern.
     applies_to = frozenset({"logicsig"})
     violation_cls = AssetIdValidationViolation
+    # Pinned to a constant id: `XferAsset != 0` / `== arg 0` pin nothing.
+    safe_value = "constant-pin"
     # The transfer is usually a SIBLING axfer, so the pin lives on
     # `gtxn N XferAsset` rather than `txn XferAsset`; seed both.
     seed_gtxn = True

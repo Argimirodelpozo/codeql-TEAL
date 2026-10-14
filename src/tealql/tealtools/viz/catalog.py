@@ -116,6 +116,15 @@ class VisualizationContext:
         return self.cached("path-predicates", lambda: PathPredicateAnalysis(self.prog))
 
     @property
+    def partitioned_predicates(self):
+        from ..cfg.partition import PartitionedPredicates
+
+        return self.cached(
+            "path-predicates-partitioned",
+            lambda: PartitionedPredicates(self.prog, key="both", base=self.path_predicates),
+        )
+
+    @property
     def taint_graph(self):
         from ..dataflow.taint_graph import TaintGraph
 
@@ -386,6 +395,14 @@ def _path_dot(ctx: VisualizationContext) -> str:
         if preds
     }
     return annotated_cfg_dot(ctx.prog, annotations, title="path predicates in force")
+
+
+def _partition_dot(ctx: VisualizationContext) -> str:
+    from .graphs import annotated_cfg_dot
+
+    pp = ctx.partitioned_predicates
+    return annotated_cfg_dot(ctx.prog, pp.annotations(),
+                             title=f"path predicates partitioned by {pp.key}")
 
 
 def _dominance_text(ctx: VisualizationContext) -> str:
@@ -1216,6 +1233,12 @@ def _build_catalog() -> tuple[ViewSpec, ...]:
         ViewSpec("analysis.path_predicates", "Path predicates", ViewKind.ANALYSIS,
                  "Predicates true on every path reaching each block.",
                  lambda c: c.path_predicates.render(), _path_dot),
+        ViewSpec("analysis.path_predicates_partitioned",
+                 "Path predicates by method/OnCompletion", ViewKind.ANALYSIS,
+                 "Predicates per dispatch partition (ABI method x OnCompletion); "
+                 "joins only within a partition, budget-collapsed blocks listed.",
+                 lambda c: c.partitioned_predicates.render(),
+                 _partition_dot),
         ViewSpec("analysis.group", "Atomic-group constraints", ViewKind.ANALYSIS,
                  "Common, per-exit, and per-position group shapes.",
                  _group_text, _group_dot),

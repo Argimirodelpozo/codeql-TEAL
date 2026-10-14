@@ -22,3 +22,5 @@ class RekeyToDetector(_ApprovalExitProtectedDetector):
     applies_to = frozenset({"logicsig"})
     signed_txn = True   # only the SIGNED txn's own field protects the signer
     violation_cls = RekeyToViolation
+    # `RekeyTo != Sender` compares the field and pins nothing.
+    safe_value = "address-pin"

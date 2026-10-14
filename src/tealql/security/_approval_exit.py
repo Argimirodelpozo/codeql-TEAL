@@ -60,6 +60,9 @@ class _ApprovalExitProtectedDetector:
     # Delegated-LOGICSIG drain fields: the check must read the SIGNED txn's OWN
     # field, since a bare sibling `gtxn N` protects the signer from nothing.
     signed_txn: ClassVar[bool] = False
+    # A ``_field_protection.SAFE_RULES`` key: the check must constrain the
+    # field to a SAFE value, not merely compare it. ``None`` = any comparison.
+    safe_value: ClassVar[Optional[str]] = None
 
     def __init__(self, prog: SSAProgram, *, file: Optional[str] = None):
         self.prog = prog
@@ -79,11 +82,12 @@ class _ApprovalExitProtectedDetector:
         ):
             if self.signed_txn:
                 protected = approval_exit_protected_for_signed_txn_field(
-                    self.prog, exit_bb, self.field, file=self.file)
+                    self.prog, exit_bb, self.field, file=self.file,
+                    safe=self.safe_value)
             else:
                 protected = approval_exit_protected_for_field(
                     self.prog, exit_bb, self.field, file=self.file,
-                    include_gtxn=self.seed_gtxn)
+                    include_gtxn=self.seed_gtxn, safe=self.safe_value)
             if not protected:
                 out.append(self.violation_cls(exit_bb))
         return out

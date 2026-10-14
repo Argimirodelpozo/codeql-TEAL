@@ -36,7 +36,27 @@ def test_byte_taint_fallback_channel_follows_output_type():
              "txnas Accounts\nextract 0 32\n" + _PAY_TAIL)
     assert _fires_high(sha256), "control: sha256 digest slice must fire"
     assert _fires_high(sha512), "sha512 digest slice read as clean"
-    assert _fires_high(txnas), "Accounts[attacker index] slice read as clean"
+    # The coarse `tainted-fund-flow` now owns the `txnas` sink (its leaf
+    # coverage sees the attacker-indexed `Accounts` read as an uncovered leaf
+    # of its own, 2026-10-10) and the partial detector yields ownership, so
+    # the byte channel is measured on the engine it pins, not through the
+    # detector that no longer reports it.
+    from tealql.tealtools.lift import build_lifter, fund_flow
+    from tealql.tealtools.dataflow.byte_taint import byte_taint_view
+    from tealql.tealtools.language.avm import PAYMENT_FUND_FIELDS
+    prog = SSAProgram.from_text(txnas, name="t")
+    prog.propagate_constants()
+    lifter = build_lifter(prog)
+    view = byte_taint_view(lifter)
+    byte_map = {id(r): {"attacker-bytes"} for r in lifter.register_objects.values()
+                if view.tainted_bytes(r) or view.is_scalar_tainted(r)}
+    acct = next(o.targets[0] for b in fund_flow.pre_ir.blocks(lifter.subs) for o in b.ops
+                if fund_flow._intr(o) is not None and fund_flow._intr(o).op == "txnas")
+    assert view.tainted_bytes(acct), "Accounts[attacker index] slice read as clean"
+    raw = fund_flow.tainted_itxn_flows(lifter, PAYMENT_FUND_FIELDS, taint=byte_map,
+                                       sender_only=True)
+    assert [f for f in raw if f.field == "Receiver" and not f.guarded
+            and f.severity == "HIGH"], "byte-tainted Receiver must be an unguarded HIGH"
 
     # Engine view: the digest carries its true width (64), not the hash list's 32.
     from tealql.tealtools.dataflow.byte_taint import byte_taint

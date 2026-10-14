@@ -852,7 +852,7 @@ requires-dist = [
     { name = "pytest-xdist", marker = "extra == 'dev'" },
     { name = "pyyaml", specifier = ">=6" },
     { name = "tree-sitter", specifier = ">=0.25,<0.26" },
-    { name = "tree-sitter-teal", git = "https://github.com/Argimirodelpozo/tree-sitter-teal.git?rev=4468a5acb379de12efd77ee4ddcb755fa054b24f" },
+    { name = "tree-sitter-teal", git = "https://github.com/Argimirodelpozo/tree-sitter-teal.git?rev=81f7a4b245822a6a739cdab7031ba5363bf3d163" },
 ]
 provides-extras = ["lift", "dev", "behavioral"]
 
@@ -887,8 +887,8 @@ wheels = [
 
 [[package]]
 name = "tree-sitter-teal"
-version = "0.1.0"
-source = { git = "https://github.com/Argimirodelpozo/tree-sitter-teal.git?rev=4468a5acb379de12efd77ee4ddcb755fa054b24f#4468a5acb379de12efd77ee4ddcb755fa054b24f" }
+version = "0.2.0"
+source = { git = "https://github.com/Argimirodelpozo/tree-sitter-teal.git?rev=81f7a4b245822a6a739cdab7031ba5363bf3d163#81f7a4b245822a6a739cdab7031ba5363bf3d163" }
 
 [[package]]
 name = "typing-extensions"

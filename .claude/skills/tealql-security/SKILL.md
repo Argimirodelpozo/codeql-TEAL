@@ -12,6 +12,29 @@ description: >-
 
 # tealql — TEAL/Algorand security analysis
 
+**Fastest path (one call each):**
+
+```
+tealql brief app.teal              # the contract brief: version/mode, ABI methods, lifecycle
+                                   # (updatable/deletable + creator-gated?), storage schema,
+                                   # inner txns, forced group shape, attack surface WITH
+                                   # verdicts, findings, health. --json for the structured form.
+tealql explain app.teal --line 158 # one TEAL line: source window, high-level origin, ABI
+                                   # method, dominating predicates, attacker inputs reaching
+                                   # it, sinks it reaches
+tealql diff old.teal new.teal      # findings added/removed between revisions (line- and
+                                   # filename-insensitive) + bounded semantic equivalence;
+                                   # exit 1 only on NEW findings
+```
+
+If an MCP client is available, prefer the tools (`tealql mcp`; Claude Code reads
+the repo's `.mcp.json`): `tealql_brief`, `tealql_verify_sinks`, `tealql_analyze`,
+`tealql_taint_query`, `tealql_source_context`, `tealql_decompile`, `tealql_diff`,
+`tealql_methods`, `tealql_storage_schema`, `tealql_inner_transactions`,
+`tealql_group_shape`, `tealql_list_detectors`, `tealql_audit_app`. Every payload
+carries `complete` + `notifications`; `complete: false` means part of the
+analysis did not run and absence of findings there is not evidence of safety.
+
 `tealql` is a pure-Python static-analysis toolkit for Algorand TEAL. It
 reconstructs SSA from raw `.teal` (no source needed) and lifts it to a
 Puya-shaped IR — the lift itself is dependency-free; only the *typed* audits
@@ -98,17 +121,25 @@ Prefer this over eyeballing `taint-query` output against a separate
 
 ```
 tealql detections app.teal --all --mode app   # every detector that applies to an app
-tealql detections app.teal --detector ir-tainted-fund-flow
-tealql detections --list                      # names of all ~36 detectors
+tealql detections app.teal --all --mode auto  # classify app/logicsig by opcode, per program
+tealql detections app.teal --detector tainted-fund-flow
+tealql detections --list                      # names of all 32 detectors
 tealql detections-scan ./contracts/ --json    # recursively scan a tree
+tealql detections-scan ./contracts/ --format sarif   # SARIF 2.1.0 with partialFingerprints
 ```
+
+`--json` on `detections` / `all` / `detections-scan` emits the versioned finding
+record `{rule_id, severity, confidence, message, file, line[, method][, witness]
+[, details]}` plus `complete` / `notifications`. `taint-query --json` is an
+envelope too: `{complete, notifications, query, hits | verdicts | sources}`; it
+exits 2 when the input was only partially analysed.
 
 Detectors encode both the sink AND the guard reasoning (sender auth, receiver
 pins, group-index pinning, type exclusion), so their findings are verdicts, not
-just reachability. Notable ones: `ir-tainted-fund-flow` (attacker input → inner
+just reachability. Notable ones: `tainted-fund-flow` (attacker input → inner
 payment/close/rekey, guard-aware), `unvalidated-group-sibling` (trusts a sibling
 transfer's value without pinning its receiver), `rekey-to` / `close-remainder-to`
-/ `asset-close-to` (delegated-lsig drain fields), `ir-tainted-state-write`
+/ `asset-close-to` (delegated-lsig drain fields), `tainted-state-write`
 (attacker picks a state-write key).
 
 **Mode matters.** Several detectors only make sense for a delegated LogicSig
@@ -186,7 +217,7 @@ for v in verify_sinks(prog, precise=True):
 
 # run a specific detector:
 from tealql.security import DETECTORS
-findings = DETECTORS["ir-tainted-fund-flow"](prog, file="app.teal").detect()
+findings = DETECTORS["tainted-fund-flow"](prog, file="app.teal").detect()
 ```
 
 Other useful modules: `tealql.tealtools.group_reasoning` (`analyze`,
@@ -194,6 +225,14 @@ Other useful modules: `tealql.tealtools.group_reasoning` (`analyze`,
 forces), `tealql.tealtools.dataflow.bounds` (`check_bounds` — in-bounds proofs for
 `extract`/`substring`), `tealql.tealtools.arc56` (`load` an ARC-56 spec),
 `tealql.tealtools.source_map` (`source_map_for` — TEAL ↔ high-level lines).
+
+## Python API for agents (no CLI parsing)
+
+```python
+from tealql.agent.tools import call_tool, TOOLS          # same tools the MCP server serves
+brief = call_tool("tealql_brief", {"target": "app.teal"})
+ctx = call_tool("tealql_source_context", {"target": "app.teal", "line": 158})
+```
 
 ## Workflow for a free-form question
 

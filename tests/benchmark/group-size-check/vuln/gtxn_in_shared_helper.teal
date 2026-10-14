@@ -1,0 +1,28 @@
+#pragma version 6
+// VULNERABLE: "credit" calls a helper that reads the absolute sibling gtxn 0
+// and never bounds GroupSize; the read happens inside the subroutine, so the
+// exit is on an absolute-gtxn path only through the call.
+txn ApplicationID
+bz create
+txna ApplicationArgs 0
+byte "credit"
+==
+bnz credit
+err
+credit:
+callsub read_payment
+byte "total"
+swap
+app_global_put
+int 1
+return
+read_payment:
+gtxn 0 Receiver
+global CurrentApplicationAddress
+==
+assert
+gtxn 0 Amount
+retsub
+create:
+int 1
+return

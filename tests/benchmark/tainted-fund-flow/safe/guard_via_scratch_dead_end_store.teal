@@ -1,0 +1,27 @@
+#pragma version 10
+// SAFE (FP probe): guard result round-trips through slot 0, slot 0 ALSO written in a dead-end branch
+txn Sender
+global CreatorAddress
+==
+store 0
+txn NumAppArgs
+int 5
+==
+bz go
+int 0
+store 0
+int 0
+return
+go:
+load 0
+assert
+itxn_begin
+int pay
+itxn_field TypeEnum
+txna Accounts 1
+itxn_field Receiver
+int 1000
+itxn_field Amount
+itxn_submit
+int 1
+return

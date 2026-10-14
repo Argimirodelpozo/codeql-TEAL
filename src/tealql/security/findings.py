@@ -116,3 +116,27 @@ def normalize(
         file=file, line=line, method=method,
         witness=_extract_witness(violation), _extra=extra,
     )
+
+
+def normalize_violation(
+    violation,
+    detector_name: str,
+    *,
+    rel_path: "str | Path | None" = None,
+    method: Optional[str] = None,
+    severity_override: Optional[str] = None,
+) -> Finding:
+    """:func:`normalize` with the STANDARD severity/confidence resolution every
+    output path must agree on: an explicit override, else the violation's own
+    ``severity`` when valid (the lifted taint family grades per sink field), else
+    the detector's declared class severity; confidence is always class-level."""
+    from . import SEVERITY_LEVELS, confidence_of, severity_of
+    if severity_override is not None:
+        severity = severity_override
+    else:
+        own = getattr(violation, "severity", None)
+        severity = (own.lower() if isinstance(own, str) and own.lower() in SEVERITY_LEVELS
+                    else severity_of(detector_name))
+    return normalize(violation, rule_id=detector_name, rel_path=rel_path,
+                     severity=severity, confidence=confidence_of(detector_name),
+                     method=method)

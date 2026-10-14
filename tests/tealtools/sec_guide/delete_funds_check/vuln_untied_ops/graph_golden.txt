@@ -1,5 +1,5 @@
 ## nodes
-prog.teal	1	0	29	6	Source
+prog.teal	1	0	38	6	Source
 prog.teal	7	0	7	16	TxnOpcode
 prog.teal	8	0	8	5	SingleNumericArgumentOpcode
 prog.teal	9	0	9	2	EqualsComparisonOpcode
@@ -13,21 +13,29 @@ prog.teal	17	0	17	32	GlobalOpcode
 prog.teal	18	0	18	11	MinBalanceOpcode
 prog.teal	19	0	19	4	ItobOpcode
 prog.teal	20	0	20	3	LogOpcode
-prog.teal	21	0	21	5	SingleNumericArgumentOpcode
-prog.teal	22	0	22	6	ReturnOpcode
-prog.teal	23	0	23	15	Label
-prog.teal	24	0	24	10	TxnOpcode
-prog.teal	25	0	25	21	GlobalOpcode
-prog.teal	26	0	26	2	EqualsComparisonOpcode
-prog.teal	27	0	27	6	AssertOpcode
-prog.teal	28	0	28	5	SingleNumericArgumentOpcode
-prog.teal	29	0	29	6	ReturnOpcode
+prog.teal	22	0	22	10	InnerTransactionBegin
+prog.teal	23	0	23	7	SingleNumericArgumentOpcode
+prog.teal	24	0	24	19	InnerTransactionField
+prog.teal	25	0	25	10	TxnOpcode
+prog.teal	26	0	26	19	InnerTransactionField
+prog.teal	27	0	27	8	SingleNumericArgumentOpcode
+prog.teal	28	0	28	17	InnerTransactionField
+prog.teal	29	0	29	11	InnerTransactionSubmit
+prog.teal	30	0	30	5	SingleNumericArgumentOpcode
+prog.teal	31	0	31	6	ReturnOpcode
+prog.teal	32	0	32	15	Label
+prog.teal	33	0	33	10	TxnOpcode
+prog.teal	34	0	34	21	GlobalOpcode
+prog.teal	35	0	35	2	EqualsComparisonOpcode
+prog.teal	36	0	36	6	AssertOpcode
+prog.teal	37	0	37	5	SingleNumericArgumentOpcode
+prog.teal	38	0	38	6	ReturnOpcode
 ## cfgEdges
 prog.teal	7	prog.teal	8	normal
 prog.teal	8	prog.teal	9	normal
 prog.teal	9	prog.teal	10	normal
 prog.teal	10	prog.teal	12	false
-prog.teal	10	prog.teal	23	true
+prog.teal	10	prog.teal	32	true
 prog.teal	12	prog.teal	13	normal
 prog.teal	13	prog.teal	14	normal
 prog.teal	14	prog.teal	15	normal
@@ -36,14 +44,22 @@ prog.teal	16	prog.teal	17	true
 prog.teal	17	prog.teal	18	normal
 prog.teal	18	prog.teal	19	normal
 prog.teal	19	prog.teal	20	normal
-prog.teal	20	prog.teal	21	normal
-prog.teal	21	prog.teal	22	normal
+prog.teal	20	prog.teal	22	normal
+prog.teal	22	prog.teal	23	normal
 prog.teal	23	prog.teal	24	normal
 prog.teal	24	prog.teal	25	normal
 prog.teal	25	prog.teal	26	normal
 prog.teal	26	prog.teal	27	normal
-prog.teal	27	prog.teal	28	true
+prog.teal	27	prog.teal	28	normal
 prog.teal	28	prog.teal	29	normal
+prog.teal	29	prog.teal	30	normal
+prog.teal	30	prog.teal	31	normal
+prog.teal	32	prog.teal	33	normal
+prog.teal	33	prog.teal	34	normal
+prog.teal	34	prog.teal	35	normal
+prog.teal	35	prog.teal	36	normal
+prog.teal	36	prog.teal	37	true
+prog.teal	37	prog.teal	38	normal
 ## basicBlocks
 prog.teal	7	7	10
 prog.teal	8	7	10
@@ -54,16 +70,24 @@ prog.teal	13	12	16
 prog.teal	14	12	16
 prog.teal	15	12	16
 prog.teal	16	12	16
-prog.teal	17	17	22
-prog.teal	18	17	22
-prog.teal	19	17	22
-prog.teal	20	17	22
-prog.teal	21	17	22
-prog.teal	22	17	22
-prog.teal	23	23	27
-prog.teal	24	23	27
-prog.teal	25	23	27
-prog.teal	26	23	27
-prog.teal	27	23	27
-prog.teal	28	28	29
-prog.teal	29	28	29
+prog.teal	17	17	29
+prog.teal	18	17	29
+prog.teal	19	17	29
+prog.teal	20	17	29
+prog.teal	22	17	29
+prog.teal	23	17	29
+prog.teal	24	17	29
+prog.teal	25	17	29
+prog.teal	26	17	29
+prog.teal	27	17	29
+prog.teal	28	17	29
+prog.teal	29	17	29
+prog.teal	30	30	31
+prog.teal	31	30	31
+prog.teal	32	32	36
+prog.teal	33	32	36
+prog.teal	34	32	36
+prog.teal	35	32	36
+prog.teal	36	32	36
+prog.teal	37	37	38
+prog.teal	38	37	38

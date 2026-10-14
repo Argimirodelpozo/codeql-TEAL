@@ -33,6 +33,61 @@ A taint analysis over `tealql.tealtools.dataflow.TaintAnalysis`:
 A finding means a tainted `AssetName` reached a box key along one of
 those paths.
 
+## How to fix
+
+Mix a unique, non-constant discriminator — the asset id, the creator address, an
+app-assigned counter — into the key with `concat` before `box_create` /
+`box_put`. Hashing, slicing or concatenating a constant does not break the flow.
+
+<!-- verify: box-key clean -->
+```teal
+#pragma version 10
+// key = itob(asset id) ++ AssetName: the id makes the key unique
+txna ApplicationArgs 0
+btoi
+dup
+itob
+swap
+asset_params_get AssetName
+assert
+concat
+int 64
+box_create
+pop
+int 1
+return
+```
+
+<!-- verify: box-key finding -->
+```teal
+#pragma version 10
+// VULNERABLE: two ASAs with the same name share one box
+txna ApplicationArgs 0
+btoi
+asset_params_get AssetName
+assert
+int 64
+box_create
+pop
+int 1
+return
+```
+
+```python
+key = op.itob(asset.id) + asset.name
+```
+
+Suppress an intended finding with `// tealql-ignore: box-key` on the flagged
+`box_create` / `box_put` line (or the line above), or record it in a baseline
+(`--update-baseline` / `--baseline PATH`).
+
+## False positives
+
+None documented. The flow is followed through hashes, slices, constant
+`concat` and a global-state round trip (`cross_state=True`), so a name stored
+and later re-read as a key still flags. Conversely, `concat` with ANY
+non-constant value breaks the flow, whether or not that value is unique.
+
 ## Examples
 
 Vulnerable — the detector flags this:

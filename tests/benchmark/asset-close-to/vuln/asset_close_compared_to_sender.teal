@@ -1,0 +1,13 @@
+#pragma version 8
+// VULNERABLE: AssetCloseTo is compared to the sender, not pinned to
+// ZeroAddress — any other close target passes.
+txn TypeEnum
+int axfer
+==
+assert
+txn AssetCloseTo
+txn Sender
+!=
+assert
+int 1
+return

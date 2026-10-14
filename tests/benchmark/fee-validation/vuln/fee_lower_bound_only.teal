@@ -1,0 +1,11 @@
+#pragma version 8
+// VULNERABLE: `Fee > 0` is a LOWER bound — the submitter can still set an
+// enormous fee and drain the signer.
+txn Fee
+int 0
+>
+assert
+txn TypeEnum
+int pay
+==
+return

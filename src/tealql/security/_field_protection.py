@@ -10,8 +10,10 @@ from __future__ import annotations
 
 from typing import Optional
 
+from tealql.tealtools.analysis.guard_coverage import counterpart_credits, every
 from tealql.tealtools.language.avm import CMP_OPS
-from tealql.tealtools.ssa import Assignment, BasicBlock, SSAProgram, SSAVar
+from tealql.tealtools.ssa import (Assignment, BasicBlock, SSAProgram, SSAVar,
+                                  operand_const)
 
 from ._enforcement import (
     _DISJUNCTION_OPS,
@@ -119,14 +121,111 @@ def _collect_disequality_pin_bbs(
                                                    scratch_fwd)
 
 
+#: SAFE-VALUE rules for field enforcement (``safe=`` below). A field check
+#: protects only when it constrains the field to a value that is safe for
+#: that field — merely COMPARING it is not enough: ``RekeyTo != Sender``,
+#: ``Fee > 0``, ``GroupSize >= K`` and ``XferAsset != 0`` all "compare" the
+#: field and leave it attacker-chosen.
+#:
+#: ``address-pin``  — ``== ZeroAddress`` / a fixed (constant) address;
+#: ``upper-bound``  — ``==``/``<``/``<=`` a trusted scalar, or ``!field``;
+#: ``constant-pin`` — ``==`` a trusted scalar;
+#: ``size-bound``   — ``==``/``<``/``<=`` a trusted scalar.
+#: A ``!=`` counts only as a PIN — and, for the bound rules, ``>``/``>=`` only
+#: as an upper bound — when its TRUTH rejects (``Fee > K; bnz reject``), via
+#: the polarity-aware collector.
+SAFE_RULES = {
+    "address-pin": frozenset({"==", "b=="}),
+    "upper-bound": frozenset({"==", "<", "<="}),
+    "constant-pin": frozenset({"=="}),
+    "size-bound": frozenset({"==", "<", "<="}),
+}
+_FLIP = {"<": ">", ">": "<", "<=": ">=", ">=": "<=", "==": "==", "!=": "!=",
+         "b==": "b==", "b!=": "b!="}
+_TRUSTED_SCALAR_OPS = frozenset({"+", "-", "*", "/", "itob", "btoi", "addw", "mulw"})
+_TRUSTED_GLOBALS = frozenset({"ZeroAddress", "MinTxnFee", "MinBalance",
+                              "CreatorAddress", "CurrentApplicationAddress",
+                              "CurrentApplicationID"})
+
+
+def _trusted_scalar(prog: SSAProgram, v, depth: int = 0) -> bool:
+    """``v`` is a value no transaction field or argument can choose: a
+    constant, a protocol/app-identity ``global``, the app's own global state
+    under a constant key, or arithmetic over those."""
+    from ._value_flow import resolve_through_copies
+    v = resolve_through_copies(prog, v)
+    if operand_const(v) is not None:
+        return True
+    d = getattr(v, "defined_by", None)
+    if d is None or depth > 8:
+        return False
+    if d.op == "global" and not d.inputs:
+        return d.immediates.strip() in _TRUSTED_GLOBALS
+    if d.op in ("app_global_get", "app_global_get_ex") and d.inputs:
+        # The app's OWN global state under a constant key (a configured
+        # asset id / fee cap): an `_ex` read must name the current app.
+        if operand_const(resolve_through_copies(prog, d.inputs[0])) is None:
+            return False
+        if d.op == "app_global_get_ex":
+            from tealql.tealtools.ssa import const_int
+            app = resolve_through_copies(prog, d.inputs[1])
+            ad = getattr(app, "defined_by", None)
+            return const_int(app) == 0 or (
+                ad is not None and ad.op == "global"
+                and ad.immediates.strip() == "CurrentApplicationID")
+        return True
+    if d.op in _TRUSTED_SCALAR_OPS and d.inputs:
+        return all(_trusted_scalar(prog, i, depth + 1) for i in d.inputs)
+    return False
+
+
+def _safe_field_comparison(prog: SSAProgram, cmp: Assignment, flows: list,
+                           rule: str) -> "Optional[str]":
+    """How ``cmp`` constrains the field under ``rule``: ``"truth"`` (its truth
+    is the safe constraint), ``"reject-true"`` (its truth must REJECT: a
+    ``!=`` pin, or ``>``/``>=`` for the bound rules), or ``None`` (not a safe
+    constraint at all)."""
+    if cmp.op == "!":
+        return "truth" if rule == "upper-bound" else None
+    if len(cmp.inputs) != 2 or sum(flows) != 1:
+        return None
+    from tealql.tealtools.ssa import binary_operands
+    lhs, rhs = binary_operands(cmp)
+    field_left = flows[1]                      # inputs are TOP-FIRST
+    other = rhs if field_left else lhs
+    op = cmp.op if field_left else _FLIP.get(cmp.op)
+    if op is None or not _trusted_scalar(prog, other):
+        return None
+    if rule == "address-pin":
+        k = operand_const(other)
+        if k is not None and k.kind != "bytes":
+            return None
+    if op in ("!=", "b!="):
+        return "reject-true"
+    if op in (">", ">=") and rule in ("upper-bound", "size-bound"):
+        return "reject-true"
+    return "truth" if op in SAFE_RULES[rule] else None
+
+
 def _field_enforcement_bbs(
     prog: SSAProgram, field_vars: set, *, file: Optional[str],
     allow_unary_cmp: bool = False,
+    trusted_other: Optional[frozenset] = None,
+    safe: Optional[str] = None,
 ) -> set:
     """BBs ENFORCING a comparison that consumes a field seed; empty when the field
     is never compared, or compared but never enforced. ``allow_unary_cmp`` also
     accepts a 1-input comparison (field against an inlined literal, e.g. an ABI
-    selector)."""
+    selector).
+
+    ``trusted_other`` (when given) is a POSITIVE set of seeds the comparison's
+    OTHER operand must be a constant or provably flow from, else the comparison
+    is not a gate: ``ApplicationArgs 0 == ApplicationArgs 1; assert`` is
+    enforced, but the caller supplies BOTH sides, so any selector passes. The
+    default (``None``) keeps the value-agnostic reading.
+
+    ``safe`` (a :data:`SAFE_RULES` key) demands the comparison constrain the
+    field to a SAFE value — see the table there."""
     revision = getattr(prog, "revision", 0)
     cached = getattr(prog, "_sec_field_enforcement", None)
     if cached is None or cached[0] != revision:
@@ -135,7 +234,7 @@ def _field_enforcement_bbs(
             prog._sec_field_enforcement = cached
         except AttributeError:  # only if SSAProgram ever gains __slots__
             pass
-    key = (frozenset(field_vars), file, allow_unary_cmp)
+    key = (frozenset(field_vars), file, allow_unary_cmp, trusted_other, safe)
     if key in cached[1]:
         return cached[1][key]
 
@@ -159,13 +258,49 @@ def _field_enforcement_bbs(
             continue
         if not isinstance(cmp.outputs[0], SSAVar):
             continue
-        if not any(_operand_flows_from_field_var(prog, op, field_vars)
-                   for op in cmp.inputs):
+        flows = [_operand_flows_from_field_var(prog, op, field_vars)
+                 for op in cmp.inputs]
+        if not any(flows):
             continue
+        if trusted_other is not None and n_in == 2:
+            # The walker's input-vs-input rule: every counterpart (and at
+            # least one — both sides from the field, `sel == sel`, is
+            # vacuous) must be a constant or provably non-caller-chosen.
+            if not every(counterpart_credits(
+                    op, constant=lambda o: operand_const(o) is not None,
+                    dependent=lambda o: not _operand_flows_from_field_var(
+                        prog, o, trusted_other))
+                    for op, f in zip(cmp.inputs, flows) if not f):
+                continue
+        if safe is not None:
+            how = _safe_field_comparison(prog, cmp, flows, safe)
+            if how is None:
+                continue
+            if how == "reject-true":
+                _collect_disequality_pin_bbs(prog, cmp.outputs[0], label_lines,
+                                             out, set(), scratch_fwd)
+                continue
         _collect_field_enforcement_bbs(prog, cmp.outputs[0], label_lines, out,
                                        set(), scratch_fwd, field_vars)
     cached[1][key] = out
     return out
+
+
+#: Reads whose VALUE the caller of an app call cannot choose: the app's own
+#: state, boxes and protocol globals. The positive set a dynamically computed
+#: "expected selector" must flow from (the same philosophy as
+#: ``unvalidated_group_sibling._safe_receiver_targets``: an unmodelled source
+#: fails SAFE, i.e. the comparison is not credited and the exit stays flagged).
+_NON_CALLER_VALUE_OPS = frozenset({
+    "app_global_get", "app_global_get_ex", "app_local_get", "app_local_get_ex",
+    "box_get", "box_extract", "global",
+})
+
+
+def _non_caller_value_seeds(prog: SSAProgram, *, file: Optional[str]) -> frozenset:
+    return frozenset(ssavar_outputs(
+        a for a in prog.assignments
+        if a.op in _NON_CALLER_VALUE_OPS and file_match(a.location.file, file)))
 
 
 def _all_entry_paths_cross(
@@ -182,14 +317,26 @@ def _all_entry_paths_cross(
 
 def _pinned_group_index(prog, *, file: Optional[str] = None) -> Optional[int]:
     """The value ``txn GroupIndex`` is pinned to on EVERY approving path, else
-    ``None`` — any failure yields ``None``, crediting nothing as position-certain."""
+    ``None`` — any failure yields ``None``, crediting nothing as position-certain.
+
+    ``global GroupSize == 1`` pins it too: a one-txn group has only position
+    0, so ``gtxn 0 FIELD`` under that check IS the signer's own field — the
+    commonest hand-written logicsig prologue, which read as an unpinned
+    sibling read and flagged every drain-field check spelled ``gtxn 0``."""
     try:
         from tealql.tealtools.cfg import group as G
         from tealql.tealtools.ssa import const_int
+        size_one = False
         for c in G.analyze(prog).constraints:
-            if (c.ref.slot == "this" and c.ref.field == "GroupIndex"
-                    and c.op == "=="):
+            if c.op != "==":
+                continue
+            if c.ref.slot == "this" and c.ref.field == "GroupIndex":
                 return const_int(c.rhs)
+            if (c.ref.slot == "global" and c.ref.field == "GroupSize"
+                    and const_int(c.rhs) == 1):
+                size_one = True
+        if size_one:
+            return 0
     except Exception:
         pass
     return None
@@ -231,7 +378,7 @@ def _signed_txn_field_reads(prog, field: str, *, file: Optional[str] = None) -> 
 
 def field_validated_on_all_paths(
     prog: SSAProgram, field: str, *, file: Optional[str] = None,
-    signed_txn_only: bool = False,
+    signed_txn_only: bool = False, safe: Optional[str] = None,
 ) -> bool:
     """The field is enforced on EVERY approving path (must-reach, seeded on the
     ENFORCEMENT SITE rather than the comparison).
@@ -248,7 +395,7 @@ def field_validated_on_all_paths(
     field_vars = {out for a in reads for out in a.outputs if isinstance(out, SSAVar)}
     if not field_vars:
         return False
-    gates = _field_enforcement_bbs(prog, field_vars, file=file)
+    gates = _field_enforcement_bbs(prog, field_vars, file=file, safe=safe)
     if not gates:
         return False
     return all(_all_entry_paths_cross(prog, exit_bb, gates) for exit_bb in exits)
@@ -263,6 +410,8 @@ def _approval_exit_protected_for_seeds(
     *,
     file: Optional[str] = None,
     allow_unary_cmp: bool = False,
+    trusted_other: Optional[frozenset] = None,
+    safe: Optional[str] = None,
 ) -> bool:
     """Every path from an entry to ``exit_bb`` CROSSES a BB enforcing ``field_vars``
     — the shared core of the ``approval_exit_protected_for_*`` family."""
@@ -271,7 +420,8 @@ def _approval_exit_protected_for_seeds(
     if not field_vars:
         return False
     gates = _field_enforcement_bbs(
-        prog, field_vars, file=file, allow_unary_cmp=allow_unary_cmp)
+        prog, field_vars, file=file, allow_unary_cmp=allow_unary_cmp,
+        trusted_other=trusted_other, safe=safe)
     return _all_entry_paths_cross(prog, exit_bb, gates)
 
 
@@ -307,6 +457,7 @@ def _global_field_seeds(
 def approval_exit_protected_for_field(
     prog: SSAProgram, exit_bb: BasicBlock, field: str,
     *, file: Optional[str] = None, include_gtxn: bool = False,
+    safe: Optional[str] = None,
 ) -> bool:
     """``exit_bb`` is protected for ``txn FIELD``; ``include_gtxn`` also seeds
     ``gtxn``/``gtxns`` reads, for fields validated on a sibling group txn."""
@@ -315,20 +466,21 @@ def approval_exit_protected_for_field(
     return _approval_exit_protected_for_seeds(
         prog, exit_bb,
         _txn_field_seeds(prog, field, file=file, include_gtxn=include_gtxn),
-        file=file,
+        file=file, safe=safe,
     )
 
 
 def approval_exit_protected_for_signed_txn_field(
     prog: SSAProgram, exit_bb: BasicBlock, field: str,
-    *, file: Optional[str] = None,
+    *, file: Optional[str] = None, safe: Optional[str] = None,
 ) -> bool:
     """Protected for the SIGNED txn's own ``field`` only, per
     :func:`_signed_txn_field_reads` — the delegated-LOGICSIG drain-field detectors."""
     if file is None:
         file = exit_bb.file
     seeds = ssavar_outputs(_signed_txn_field_reads(prog, field, file=file))
-    return _approval_exit_protected_for_seeds(prog, exit_bb, seeds, file=file)
+    return _approval_exit_protected_for_seeds(prog, exit_bb, seeds, file=file,
+                                              safe=safe)
 
 
 
@@ -341,7 +493,10 @@ def approval_exit_protected_for_arg_reads(
 
     Unlike the path-predicate shortcut used for constant router edges, this
     accepts a dynamically computed expected value only when the comparison is
-    actually enforced on every path to ``exit_bb``.
+    actually enforced on every path to ``exit_bb`` AND the expected value is
+    one the caller cannot choose (a constant or :data:`_NON_CALLER_VALUE_OPS`
+    provenance) — ``ApplicationArgs 0 == ApplicationArgs 1`` is enforced and
+    gates nothing.
     """
     if file is None:
         file = exit_bb.file
@@ -351,6 +506,7 @@ def approval_exit_protected_for_arg_reads(
     }
     return _approval_exit_protected_for_seeds(
         prog, exit_bb, seeds, file=file, allow_unary_cmp=True,
+        trusted_other=_non_caller_value_seeds(prog, file=file),
     )
 
 
@@ -358,13 +514,14 @@ def approval_exit_protected_for_arg_reads(
 
 def approval_exit_protected_for_global_field(
     prog: SSAProgram, exit_bb: BasicBlock, gfield: str,
-    *, file: Optional[str] = None,
+    *, file: Optional[str] = None, safe: Optional[str] = None,
 ) -> bool:
     """Protected for ``global GFIELD`` (e.g. ``GroupSize``) rather than a txn field."""
     if file is None:
         file = exit_bb.file
     return _approval_exit_protected_for_seeds(
         prog, exit_bb, _global_field_seeds(prog, gfield, file=file), file=file,
+        safe=safe,
     )
 
 

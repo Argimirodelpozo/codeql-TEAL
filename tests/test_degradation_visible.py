@@ -106,7 +106,7 @@ def test_text_degradation_survives_an_empty_finding_list():
 def test_json_always_carries_the_key(contract, lift_fails):
     doc = json.loads(render_json(scan(contract)))
     assert doc["notifications"], "degradation missing from JSON"
-    assert {"kind", "message", "file", "detector"} == set(doc["notifications"][0])
+    assert {"kind", "message", "file", "line", "detector"} == set(doc["notifications"][0])
     # present even when empty, so a consumer never has to guess whether this
     # version emits the key at all
     assert "notifications" in json.loads(render_json(ScanResults([], [])))

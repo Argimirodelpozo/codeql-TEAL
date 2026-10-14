@@ -1,0 +1,10 @@
+#pragma version 8
+// SAFE: `1000 >= Fee` is an upper bound written constant-first.
+int 1000
+txn Fee
+>=
+assert
+txn TypeEnum
+int pay
+==
+return

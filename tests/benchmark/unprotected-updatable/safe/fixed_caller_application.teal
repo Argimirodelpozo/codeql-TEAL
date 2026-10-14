@@ -1,0 +1,14 @@
+#pragma version 8
+// SAFE: only the fixed parent application 760000001 can be the inner-txn
+// caller of an Update — no externally signed call passes this check.
+txn OnCompletion
+int UpdateApplication
+==
+bz done
+global CallerApplicationID
+int 760000001
+==
+assert
+done:
+int 1
+return

@@ -1,0 +1,16 @@
+#pragma version 6
+// VULNERABLE: `GroupSize >= 2` is a LOWER bound — the group can be padded
+// with extra transactions that reuse the gtxn 0 payment.
+global GroupSize
+int 2
+>=
+assert
+gtxn 0 Receiver
+global CurrentApplicationAddress
+==
+assert
+byte "total"
+gtxn 0 Amount
+app_global_put
+int 1
+return

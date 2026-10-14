@@ -1,0 +1,30 @@
+#pragma version 10
+// VULNERABLE: deposit credits gtxn 0 Amount after pinning gtxn 0 Receiver to
+// the SENDER's own local "payee" — which the sender set at opt-in from
+// txna Accounts 1. The attacker pays themselves and is credited.
+txn OnCompletion
+int OptIn
+==
+bnz optin
+txn OnCompletion
+int NoOp
+==
+assert
+gtxn 0 Receiver
+txn Sender
+byte "payee"
+app_local_get
+==
+assert
+byte "credit"
+gtxn 0 Amount
+app_global_put
+int 1
+return
+optin:
+txn Sender
+byte "payee"
+txna Accounts 1
+app_local_put
+int 1
+return

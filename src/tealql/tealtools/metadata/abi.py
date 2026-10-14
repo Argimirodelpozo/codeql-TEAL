@@ -226,12 +226,22 @@ def _dispatch_methods(line: str, method_table: "dict | None"):
     return hits if any(hits) else []
 
 
+_BRANCH_OPS = frozenset(COND_BRANCH_OPS | {"b", "match", "switch", "callsub"})
+
+
 def method_line_ranges(source: str, method_table: "dict | None" = None):
     """``[(start_line, end_line, AbiMethod), ...]`` — the disjoint, 1-based-inclusive
-    source-line span each ABI method OWNS, from the router's selector→target-label
-    pairing; a span runs from the entry label to just before the next *boundary*
-    label (another method entry or a ``callsub`` target), so internal branch blocks
-    stay with the method while shared subroutines do not.
+    source-line spans each ABI method OWNS.
+
+    A method's span runs from its router-dispatched entry label to just before
+    the next *boundary* label: another method entry, a label the router prologue
+    itself branches to (Puya's bare-create / fall-through arms, which share no
+    method), or a subroutine start (any ``callsub`` target). A subroutine called
+    from exactly ONE method's span is then attributed to that method too, and
+    so on transitively — a PuyaPy/TEALScript method body lives in a ``callsub``
+    target behind a thin route arm, and the sinks a finding points at are in
+    that body. A subroutine called from several methods (a shared helper) stays
+    unattributed.
 
     Source-text only (no CFG) and conservative: an unrecognised dispatch shape
     yields NO attribution rather than a wrong one, and ``[]`` when the source has
@@ -246,19 +256,25 @@ def method_line_ranges(source: str, method_table: "dict | None" = None):
         if m:
             label_order.append((i, m.group(1)))
 
+    def _toks(ln: str) -> list:
+        return ln.split("//", 1)[0].strip().split()
+
     boundaries = set()                     # labels that END a preceding method span
-    for ln in lines:                       # every callsub target is a subroutine start
-        toks = ln.strip().split()
+    sub_callers: dict[str, list[int]] = {}  # callsub target -> call-site lines
+    for i, ln in enumerate(lines, 1):      # every callsub target is a subroutine start
+        toks = _toks(ln)
         if len(toks) >= 2 and toks[0] == "callsub":
             boundaries.add(toks[1])
+            sub_callers.setdefault(toks[1], []).append(i)
 
     entry_method = {}                      # target_label -> AbiMethod
+    first_dispatch = None                  # line of the first router dispatch op
     for i, ln in enumerate(lines):
         methods = _dispatch_methods(ln, method_table)   # ordered, aligned w/ targets
         if not methods:
             continue
         for j in range(i, min(i + 8, len(lines))):   # find the dispatch op below
-            toks = lines[j].strip().split()
+            toks = _toks(lines[j])
             if not toks:
                 continue
             if toks[0] in _DISPATCH_OPS:
@@ -266,25 +282,69 @@ def method_line_ranges(source: str, method_table: "dict | None" = None):
                     if meth is not None:
                         entry_method.setdefault(tgt, meth)
                         boundaries.add(tgt)
+                if first_dispatch is None:
+                    first_dispatch = j + 1
                 break
             if len(methods) == 1 and toks[0] in _SELECTOR_BRANCH_OPS and len(toks) >= 2:
                 if methods[0] is not None:
                     entry_method.setdefault(toks[1], methods[0])
                     boundaries.add(toks[1])
+                if first_dispatch is None:
+                    first_dispatch = j + 1
                 break
+    if not entry_method:
+        return []
 
-    ranges = []
+    # Labels the router PROLOGUE (everything before the first dispatch) branches
+    # to are routing arms of their own — bare-create handlers, "no args"
+    # fall-throughs — never part of the method dispatched next to them.
+    if first_dispatch is not None:
+        for ln in lines[:first_dispatch]:
+            toks = _toks(ln)
+            if toks and toks[0] in _BRANCH_OPS:
+                boundaries.update(toks[1:])
+
     ordered = sorted(label_order)          # by line
+    span_of: dict[str, tuple[int, int]] = {}
     for idx, (ln_no, lbl) in enumerate(ordered):
-        meth = entry_method.get(lbl)
-        if meth is None:
+        if lbl not in boundaries and lbl not in entry_method:
             continue
         end = len(lines)
         for ln2, lbl2 in ordered[idx + 1:]:
             if lbl2 in boundaries:
                 end = ln2 - 1
                 break
-        ranges.append((ln_no, end, meth))
+        span_of[lbl] = (ln_no, end)
+
+    ranges = [(span_of[lbl][0], span_of[lbl][1], meth)
+              for lbl, meth in entry_method.items() if lbl in span_of]
+
+    # Unique-caller closure: a subroutine whose every call site lies in ONE
+    # method's attributed spans belongs to that method; iterate to a fixpoint so
+    # helpers of helpers follow.
+    owner: dict[str, AbiMethod] = {lbl: m for lbl, m in entry_method.items()}
+    changed = True
+    while changed:
+        changed = False
+        for sub, sites in sub_callers.items():
+            if sub in owner or sub not in span_of:
+                continue
+            owners = set()
+            for site in sites:
+                hit = None
+                for lbl, (lo, hi) in span_of.items():
+                    if lbl in owner and lo <= site <= hi:
+                        hit = owner[lbl]
+                        break
+                if hit is None:
+                    owners = None
+                    break
+                owners.add(hit)
+            if owners and len(owners) == 1:
+                owner[sub] = next(iter(owners))
+                ranges.append((span_of[sub][0], span_of[sub][1], owner[sub]))
+                changed = True
+    ranges.sort()
     return ranges
 
 
@@ -297,3 +357,15 @@ def method_at_line(ranges, line: Optional[int]) -> Optional[AbiMethod]:
         if start <= line <= end:
             return meth
     return None
+
+
+def method_at_line_or_partition(ranges, line: Optional[int], *, partitions=None,
+                                file: Optional[str] = None) -> Optional[AbiMethod]:
+    """:func:`method_at_line`, falling back — only when the source-line spans
+    find nothing — to trace partitioning
+    (:meth:`.cfg.partition.PartitionedPredicates.method_at`): the finding's
+    block is attributed only when exactly ONE method partition reaches it."""
+    hit = method_at_line(ranges, line)
+    if hit is not None or partitions is None or file is None:
+        return hit
+    return partitions.method_at(file, line)

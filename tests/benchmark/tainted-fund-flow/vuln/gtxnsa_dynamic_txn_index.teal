@@ -1,0 +1,23 @@
+#pragma version 10
+// VULN: gtxns ApplicationArgs via gtxnsa? no -- gtxns reads a scalar field; use gtxns Sender? not a source.
+// Use gtxnsa with index from stack both sides but the guard on index 0 and the sink on txn index arg-chosen
+int 0
+gtxnsa ApplicationArgs 1
+btoi
+int 100
+<=
+assert
+txn GroupIndex
+int 1
++
+gtxnsa ApplicationArgs 1
+btoi
+itxn_begin
+int pay
+itxn_field TypeEnum
+global CreatorAddress
+itxn_field Receiver
+itxn_field Amount
+itxn_submit
+int 1
+return

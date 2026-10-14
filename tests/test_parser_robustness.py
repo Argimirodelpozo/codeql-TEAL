@@ -285,12 +285,10 @@ def test_immediateless_extract_parses(tmp_path):
 
 
 def test_immediateless_extract_at_column_zero_is_rewritten_too(tmp_path):
-    """Spelling `extract` as `extract3` costs a byte; with a preceding whitespace byte it is paid
-    for by consuming it. At column 0 — how HAND-WRITTEN TEAL is laid out — there is none, and
-    the line simply grows by one: spans are computed against the normalized text and line
-    numbers never move (the trade `_opcode_named_labels` already makes), so refusing the rewrite
-    bought nothing and dropped a real instruction (2 pops, 1 push) with only a warning. `goal`
-    assembles the unindented form as `extract3`; so do we, and the line stays exact.
+    """The bare `extract` pseudo-op is spelled `extract3` by the pseudo-op normaliser at ANY
+    column, including column 0 — how HAND-WRITTEN TEAL is laid out. The line grows by one byte,
+    which is safe: spans are computed against the normalized text and line numbers never move.
+    `goal` assembles the unindented form as `extract3`; so do we, and the line stays exact.
     """
     prog = _prog(tmp_path, "#pragma version 11\n"
                            "pushbytes 0x01\nint 0\nint 1\n"
@@ -442,15 +440,17 @@ def test_tail_recovered_hex_int_keeps_constant_past_a_comment(tmp_path):
     assert "16" in vals, f"hex constant lost behind its comment: {vals}"
 
 
-def test_mixed_mnemonic_error_group_keeps_each_groups_class(tmp_path):
-    """Adjacent unknown-field instructions with DIFFERENT mnemonics collapse
-    into one greedy ERROR; each recovered group must get its OWN mnemonic's
-    node class, not the first group's."""
+def test_unknown_fields_are_each_dropped_with_a_diagnostic(tmp_path):
+    """The grammar knows every field of the pinned spec, so a field it rejects
+    is not a newer AVM's but an invalid one (goal: `unknown field`). Adjacent
+    bad reads with DIFFERENT mnemonics must each be reported on their own
+    line, and the valid instructions around them must survive."""
     from tealql.tealtools.ast.parse import parse_nodes
+    diags: list = []
     nodes = parse_nodes({"t.teal": "#pragma version 8\n"
                                    "txn NotAField\nitxn_field AlsoNot\n"
-                                   "int 1\nreturn\n"})
-    classes = {n.code.split()[0]: type(n).__name__
-               for n in nodes if getattr(n, "code", "").strip()
-               and n.code.split()[0] in ("txn", "itxn_field")}
-    assert classes["txn"] != classes["itxn_field"], classes
+                                   "int 1\nreturn\n"}, diagnostics=diags)
+    assert sorted({d.start_line for d in diags}) == [2, 3], diags
+    ops = [n.code.split()[0] for n in nodes if getattr(n, "code", "").strip()
+           and n.location.start_line > 1]
+    assert ops == ["int", "return"], ops

@@ -1,0 +1,11 @@
+#pragma version 8
+// SAFE: CloseRemainderTo may only be the fixed owner address — a deliberate
+// close-out destination, not attacker-chosen.
+txn CloseRemainderTo
+byte 0x486bad826942f8cb5d09be7cbd11324e5cc7ff046b4d46c320a4c8dfc31278bb
+==
+txn TypeEnum
+int pay
+==
+&&
+return

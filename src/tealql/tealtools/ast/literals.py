@@ -36,10 +36,20 @@ def is_template_variable(token: str) -> bool:
 
 
 # `int` pseudo-op named constants — the OnCompletion / TxnType (TypeEnum) enums.
-# HAZARD: the grammar's `int` rule accepts only a number, so `int DeleteApplication`
-# parses as an ERROR node; parse.py recovers it and THIS table is where its
-# const_value comes from. Derived from avm.TXN_ENUM_FIELD_NAMES, never re-listed —
-# a second hand-kept copy would silently disagree about which guards resolve.
+# The grammar parses `int DeleteApplication` as an `int` whose value is a
+# `named_integer_constant`; THIS table is where its const_value comes from.
+# Derived from avm.TXN_ENUM_FIELD_NAMES, never re-listed — a second hand-kept copy
+# would silently disagree about which guards resolve — plus the spellings only
+# the ASSEMBLER accepts (go-algorand fields.go: TxnTypeNames, txnTypeLongNames),
+# which the grammar accepts too: an `int Payment` the grammar parses but this
+# table cannot resolve would be a push with a silently unknown value.
+_ASSEMBLER_TXN_TYPE_NAMES: dict[str, int] = {
+    "stpf": 7, "hb": 8,
+    "Payment": 1, "KeyRegistration": 2, "AssetConfig": 3, "AssetTransfer": 4,
+    "AssetFreeze": 5, "ApplicationCall": 6,
+}
+
+
 def _named_int_constants() -> dict[str, int]:
     from ..language.avm import TXN_ENUM_FIELD_NAMES
 
@@ -47,6 +57,8 @@ def _named_int_constants() -> dict[str, int]:
     for by_value in TXN_ENUM_FIELD_NAMES.values():
         for value, name in by_value.items():
             out.setdefault(name, value)
+    for name, value in _ASSEMBLER_TXN_TYPE_NAMES.items():
+        out.setdefault(name, value)
     return out
 
 

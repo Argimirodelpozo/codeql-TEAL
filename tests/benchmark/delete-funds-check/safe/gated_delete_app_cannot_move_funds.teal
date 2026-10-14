@@ -1,0 +1,14 @@
+#pragma version 4
+// SAFE: a pre-inner-transaction app (TEAL 4) — its account can never send
+// funds, so a creator-gated delete strands nothing the app could have spent.
+txn OnCompletion
+int DeleteApplication
+==
+bnz delete
+int 1
+return
+delete:
+txn Sender
+global CreatorAddress
+==
+return

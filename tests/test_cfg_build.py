@@ -47,10 +47,11 @@ def test_line_one_is_not_swallowed_by_the_source_node():
 
 
 def test_dropped_control_flow_is_diagnosed():
-    """Two silent narrowings of the graph. An unresolvable branch target yields
-    NO edge, so the branch keeps only its fall-through and the code it reached
-    is pruned as unreachable. A target-less ``match``/``switch`` absorbs the
-    NEXT instruction as its operand list, deleting it outright."""
+    """An unresolvable branch target yields NO edge, so the branch keeps only
+    its fall-through and the code it reached is pruned as unreachable -- that
+    must be diagnosed. A target-less ``match``/``switch`` used to absorb the
+    NEXT instruction as its operand list; it is valid TEAL (it falls through)
+    and the grammar now ends it at its own line, so nothing is lost."""
     p = _prog(f"{V}int 1\nbnz nowhere\nint 2\nb gone\nint 3\nreturn\n")
     d = _diags(p)
     assert d.count("no label defines") == 2, d       # once each, not once per walk
@@ -60,8 +61,9 @@ def test_dropped_control_flow_is_diagnosed():
                   ).count("no label defines") == 2   # every arm
 
     for op in ("match", "switch"):
-        assert "absorbed as its operands" in _diags(
-            _prog(f"{V}int 1\nint 1\n{op}\nreturn\n")), op
+        p = _prog(f"{V}int 1\nint 1\n{op}\nreturn\n")
+        assert _diags(p) == "", op
+        assert [a.op for a in p.assignments][-2:] == [op, "return"], op
 
     # A program whose targets all resolve stays clean.
     assert "no label defines" not in _diags(

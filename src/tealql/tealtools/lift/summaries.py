@@ -75,9 +75,17 @@ def _dependency(markers, sub_id) -> ValueDependency:
     )
 
 
-def compute_summaries(lifter, trusted_args=frozenset()) -> Mapping[str, SubSummary]:
-    """Least fixed point of per-output and transitive effect dependencies."""
-    cache_key = frozenset(trusted_args)
+def compute_summaries(lifter, trusted_args=frozenset(),
+                      state_seeds=None) -> Mapping[str, SubSummary]:
+    """Least fixed point of per-output and transitive effect dependencies.
+
+    ``state_seeds`` (``{id(read Intrinsic): StateValue label}``, from
+    :func:`lift.taint.user_input_taint`) are the own-state reads seeded as
+    sources on top of the static source table, so a sub that reads an
+    attacker-writable slot and returns it carries that source in its summary."""
+    state_seeds = state_seeds or {}
+    cache_key = (frozenset(trusted_args), frozenset(state_seeds.items())) \
+        if state_seeds else frozenset(trusted_args)
     cache = getattr(lifter, '_summary_cache', {})
     if getattr(lifter, '_analysis_frozen', False) and cache_key in cache:
         return cache[cache_key]
@@ -114,7 +122,8 @@ def compute_summaries(lifter, trusted_args=frozenset()) -> Mapping[str, SubSumma
         return changed
 
     transfer_fixpoint(lifter, taint,
-                      seed_label=lambda s: None if _trusted_apparg(s, trusted_args) else source_label(s),
+                      seed_label=lambda s: None if _trusted_apparg(s, trusted_args)
+                      else source_label(s) or state_seeds.get(id(s)),
                       invoke_ins=invoke, per_round=refine, subs=subs)
     result = {}
     for sub in subs:

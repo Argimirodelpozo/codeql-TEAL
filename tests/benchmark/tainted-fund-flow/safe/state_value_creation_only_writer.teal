@@ -1,0 +1,22 @@
+#pragma version 10
+// SAFE: global "payee" is written only on the creation call (ApplicationID == 0);
+// no later call can change it, so paying it is not attacker-steerable.
+txn ApplicationID
+bz create
+itxn_begin
+int pay
+itxn_field TypeEnum
+byte "payee"
+app_global_get
+itxn_field Receiver
+int 1000
+itxn_field Amount
+itxn_submit
+int 1
+return
+create:
+byte "payee"
+txna Accounts 1
+app_global_put
+int 1
+return

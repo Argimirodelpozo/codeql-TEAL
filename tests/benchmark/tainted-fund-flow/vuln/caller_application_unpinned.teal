@@ -1,0 +1,18 @@
+#pragma version 10
+// VULNERABLE: `CallerApplicationID != 0` admits ANY calling app — the attacker
+// deploys one and forwards their own receiver and amount.
+global CallerApplicationID
+int 0
+!=
+assert
+itxn_begin
+int pay
+itxn_field TypeEnum
+txna Accounts 1
+itxn_field Receiver
+txna ApplicationArgs 0
+btoi
+itxn_field Amount
+itxn_submit
+int 1
+return

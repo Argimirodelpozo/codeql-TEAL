@@ -1,0 +1,22 @@
+#pragma version 10
+// VULN: callee asserts len(arg)==32; the VALUE of arg is unchecked and reaches Receiver
+txna ApplicationArgs 1
+dup
+len
+callsub check32
+itxn_begin
+int pay
+itxn_field TypeEnum
+itxn_field Receiver
+int 1000
+itxn_field Amount
+itxn_submit
+int 1
+return
+check32:
+proto 1 0
+frame_dig -1
+int 32
+==
+assert
+retsub

@@ -4,6 +4,7 @@ from __future__ import annotations
 from tealql.security._lifted_taint_sink import (
     _LiftedTaintSinkDetector,
     _LiftedTaintSinkViolation,
+    _sources_text,
 )
 
 
@@ -20,7 +21,7 @@ class TaintedLogDetector(_LiftedTaintSinkDetector):
         return fund_flow.tainted_logs(lifter, trusted_args=self.trusted_args)
 
     def _message(self, finding, location):
-        sources = "+".join(sorted(finding.sources))
+        sources = _sources_text(finding)
         return (
             f"[{finding.severity}] attacker-controlled data emitted via log <- "
             f"{sources} ({location}, {finding.sub_id}); a caller reading this "
