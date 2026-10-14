@@ -463,9 +463,10 @@ def summarize(rows: list[dict], lifts: Path) -> str:
            "writes equal the chain's. REPLAY_MISS = the deployed program itself did not "
            "reproduce the chain (oracle problem, not counted). The lift emits AVM >= 10; "
            "blocks whose protocol predates it are replayed (both variants) under mainnet's "
-           "current protocol — `upgraded` counts those groups. Behaviour is judged with "
-           f"{EXTRA_BUDGET:,} extra opcode budget; *over budget* counts groups the recompiled "
-           "program could NOT have run within the budget the chain gave them; *op / cost ratio* is "
+           "current protocol — `upgraded` counts those groups. Behaviour is judged on the "
+           "plain lifted run; where that ran out of budget, on a re-run with "
+           f"{EXTRA_BUDGET:,} extra opcode budget, and *over budget* counts those groups (the "
+           "recompiled program could NOT have run within the budget the chain gave them). *op / cost ratio* is "
            "opcodes executed by the lifted program over the deployed one, and the group's pooled "
            "budget consumed with the lifted program over the deployed one.", "",
            "| app | blocks | groups | FAITHFUL | DIVERGES | BUDGET | over budget* | op / cost ratio (median) | lift fail | oracle miss/artifact | upgraded | programs | orig coverage |",
