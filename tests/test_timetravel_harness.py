@@ -13,27 +13,33 @@ def _group(gi, *, match=True, error="", txns=None, boxes=None):
 
 
 def test_classify_verdicts_and_which_divergences_poison_the_rest_of_the_block():
-    orig = {"groups": [_group(0), _group(1), _group(2), _group(3, match=False, error="eval drift")]}
-    # Group 0 rejected (commits nothing -> later groups stay comparable), group 1
-    # commits a different log (poisons 2), group 3 is the ORACLE's miss.
+    orig = {"groups": [_group(0), _group(1), _group(2, match=False, error="eval drift")]}
+    # Group 0 commits a different log; the chain's state after it is no longer
+    # the lifted run's, so group 1 is not comparable. Group 2 is the ORACLE's miss.
     bad_log = {"index": 0, "match_chain": False,
                "apply_json": '{"dt": {"lg": ["a", "b"]}}', "chain_json": '{"dt": {"lg": ["a"]}}'}
-    lifted = {"groups": [_group(0, match=False, error="transaction rejected by ApprovalProgram"),
-                         _group(1, match=False, txns=[bad_log]), _group(2), _group(3)]}
+    lifted = {"groups": [_group(0, match=False, txns=[bad_log]), _group(1), _group(2)]}
     rows = {r["group"]: r for r in classify(orig, lifted)}
-    assert rows[0]["status"] == "DIVERGES" and "rejected" in rows[0]["detail"]
-    assert rows[1]["status"] == "DIVERGES" and rows[1]["detail"] == "txn 0: $.dt.lg: length 2 != 1"
-    assert rows[2]["status"] == "AFTER_DIVERGENCE"           # 1 committed different state
-    assert rows[3]["status"] == "REPLAY_MISS" and rows[3]["detail"] == "eval drift"
+    assert rows[0]["status"] == "DIVERGES" and rows[0]["detail"] == "txn 0: $.dt.lg: length 2 != 1"
+    assert rows[1]["status"] == "AFTER_DIVERGENCE"
+    assert rows[2]["status"] == "REPLAY_MISS" and rows[2]["detail"] == "eval drift"
+    # A FAILED lifted group poisons too: it commits nothing, but the chain
+    # committed it (the bug that read a budget failure's knock-on as DIVERGES).
+    for error, status in (("transaction rejected by ApprovalProgram", "DIVERGES"),
+                          ("pc=12 dynamic cost budget exceeded", "BUDGET")):
+        failed = classify({"groups": [_group(0), _group(1)]},
+                          {"groups": [_group(0, match=False, error=error), _group(1)]})
+        assert [r["status"] for r in failed] == [status, "AFTER_DIVERGENCE"], error
 
-    # Controls: an equal run is FAITHFUL only when the box writes agree too; a
-    # cost failure is BUDGET and, committing nothing, poisons nothing.
+    # Controls: an equal run is FAITHFUL only when the box writes agree too.
     assert [r["status"] for r in classify({"groups": [_group(0)]}, {"groups": [_group(0)]})] == ["FAITHFUL"]
     boxes = classify({"groups": [_group(0, boxes={"k": "AQ=="})]}, {"groups": [_group(0, boxes={"k": "Ag=="})]})
     assert boxes[0]["status"] == "DIVERGES" and boxes[0]["detail"].startswith("box writes: $.k")
-    budget = classify({"groups": [_group(0), _group(1)]},
-                      {"groups": [_group(0, match=False, error="pc=12 dynamic cost budget exceeded"), _group(1)]})
-    assert [r["status"] for r in budget] == ["BUDGET", "FAITHFUL"]
+    # An update to an older-AVM program is refused only because the lift raised
+    # the version: an oracle artifact, not a divergence.
+    downgrade = classify({"groups": [_group(0)]}, {"groups": [_group(
+        0, match=False, error="approval program version downgrade: 9 < 10")]})
+    assert downgrade[0]["status"] == "VERSION_ARTIFACT"
     assert first_diff({"a": [1, {"b": 2}]}, {"a": [1, {"b": 2}]}) is None
 
 

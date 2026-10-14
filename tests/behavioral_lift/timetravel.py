@@ -56,6 +56,9 @@ REPLAY_TIMEOUT = int(os.environ.get("TEALQL_TT_REPLAY_TIMEOUT", "1800"))
 # Lifted-program failures that are a cost artifact, not a behaviour change: the
 # recompiled program may spend more opcode budget than the original did.
 _BUDGET_MARKERS = ("dynamic cost budget exceeded", "cost budget exceeded")
+# The lift emits AVM >= 10; an UpdateApplication installing an older-version
+# program is then a "downgrade" the AVM refuses. An oracle artifact, not counted.
+_VERSION_ARTIFACT_MARKERS = ("program version downgrade",)
 
 
 # ------------------------------------------------------------------ network
@@ -244,12 +247,15 @@ def classify(orig: dict, lifted: dict) -> list[dict]:
         elif lg is None:
             row.update(status="DIVERGES", detail="lifted variant did not report this group: "
                        + (lifted.get("error") or "")[:300])
+            diverged = True
         elif lg["match_chain"] and lg["box_writes"] == og["box_writes"]:
             row["status"] = "FAITHFUL"
         else:
             err = lg.get("error") or next((t.get("error") for t in lg["txns"] if t.get("error")), "")
             if err and any(m in err for m in _BUDGET_MARKERS):
                 row.update(status="BUDGET", detail=err[:400])
+            elif err and any(m in err for m in _VERSION_ARTIFACT_MARKERS):
+                row.update(status="VERSION_ARTIFACT", detail=err[:400])
             else:
                 if err:
                     detail = err
@@ -261,10 +267,10 @@ def classify(orig: dict, lifted: dict) -> list[dict]:
                 else:
                     detail = "box writes: " + (first_diff(lg["box_writes"], og["box_writes"]) or "?")
                 row.update(status="DIVERGES", detail=detail[:600])
-            # A failed group commits nothing (on chain or here), so later
-            # groups still see the chain's state; a committed divergence
-            # poisons the rest of the block.
-            diverged = not err
+            # The chain committed this group; the lifted run did not commit the
+            # same thing (a failed group commits nothing at all), so every later
+            # group of the block sees different state.
+            diverged = True
         rows.append(row)
     return rows
 
@@ -272,6 +278,7 @@ def classify(orig: dict, lifted: dict) -> list[dict]:
 # ------------------------------------------------------------------ driver
 
 _VERSION_CAP = "greater than protocol supported version"
+EXTRA_BUDGET = 320_000      # simulate's MaxExtraOpcodeBudget
 _CURRENT_PROTOCOL: list[str] = []
 
 
@@ -298,12 +305,16 @@ def replay_block(app_id: int, rnd: int, lift: dict, cache_dir: Path) -> dict:
     program's chain comparison says whether the upgrade changed its behaviour."""
     variants = [{"name": "orig"}]
     if lift.get("status") == "OK":
-        variants.append({"name": "lifted", "overrides": {str(app_id): {"approval": lift["lifted"]}}})
+        override = {str(app_id): {"approval": lift["lifted"]}}
+        variants += [{"name": "lifted", "overrides": override},
+                     # Same program with simulate's maximum extra budget: judges
+                     # behaviour even where the recompiled code costs more.
+                     {"name": "lifted_xb", "overrides": override, "extra_budget": EXTRA_BUDGET}]
     req = {"node": NODE, "round": rnd, "apps": [app_id], "prefix": True, "coverage": True,
            "variants": variants, "cache_dir": str(cache_dir)}
     resp = _run_replay(req)
     capped = any(_VERSION_CAP in (g.get("error") or "")
-                 for v in resp.get("variants") or [] if v.get("name") == "lifted"
+                 for v in resp.get("variants") or [] if v.get("name", "").startswith("lifted")
                  for g in v.get("groups") or [])
     if capped:
         resp = _run_replay({**req, "protocol": current_protocol()})
@@ -378,8 +389,26 @@ def run_app(app_id: int, samples: int, seed: int, out: Path) -> list[dict]:
                 return rows + [{**base, "status": "ORACLE_BROKEN", "detail": problem[:400]}]
             self_tested = True
         lifted = variants.get("lifted") or {"groups": [], "error": "missing lifted variant"}
-        lcov = sorted({pc for g in lifted.get("groups") or [] for pc in (g.get("coverage") or {}).get(str(app_id), [])})
-        groups = classify(orig, lifted)
+        # Behaviour is judged with extra budget; the plain run says whether the
+        # recompiled program would also have fit the budget the chain gave it.
+        judged = variants.get("lifted_xb") or lifted
+        lcov = sorted({pc for g in judged.get("groups") or [] for pc in (g.get("coverage") or {}).get(str(app_id), [])})
+        plain = {r["group"]: r["status"] for r in classify(orig, lifted)}
+        ops = {name: {g["group"]: (g.get("ops") or {}).get(str(app_id), 0) for g in v.get("groups") or []}
+               for name, v in variants.items()}
+        cost = {name: {g["group"]: g.get("cost") or 0 for g in v.get("groups") or []}
+                for name, v in variants.items()}
+        groups = classify(orig, judged)
+        for g in groups:
+            g["over_budget"] = plain.get(g["group"]) == "BUDGET"
+            o, lo = ops.get("orig", {}).get(g["group"]), ops.get("lifted_xb", {}).get(g["group"])
+            if o and lo:
+                g["op_ratio"] = round(lo / o, 3)
+            # Group-wide pooled budget: inner calls to OTHER apps cost the same
+            # in both runs, so the difference is the lifted program's overhead.
+            co, cl = cost.get("orig", {}).get(g["group"]), cost.get("lifted_xb", {}).get(g["group"])
+            if co and cl:
+                g["cost_orig"], g["cost_lifted"] = co, cl
         for g in groups:
             rows.append({**base, **g, "orig_pcs": cov, "lifted_pcs": lcov,
                          "protocol_upgraded": bool(resp.get("protocol_upgraded")),
@@ -389,7 +418,36 @@ def run_app(app_id: int, samples: int, seed: int, out: Path) -> list[dict]:
     return rows
 
 
+def _restatus(r: dict) -> dict:
+    """Re-derive the error-marker statuses from a row's recorded detail, so rows
+    written by an older harness pick up later artifact rules."""
+    if r["status"] == "DIVERGES":
+        d = r.get("detail") or ""
+        if any(m in d for m in _VERSION_ARTIFACT_MARKERS):
+            return {**r, "status": "VERSION_ARTIFACT"}
+        if any(m in d for m in _BUDGET_MARKERS):
+            return {**r, "status": "BUDGET"}
+    return r
+
+
+def load_rows(out: Path) -> list[dict]:
+    """Every row in ``out/rows.jsonl``; the latest run of an app replaces its
+    earlier rows (an app's rows are appended together when it finishes)."""
+    runs: dict = {}
+    for line in (out / "rows.jsonl").read_text().splitlines():
+        r = json.loads(line)
+        runs.setdefault(r["app"], []).append(r)
+    latest = []
+    for rows in runs.values():
+        # rows of one app run are contiguous; keep the last run's block
+        last_start = max(i for i, r in enumerate(rows)
+                         if i == 0 or r.get("_run") != rows[i - 1].get("_run"))
+        latest += rows[last_start:]
+    return latest
+
+
 def summarize(rows: list[dict], lifts: Path) -> str:
+    rows = [_restatus(r) for r in rows]
     by_app = defaultdict(list)
     for r in rows:
         by_app[r["app"]].append(r)
@@ -398,9 +456,13 @@ def summarize(rows: list[dict], lifts: Path) -> str:
            "writes equal the chain's. REPLAY_MISS = the deployed program itself did not "
            "reproduce the chain (oracle problem, not counted). The lift emits AVM >= 10; "
            "blocks whose protocol predates it are replayed (both variants) under mainnet's "
-           "current protocol — `upgraded` counts those groups.", "",
-           "| app | blocks | groups | FAITHFUL | DIVERGES | BUDGET | lift fail | REPLAY_MISS/ERR | upgraded | programs | orig coverage |",
-           "|---|---|---|---|---|---|---|---|---|---|---|"]
+           "current protocol — `upgraded` counts those groups. Behaviour is judged with "
+           f"{EXTRA_BUDGET:,} extra opcode budget; *over budget* counts groups the recompiled "
+           "program could NOT have run within the budget the chain gave them; *op / cost ratio* is "
+           "opcodes executed by the lifted program over the deployed one, and the group's pooled "
+           "budget consumed with the lifted program over the deployed one.", "",
+           "| app | blocks | groups | FAITHFUL | DIVERGES | BUDGET | over budget* | op / cost ratio (median) | lift fail | oracle miss/artifact | upgraded | programs | orig coverage |",
+           "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for app, rs in sorted(by_app.items()):
         c = Counter(r["status"] for r in rs)
         progs = sorted({r.get("program") for r in rs if r.get("program")})
@@ -411,11 +473,17 @@ def summarize(rows: list[dict], lifts: Path) -> str:
             total = meta.get("orig_instructions") or 1
             cover.append(f"{sha[:8]} {100 * len(pcs) / total:.0f}% ({meta['status']})")
         fails = c["LIFT_FAIL"] + c["LIFT_TIMEOUT"] + c["ASM_FAIL"]
+        ratios = sorted(r["op_ratio"] for r in rs if r.get("op_ratio"))
+        median = f"{ratios[len(ratios) // 2]:.2f}" if ratios else "-"
+        costs = sorted(r["cost_lifted"] / r["cost_orig"] for r in rs if r.get("cost_orig"))
+        cmed = f"{costs[len(costs) // 2]:.2f}" if costs else "-"
         out.append(f"| {app} | {len({r['round'] for r in rs})} | {len(rs)} | {c['FAITHFUL']} | "
-                   f"{c['DIVERGES']} | {c['BUDGET']} | {fails} | {c['REPLAY_MISS'] + c['REPLAY_ERROR']} | "
+                   f"{c['DIVERGES']} | {c['BUDGET']} | {sum(1 for r in rs if r.get('over_budget'))} | {median} / {cmed} | "
+                   f"{fails} | {c['REPLAY_MISS'] + c['REPLAY_ERROR'] + c['VERSION_ARTIFACT']} | "
                    f"{sum(1 for r in rs if r.get('protocol_upgraded'))} | "
                    f"{len(progs)} | {'; '.join(cover)} |")
-    bad = [r for r in rows if r["status"] in ("ORACLE_BROKEN", "DIVERGES", "BUDGET", "REPLAY_MISS", "REPLAY_ERROR",
+    bad = [r for r in rows if r["status"] in ("ORACLE_BROKEN", "DIVERGES", "BUDGET", "VERSION_ARTIFACT",
+                                              "REPLAY_MISS", "REPLAY_ERROR",
                                               "LIFT_FAIL", "LIFT_TIMEOUT", "ASM_FAIL")]
     if bad:
         out += ["", "## Non-faithful rows (first per app/program/status)", ""]
@@ -435,6 +503,11 @@ def main(argv=None) -> int:
         argv = sys.argv[1:]
     if argv[:1] == ["--lift-one"]:
         return _lift_one(argv[1], argv[2])
+    if argv[:1] == ["--summarize"]:
+        out = Path(argv[1])
+        (out / "SUMMARY.md").write_text(summarize(load_rows(out), out / "lifts"))
+        print((out / "SUMMARY.md").read_text())
+        return 0
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("apps", nargs="+", type=int)
     ap.add_argument("--samples", type=int, default=20, help="blocks per app (default 20)")
@@ -457,19 +530,14 @@ def main(argv=None) -> int:
                 app_rows = fut.result()
             except Exception as e:     # one app's network failure must not lose the others
                 app_rows = [{"app": app, "round": 0, "status": "REPLAY_ERROR", "detail": f"{type(e).__name__}: {e}"[:400]}]
+            run_id = f"{os.getpid()}-{time.time_ns()}"
+            app_rows = [{**r, "_run": run_id} for r in app_rows]
             rows += app_rows
             with (out / "rows.jsonl").open("a") as fh:
                 for r in app_rows:
                     fh.write(json.dumps(r) + "\n")
-    # Summarize every row in the directory (earlier invocations included); a
-    # re-run of an app replaces its earlier rows.
-    latest: dict = {}
-    for line in (out / "rows.jsonl").read_text().splitlines():
-        r = json.loads(line)
-        latest[(r["app"], r["round"], r.get("group"), r["status"] == "ORACLE_BROKEN")] = r
-    reran = {r["app"] for r in rows}
-    merged = [r for r in latest.values() if r["app"] not in reran] + rows
-    (out / "SUMMARY.md").write_text(summarize(merged, out / "lifts"))
+    # Summarize every app in the directory (earlier invocations included).
+    (out / "SUMMARY.md").write_text(summarize(load_rows(out), out / "lifts"))
     print((out / "SUMMARY.md").read_text())
     return 1 if any(r["status"] in ("DIVERGES", "ORACLE_BROKEN") for r in rows) else 0
 

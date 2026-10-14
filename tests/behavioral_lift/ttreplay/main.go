@@ -515,17 +515,38 @@ type tracer struct {
 	kvMods   map[string]ledgercore.KvValueDelta
 	groupErr string
 	coverage map[basics.AppIndex]map[int]bool
+	ops      map[basics.AppIndex]int // opcodes executed per app
+	extra    int                     // opcode budget added to each top-level group's pool
+	// Pooled app budget accounting, as simulate's AppBudgetAdded/Consumed:
+	// the pool at the top-level group's start (+extra), plus one
+	// MaxAppProgramCost per inner group, minus what is left at the end.
+	budgetAdded    int
+	budgetConsumed int
 }
 
 func newTracer() *tracer {
 	return &tracer{ads: map[int]transactions.ApplyData{}, errs: map[int]string{},
-		coverage: map[basics.AppIndex]map[int]bool{}}
+		coverage: map[basics.AppIndex]map[int]bool{}, ops: map[basics.AppIndex]int{}}
 }
 
-func (t *tracer) BeforeTxnGroup(ep *logic.EvalParams) { t.depth++ }
+// BeforeTxnGroup adds the variant's extra budget to the top-level group's pool,
+// as simulate's extra-opcode-budget does (inner groups draw from that pool).
+func (t *tracer) BeforeTxnGroup(ep *logic.EvalParams) {
+	t.depth++
+	if ep.GetCaller() != nil {
+		t.budgetAdded += ep.Proto.MaxAppProgramCost
+	}
+	if t.depth == 1 && ep.PooledApplicationBudget != nil {
+		*ep.PooledApplicationBudget += t.extra
+		t.budgetAdded += *ep.PooledApplicationBudget
+	}
+}
 
 func (t *tracer) AfterTxnGroup(ep *logic.EvalParams, deltas *ledgercore.StateDelta, evalError error) {
 	if t.depth == 1 {
+		if ep.PooledApplicationBudget != nil {
+			t.budgetConsumed = t.budgetAdded - *ep.PooledApplicationBudget
+		}
 		if deltas != nil {
 			t.kvMods = deltas.KvMods
 		}
@@ -551,6 +572,7 @@ func (t *tracer) BeforeOpcode(cx *logic.EvalContext) {
 		return
 	}
 	app := cx.AppID()
+	t.ops[app]++
 	m := t.coverage[app]
 	if m == nil {
 		m = map[int]bool{}
@@ -583,7 +605,8 @@ type Request struct {
 }
 
 type Variant struct {
-	Name      string                       `json:"name"`
+	Name        string                       `json:"name"`
+	ExtraBudget int                          `json:"extra_budget"`
 	Overrides map[string]map[string]string `json:"overrides"` // app id -> {"approval": b64, "clear": b64}
 }
 
@@ -605,6 +628,8 @@ type GroupResult struct {
 	Txns       []TxnResult       `json:"txns"`
 	BoxWrites  map[string]string `json:"box_writes"` // b64 key -> b64 value ("" = deleted)
 	Coverage   map[string][]int  `json:"coverage,omitempty"`
+	Ops        map[string]int    `json:"ops"`
+	Cost       int               `json:"cost"` // pooled app budget consumed by the whole group
 	MatchChain bool              `json:"match_chain"`
 }
 
@@ -724,7 +749,7 @@ func replay(req Request) (resp Response) {
 			resp.Variants = append(resp.Variants, VariantResult{Name: v.Name, Error: err.Error()})
 			continue
 		}
-		resp.Variants = append(resp.Variants, evaluate(rem, blk, groups, want, req, v.Name, overrides))
+		resp.Variants = append(resp.Variants, evaluate(rem, blk, groups, want, req, v, overrides))
 	}
 	return
 }
@@ -749,8 +774,8 @@ func warm(rem *remote, blk bookkeeping.Block, groups [][]transactions.SignedTxnW
 }
 
 func evaluate(rem *remote, blk bookkeeping.Block, groups [][]transactions.SignedTxnWithAD,
-	want map[int]bool, req Request, name string, overrides map[basics.AppIndex]programs) (out VariantResult) {
-	out.Name = name
+	want map[int]bool, req Request, v Variant, overrides map[basics.AppIndex]programs) (out VariantResult) {
+	out.Name = v.Name
 	defer func() {
 		if r := recover(); r != nil {
 			out.Error = fmt.Sprintf("panic: %v", r)
@@ -782,6 +807,7 @@ func evaluate(rem *remote, blk bookkeeping.Block, groups [][]transactions.Signed
 			group[i] = transactions.SignedTxnWithAD{SignedTxn: t.SignedTxn}
 		}
 		*tr = *newTracer()
+		tr.extra = v.ExtraBudget
 		evalErr := ev.TransactionGroup(group...)
 		if !want[gi] {
 			if evalErr != nil {
@@ -793,7 +819,11 @@ func evaluate(rem *remote, blk bookkeeping.Block, groups [][]transactions.Signed
 			}
 			continue
 		}
-		res := GroupResult{Group: gi, BoxWrites: map[string]string{}, MatchChain: evalErr == nil}
+		res := GroupResult{Group: gi, BoxWrites: map[string]string{}, Ops: map[string]int{}, MatchChain: evalErr == nil}
+		for app, n := range tr.ops {
+			res.Ops[fmt.Sprint(uint64(app))] = n
+		}
+		res.Cost = tr.budgetConsumed
 		if evalErr != nil {
 			res.Error = evalErr.Error()
 		}
