@@ -8,7 +8,7 @@ from ..language.avm import STATE_WRITE_OPS
 from ..language.effects import STATE_EFFECTS
 from . import pre_ir
 from .taint_flow import (
-    UNKNOWN_SOURCE, value_sources, source_label, transfer_fixpoint,
+    UNKNOWN_SOURCE, value_sources, source_label, transfer_fixpoint, sub_local_scratch,
     _trusted_apparg, _intr, _invoke as _invoke,
     _scratch_unknown_write as _scratch_unknown_write,
 )
@@ -60,6 +60,13 @@ def state_value_sources(lifter, trusted_args=frozenset()) -> Mapping[tuple, str]
 
 
 def _taint_and_state_notes(lifter, trusted_args):
+    return _taint_state(lifter, trusted_args)[:3]
+
+
+def _taint_state(lifter, trusted_args):
+    """``(taint, notes, points, state_seeds, unknown_scratch)`` — the cached
+    fixed point plus the two inputs a per-call-site re-run needs to reproduce
+    it (:func:`call_site_taint`)."""
     key = frozenset(trusted_args)
     frozen = getattr(lifter, '_analysis_frozen', False)
     cache = getattr(lifter, "_user_input_taint_cache", {}) if frozen else {}
@@ -74,7 +81,7 @@ def _taint_and_state_notes(lifter, trusted_args):
     notes: dict = {}
     points: dict = {}
     while True:
-        taint = _input_taint(lifter, trusted_args, seeds)
+        taint, scratch = _input_taint(lifter, trusted_args, seeds)
         if candidates is None:
             break
         new_seeds, notes = candidates.seeds_for(lifter, taint)
@@ -83,18 +90,19 @@ def _taint_and_state_notes(lifter, trusted_args):
         seeds = new_seeds
     if candidates is not None:
         points = {candidates.points[rid]: label for rid, label in seeds.items()}
-    result = (taint, MappingProxyType(notes), MappingProxyType(points))
+    result = (taint, MappingProxyType(notes), MappingProxyType(points),
+              MappingProxyType(seeds), scratch)
     if frozen:
         cache[key] = result
         lifter._user_input_taint_cache = cache
     return result
 
 
-def _input_taint(lifter, trusted_args, state_seeds) -> Mapping[int, frozenset[str]]:
+def _transfer_rules(lifter, trusted_args, state_seeds, taint):
+    """``(seed_label, invoke_ins)`` of the user-input fixpoint over ``taint``."""
     # interprocedural param->return summary, over the same seed set
     summary = (compute_summaries(lifter, trusted_args, state_seeds) if state_seeds
                else compute_summaries(lifter, trusted_args))
-    taint: dict = defaultdict(set)
 
     def _seed(src):
         lbl = source_label(src)
@@ -124,8 +132,103 @@ def _input_taint(lifter, trusted_args, state_seeds) -> Mapping[int, frozenset[st
             outputs = tuple(unknown for _ in getattr(o, "targets", ()))
         return outputs, changed
 
-    transfer_fixpoint(lifter, taint, seed_label=_seed, invoke_ins=_inv)
-    return MappingProxyType({k: frozenset(v) for k, v in taint.items() if v})
+    return _seed, _inv
+
+
+def _input_taint(lifter, trusted_args, state_seeds):
+    """``(taint, unknown_scratch)`` — one round of the whole-program fixpoint."""
+    taint: dict = defaultdict(set)
+    seed, inv = _transfer_rules(lifter, trusted_args, state_seeds, taint)
+    scratch = transfer_fixpoint(lifter, taint, seed_label=seed, invoke_ins=inv)
+    return MappingProxyType({k: frozenset(v) for k, v in taint.items() if v}), scratch
+
+
+def _own_registers(sub) -> frozenset:
+    """``id`` of every register ``sub`` itself defines: params, phis, targets."""
+    own = {id(p.register) for p in sub.parameters}
+    for b in sub.body:
+        own.update(id(ph.register) for ph in b.phis)
+        for o in b.ops:
+            own.update(id(t) for t in getattr(o, "targets", ()) or ())
+    return frozenset(own)
+
+
+class _ContextTaint(dict):
+    """A taint map answering ``own`` registers from itself (empty until the
+    context's fixpoint writes them) and every other register from ``base``,
+    copied on first write so ``base`` is never mutated."""
+
+    def __init__(self, base, own):
+        super().__init__()
+        self._base = base
+        self._own = own
+
+    def __missing__(self, rid):
+        value = set() if rid in self._own else set(self._base.get(rid, ()))
+        self[rid] = value
+        return value
+
+    def get(self, rid, default=None):
+        if dict.__contains__(self, rid):
+            return dict.__getitem__(self, rid) or default
+        if rid in self._own:
+            return default
+        return self._base.get(rid, default)
+
+    def __contains__(self, rid):
+        return bool(self.get(rid))
+
+
+#: Per-lift ceiling on context re-runs (memo misses); past it the caller keeps
+#: the whole-program (merged) verdict.
+_CONTEXT_BUDGET = 256
+
+
+def call_site_taint(lifter, sub, arg_sources, base=None, trusted_args=frozenset()):
+    """``sub``'s taint when entered from ONE call site — the 1-CFA refinement
+    of :func:`user_input_taint` — or ``None`` once the per-lift budget is spent.
+
+    The whole-program fixpoint gives each parameter the UNION of every call
+    site's argument: a transfer helper called with a pinned receiver at one
+    site and an attacker-chosen one at another is ONE register, so a check
+    that only one caller needs is judged against taint another caller supplied
+    (`assert(p_receiver == p_owner)` is no pin when `p_owner` is attacker-fed
+    SOMEWHERE). Here ``sub``'s parameters carry exactly ``arg_sources`` (one
+    set per parameter) and the transfer fixpoint is re-run over ``sub`` alone.
+
+    Soundness: every register ``sub`` does not define — the caller's, another
+    sub's scratch store, a callee's param — answers from ``base`` (the
+    whole-program taint or an enclosing context), so a context is never
+    cleaner than the program around ``sub``; callee calls transfer through the
+    same positional summaries; the run starts from the program's unknown-scratch
+    state; and a self-recursive call feeds its arguments back into ``sub``'s own
+    parameters exactly as the whole-program run does. ``base`` must be
+    whole-program taint or a map this function returned. Memoised on ``(sub,
+    arg_sources, base)``: sites passing equally-tainted arguments share a run."""
+    taint, _, _, seeds, scratch = _taint_state(lifter, trusted_args)
+    base = taint if base is None else base
+    memo = getattr(lifter, "_call_site_taint_memo", None)
+    if memo is None or memo[0] is not taint:
+        memo = (taint, {}, {})
+        lifter._call_site_taint_memo = memo
+    key = (sub.id, tuple(frozenset(a) for a in arg_sources),
+           None if base is taint else id(base))
+    hit = memo[1].get(key)
+    if hit is not None and hit[0] is base:
+        return hit[1]
+    if len(memo[1]) >= _CONTEXT_BUDGET:
+        return None
+    local = _ContextTaint(base, _own_registers(sub))
+    for p, sources in zip(sub.parameters, arg_sources):
+        local[id(p.register)] |= sources
+    seed, inv = _transfer_rules(lifter, trusted_args, seeds, local)
+    local_defs = memo[2].get(sub.id)
+    if local_defs is None:
+        local_defs = memo[2][sub.id] = sub_local_scratch(lifter, sub)
+    transfer_fixpoint(lifter, local, seed_label=seed, invoke_ins=inv, subs=(sub,),
+                      unknown_scratch=scratch, scratch_defs=local_defs)
+    memo[1][key] = (base, local)     # strong ref to ``base``: no id() reuse
+    return local
 
 
 class _StateCandidates:

@@ -443,3 +443,112 @@ def test_finding_message_carries_ir_taint_road(tmp_path):
     assert vs, "expected an unguarded tainted Amount finding"
     assert "via:" in vs[0].message and "ApplicationArgs" in vs[0].message
     assert "→" in vs[0].message                    # a road with >=1 hop
+
+
+def test_legacy_helper_parking_args_in_scratch_keeps_its_summary(tmp_path):
+    """`scale: store 10; load 10; int 2; *; retsub` returns its argument
+    doubled, but the program-wide scratch reaching-def resolves `load 10`
+    straight to the CALLER's pushed value — in `main`, which the summary
+    fixpoint never sweeps — so the summary said the result depends on no
+    argument and `Amount = scale(btoi(arg0))` read clean. Controls: the
+    second site, `scale(5)`, must stay clean (per-site, not merged); and
+    `pick`, which stores slot 11 on ONE path only, must keep the caller's
+    attacker-fed `store 11` reaching its load (a may-def is no must-def)."""
+    teal = ("#pragma version 6\n"
+            "txna ApplicationArgs 0\nbtoi\ncallsub scale\n"
+            "itxn_begin\nint pay\nitxn_field TypeEnum\ntxn Sender\nitxn_field Receiver\n"
+            "itxn_field Amount\nitxn_submit\n"
+            "int 5\ncallsub scale\n"
+            "itxn_begin\nint pay\nitxn_field TypeEnum\nglobal CreatorAddress\n"
+            "itxn_field Receiver\nitxn_field Amount\nitxn_submit\n"
+            "callsub run\nint 1\nreturn\n"
+            "scale:\nstore 10\nload 10\nint 2\n*\nretsub\n"
+            "run:\ntxna ApplicationArgs 1\nbtoi\nstore 11\ncallsub pick\n"
+            "itxn_begin\nint pay\nitxn_field TypeEnum\nglobal CreatorAddress\n"
+            "itxn_field Receiver\nitxn_field Amount\nitxn_submit\nretsub\n"
+            "pick:\ntxn NumAppArgs\nbz keep\nint 7\nstore 11\nkeep:\nload 11\nretsub\n")
+    flows = _flows(teal, tmp_path)
+    assert sorted((f.field, f.line, f.guarded) for f in flows) == [
+        ("Amount", 10, False), ("Amount", 40, False)]
+
+
+_HELPER_PER_SITE = """#pragma version 8
+txn ApplicationID
+bz create
+txna ApplicationArgs 0
+byte "a"
+==
+bnz site_a
+txna ApplicationArgs 0
+byte "b"
+==
+bnz site_b
+{control}err
+site_a:
+txna ApplicationArgs 1
+byte "owner"
+app_global_get
+callsub pay
+int 1
+return
+site_b:
+byte "owner"
+app_global_get
+txna ApplicationArgs 2
+callsub pay
+int 1
+return
+site_c:
+txna ApplicationArgs 1
+txna ApplicationArgs 2
+callsub pay
+int 1
+return
+create:
+byte "owner"
+txn Sender
+app_global_put
+int 1
+return
+pay:
+{pay}
+==
+assert
+itxn_begin
+int pay
+itxn_field TypeEnum
+{rcv}
+itxn_field Receiver
+int 1000
+itxn_field Amount
+itxn_submit
+retsub
+"""
+
+#: ``pay``'s prologue and its receiver read: frame params, or (legacy) the
+#: stack args parked in scratch — whose program-wide reaching-def resolves
+#: straight to EVERY caller's pushed value, merging the sites a second way.
+_PAY_SHAPES = {
+    "proto": ("proto 2 0\nframe_dig -2\nframe_dig -1", "frame_dig -2"),
+    "scratch": ("store 2\nstore 1\nload 1\nload 2", "load 1"),
+}
+
+
+@pytest.mark.parametrize("shape", sorted(_PAY_SHAPES))
+def test_helper_params_are_judged_per_call_site(shape, tmp_path):
+    """A helper's params merge every site's argument: `pay(rcv, expected)`
+    asserts `rcv == expected`; site a passes (arg, owner), site b (owner, arg).
+    Merged, BOTH params are attacker-fed, so the equality pins nothing and the
+    Receiver read as unguarded — yet each site is pinned (a) or clean (b). The
+    control site c passes (arg, arg): really attacker-chosen, still flagged."""
+    pay, rcv = _PAY_SHAPES[shape]
+
+    def receivers(control):
+        flows = _flows(_HELPER_PER_SITE.format(control=control, pay=pay, rcv=rcv),
+                       tmp_path)
+        return [f for f in flows if f.field == "Receiver" and not f.guarded]
+
+    assert receivers("") == [], "every call site pins or never taints the receiver"
+    control = 'txna ApplicationArgs 0\nbyte "c"\n==\nbnz site_c\n'
+    open_ = receivers(control)
+    assert len(open_) == 1 and open_[0].sources == {"ApplicationArgs"}

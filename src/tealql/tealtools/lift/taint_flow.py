@@ -146,8 +146,141 @@ def _invoke(o):
     return None
 
 
+def _scratch_writes(lifter) -> dict:
+    """``{sub.id: (static slots, dynamic)}`` each sub may write, callees included."""
+    direct: dict = {}
+    calls: dict = {}
+    for s in lifter.subs:
+        slots, dyn, out = set(), False, set()
+        for b in s.body:
+            for o in b.ops:
+                src = _intr(o)
+                if src is not None and src.op == "store":
+                    key = str(src.immediates[0]) if src.immediates else None
+                    if key is None:
+                        dyn = True
+                    else:
+                        slots.add(key)
+                elif src is not None and src.op == "stores":
+                    dyn = True
+                inv = _invoke(o)
+                if inv is not None:
+                    out.add(inv.target)
+        direct[s.id] = [slots, dyn]
+        calls[s.id] = out
+    changed = True
+    while changed:
+        changed = False
+        for sid, callees in calls.items():
+            mine = direct[sid]
+            for c in callees:
+                theirs = direct.get(c)
+                if theirs is None:              # unknown callee: anything
+                    theirs = (set(), True)
+                if not theirs[0] <= mine[0] or (theirs[1] and not mine[1]):
+                    mine[0] |= theirs[0]
+                    mine[1] = mine[1] or theirs[1]
+                    changed = True
+    return {sid: (frozenset(v[0]), v[1]) for sid, v in direct.items()}
+
+
+def sub_local_scratch(lifter, sub) -> dict:
+    """``{id(load target): (stored value, ...)}`` for each static ``load N`` in
+    ``sub`` that a ``store N`` of ``sub`` ITSELF must-defines — written on every
+    path from the sub's entry with no call that may write ``N`` in between.
+
+    Such a load can only read one of those stores' values (the may-reaching
+    set), and those are ``sub``'s own pre-IR operands. The program-wide
+    reaching-def (``load_stores``) instead resolves a legacy helper's
+    ``store 71`` of a stack argument straight through ``callsub`` to every
+    caller's pushed value — context-insensitive by construction — so a
+    per-call-site view (:func:`taint.call_site_taint`) must take these local
+    reaching values instead. Any load this cannot prove local is left out and
+    keeps the program-wide bridge."""
+    writes = getattr(lifter, "_scratch_writes_cache", None)
+    if writes is None:
+        writes = _scratch_writes(lifter)
+        if getattr(lifter, "_analysis_frozen", False):
+            lifter._scratch_writes_cache = writes
+    by_id = {b.id: b for b in sub.body}
+    preds: dict = {b.id: [] for b in sub.body}
+    for b in sub.body:
+        for t in pre_ir.succ_ids(b.terminator):
+            if t in preds:
+                preds[t].append(b.id)
+    entry = sub.body[0].id if sub.body else None
+    state_in: dict = {}       # bid -> {slot: tuple(values)} ; absent = unvisited
+
+    def transfer(state, b, record=None):
+        state = dict(state)
+        for o in b.ops:
+            src = _intr(o)
+            if src is not None and src.op == "store" and src.immediates and src.args:
+                state[str(src.immediates[0])] = (src.args[0],)
+            elif src is not None and src.op in ("store", "stores"):
+                state = {}
+            elif src is not None and src.op == "load" and src.immediates \
+                    and record is not None:
+                vals = state.get(str(src.immediates[0]))
+                tgts = getattr(o, "targets", None)
+                if vals is not None and tgts:
+                    record[id(tgts[0])] = vals
+            inv = _invoke(o)
+            if inv is not None:
+                slots, dyn = writes.get(inv.target, (frozenset(), True))
+                state = {} if dyn else {k: v for k, v in state.items() if k not in slots}
+        return state
+
+    def join(states):
+        keys = set(states[0])
+        for st in states[1:]:
+            keys &= set(st)
+        out = {}
+        for k in keys:
+            vals: dict = {}
+            for st in states:
+                for v in st[k]:
+                    vals[id(v)] = v
+            out[k] = tuple(vals.values())
+        return out
+
+    def _ids(st):
+        return {k: frozenset(map(id, v)) for k, v in st.items()}
+
+    if entry is None:
+        return {}
+    work = [entry]
+    state_in[entry] = {}
+    state_out: dict = {}
+    while work:
+        bid = work.pop()
+        b = by_id[bid]
+        if bid == entry:
+            ins = {}
+        else:
+            ps = [state_out[p] for p in preds[bid] if p in state_out]
+            if not ps:
+                continue
+            ins = join(ps)
+        new_out = transfer(ins, b)
+        if bid in state_out and _ids(state_out[bid]) == _ids(new_out):
+            continue
+        state_in[bid] = ins
+        state_out[bid] = new_out
+        work.extend(t for t in pre_ir.succ_ids(b.terminator) if t in by_id)
+    # Unvisited predecessors (unreachable from entry) are ignored: no path.
+    record: dict = {}
+    for bid, ins in state_in.items():
+        if bid != entry:
+            ps = [state_out[p] for p in preds[bid] if p in state_out]
+            ins = join(ps) if ps else ins
+        transfer(ins, by_id[bid], record)
+    return record
+
+
 def transfer_fixpoint(lifter, taint: dict, *, seed_label, invoke_ins,
-                      per_round=None, subs=None) -> None:
+                      per_round=None, subs=None, unknown_scratch=None,
+                      scratch_defs=None) -> tuple:
     """THE taint transfer fixpoint — shared by :func:`user_input_taint`,
     :func:`summaries.compute_summaries`, which
     used to carry three near-verbatim ~80-line copies of this body, so every
@@ -164,10 +297,16 @@ def transfer_fixpoint(lifter, taint: dict, *, seed_label, invoke_ins,
       fallback);
     * ``per_round(reg_t) -> bool`` — the caller's per-round epilogue
       (return-marker / checked-param refinement), run after each sweep.
+
+    Returns the unknown-scratch state ``(static_slots, dynamic)`` it reached.
+    ``unknown_scratch`` seeds that state: a fixpoint restricted to a few
+    ``subs`` must start from the WHOLE program's TOP stores, which it no
+    longer sweeps, or a load of a slot some other sub filled with TOP would
+    read as clean there.
     """
     ssa_of = getattr(lifter, "register_sources", {})
-    unknown_scratch_slots: set = set()
-    unknown_dynamic = False
+    unknown_scratch_slots: set = set(unknown_scratch[0]) if unknown_scratch else set()
+    unknown_dynamic = bool(unknown_scratch[1]) if unknown_scratch else False
 
     def reg_t(v):
         return value_sources(v, taint)
@@ -193,12 +332,19 @@ def transfer_fixpoint(lifter, taint: dict, *, seed_label, invoke_ins,
                         ins.add(lbl)
                     for a in src.args:
                         ins |= reg_t(a)
-                    if _scratch_read_is_unknown(
+                    out = (o.targets[0]
+                           if getattr(o, "targets", None) else None)
+                    local = (scratch_defs.get(id(out))
+                             if scratch_defs and out is not None else None)
+                    if local is not None:
+                        # Must-defined by this sub's own stores: exactly the
+                        # values they wrote (:func:`sub_local_scratch`).
+                        for v in local:
+                            ins |= reg_t(v)
+                    elif _scratch_read_is_unknown(
                             src, unknown_scratch_slots, unknown_dynamic):
                         ins.add(UNKNOWN_SOURCE)
-                    if src.op in ("load", "loads"):     # scratch reaching-def
-                        out = (o.targets[0]
-                               if getattr(o, "targets", None) else None)
+                    if local is None and src.op in ("load", "loads"):  # reaching-def
                         lvs = ssa_of.get(id(out), ()) if out is not None else ()
                         for lv in lvs:
                             for sv in lifter.load_stores.get(lv, ()):
@@ -225,3 +371,4 @@ def transfer_fixpoint(lifter, taint: dict, *, seed_label, invoke_ins,
                         changed = True
         if per_round is not None and per_round(reg_t):
             changed = True
+    return frozenset(unknown_scratch_slots), unknown_dynamic

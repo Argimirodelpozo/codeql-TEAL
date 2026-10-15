@@ -28,8 +28,10 @@ from .taint import (
     _intr,
     _invoke,
     _merge_unresolved,
+    call_site_taint,
     state_value_writers,
     user_input_taint,
+    value_sources,
 )
 from ..language.avm import FUND_FIELDS as _FUND_FIELDS, is_state_value_label
 from ..analysis.guard_coverage import every
@@ -889,6 +891,7 @@ def _entry_guards(lifter, def_of, dom_by_sub, taint, inv_ret=None,
     # all (then no caller guard can ever cover it).
     recs: dict = {sid: [] for sid in subs}
     site_sender: dict = {sid: [] for sid in subs}   # (caller_id, sender pinned here)
+    site_facts: dict = {}       # id(InvokeSubroutine) -> (caller_id, facts, pinned)
     for s in lifter.subs:
         dom, pdom, by_id = dom_by_sub[s.id], pdom_by_sub[s.id], {b.id: b for b in s.body}
         fails = _all_fail_blocks(by_id)
@@ -951,6 +954,7 @@ def _entry_guards(lifter, def_of, dom_by_sub, taint, inv_ret=None,
                                   any(g.checks_sender for g in guards),
                                   [cpidx[r] for r in aregs if r in cpidx]))
                 recs[inv.target].append(facts)
+                site_facts[id(inv)] = (s.id, facts, pinned)
     eg = {sid: {i: (False, False) for i in range(len(subs[sid].parameters))} for sid in subs}
     called = {tid for tid, sites in recs.items() if sites}
     changed = True
@@ -993,7 +997,21 @@ def _entry_guards(lifter, def_of, dom_by_sub, taint, inv_ret=None,
             if new != sub_sender[tid]:
                 sub_sender[tid] = new
                 changed = True
-    return eg, called, sub_sender
+    return eg, called, sub_sender, site_facts
+
+
+def _site_entry_credit(facts, eg) -> tuple:
+    """``({param: checks_input}, {param: checks_sender})`` at ONE call site —
+    :func:`_entry_guards`' per-site record judged against the converged
+    caller-entry map ``eg``, i.e. that function's AND-across-sites rule with
+    the AND dropped. An untainted argument needs no credit and gets none."""
+    ci, cs = {}, {}
+    for i, (cid, tainted, needs, cs0, ks) in enumerate(facts):
+        if not tainted:
+            continue
+        ci[i] = needs is not None and all(eg[cid][k][0] for k in needs)
+        cs[i] = cs0 or bool(ks) and all(eg[cid][k][1] for k in ks)
+    return ci, cs
 
 
 def _callee_param_guards(lifter, def_of, dom_by_sub, inv_ret=None, taint=None) -> dict:
@@ -1053,6 +1071,110 @@ def _callee_sender_guards(lifter, def_of, dom_by_sub, inv_ret=None) -> dict:
     return out
 
 
+class _SiteContexts:
+    """Bounded call-string contexts of a called sub, for re-judging a sink the
+    context-insensitive (merged-parameter) verdict left unguarded.
+
+    One context per call site: the sub's taint re-derived with its parameters
+    bound to THAT site's arguments (:func:`taint.call_site_taint`) and the
+    entry credit THAT site earns (:func:`_site_entry_credit`, plus "the sender
+    is pinned here or on every path into the caller"). When the caller is
+    itself called, its own contexts supply the arguments' taint (call strings
+    up to ``_DEPTH``), so a wrapper that forwards its params is resolved
+    through to the sites that fill them. Past ``_MAX`` contexts, or once the
+    lift's re-run budget is spent, :meth:`judge` returns ``None`` and the
+    merged verdict stands — refusal keeps the over-approximation, never a
+    cleaner answer.
+
+    Soundness: every context view over-approximates the sub's taint on the
+    paths entered from its site, and the sites cover every way into a called
+    sub, so "unguarded in no context" means unguarded on no path."""
+
+    _DEPTH = 2
+    _MAX = 32
+
+    def __init__(self, lifter, taint, trusted_args, eg, sub_sender, site_facts):
+        self.lifter = lifter
+        self.taint = taint
+        self.trusted_args = trusted_args
+        self.eg = eg
+        self.sub_sender = sub_sender
+        self.site_facts = site_facts
+        self.callers: dict = defaultdict(list)
+        for s in lifter.subs:
+            for b in s.body:
+                for o in b.ops:
+                    inv = _invoke(o)
+                    if inv is not None and id(inv) in site_facts:
+                        self.callers[inv.target].append((s, inv))
+        self._memo: dict = {}
+
+    def contexts(self, sub, depth=0, chain=()):
+        key = (sub.id, depth, chain)
+        if key in self._memo:
+            return self._memo[key]
+        out: list = []
+        seen: set = set()
+        result = out
+        for caller, inv in self.callers.get(sub.id, ()):
+            cid, facts, pinned = self.site_facts[id(inv)]
+            outer = None
+            if (depth + 1 < self._DEPTH and self.callers.get(caller.id)
+                    and caller.id not in chain and caller.id != sub.id):
+                outer = self.contexts(caller, depth + 1, chain + (sub.id,))
+                if outer is None:
+                    result = None
+                    break
+            if outer is None:
+                ci, cs = _site_entry_credit(facts, self.eg)
+                pairs = [(self.taint, (ci, cs, bool(pinned or self.sub_sender.get(cid))))]
+            else:
+                # The caller's own entry credit comes from ITS context, not
+                # the AND over all of its sites.
+                pairs = []
+                for base, (oci, ocs, osender) in outer:
+                    ci, cs = {}, {}
+                    for i, (_, tainted, needs, cs0, ks) in enumerate(facts):
+                        if not tainted:
+                            continue
+                        ci[i] = needs is not None and all(
+                            oci[k] if k in oci else not value_sources(
+                                caller.parameters[k].register, base)
+                            for k in needs)
+                        cs[i] = cs0 or bool(ks) and all(ocs.get(k, False) for k in ks)
+                    pairs.append((base, (ci, cs, bool(pinned or osender))))
+            for base, credit in pairs:
+                ci, cs = credit[0], credit[1]
+                args = [frozenset(value_sources(a, base))
+                        for a in inv.args[:len(sub.parameters)]]
+                args += [frozenset()] * (len(sub.parameters) - len(args))
+                view = call_site_taint(self.lifter, sub, args,
+                                       None if base is self.taint else base,
+                                       self.trusted_args)
+                if view is None:
+                    result = None
+                    break
+                ck = (id(view), tuple(sorted(ci.items())), tuple(sorted(cs.items())),
+                      credit[2])
+                if ck not in seen:
+                    seen.add(ck)
+                    out.append((view, credit))
+            if result is None or len(out) > self._MAX:
+                result = None
+                break
+        if result is not None and not result:
+            result = None
+        self._memo[key] = result
+        return result
+
+    def judge(self, sub, fn):
+        """``[fn(view, credit) for each context]``, or ``None`` (no verdict)."""
+        ctxs = self.contexts(sub)
+        if ctxs is None:
+            return None
+        return [fn(view, credit) for view, credit in ctxs]
+
+
 def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset(),
                         sender_only=False, *, merge_unresolved=True,
                         state_notes=True, sink_guards=None) -> list:
@@ -1082,6 +1204,10 @@ def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset(),
     once with the shared maps, it returns ``guards_for(sub, block, idx,
     intrinsic) -> [Guard]`` whose input credit joins the coverage check like
     any other (the state-write key namespace, :mod:`.key_namespace`)."""
+    # Contexts are re-derivable only for the canonical user-input view; a
+    # caller-supplied abstraction (byte taint, a state-seed round, a query's
+    # custom map) is judged as given, context-insensitively.
+    per_site = taint is None
     if taint is None:
         taint = user_input_taint(lifter, trusted_args)
     elif merge_unresolved:
@@ -1089,13 +1215,15 @@ def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset(),
         # TOP. Preserve ``Undefined -> op -> register`` through custom views.
         taint = _merge_unresolved(lifter, taint)
     dom_by_sub, pdom_by_sub, def_of, inv_ret, callee_sender, sites = _value_maps(lifter)
-    entry_guards, called, sub_sender, callee_pg = _cached_entry_guards(
+    entry_guards, called, sub_sender, site_facts, callee_pg = _cached_entry_guards(
         lifter, def_of, dom_by_sub, taint, inv_ret, callee_sender)
     extra = None
     if sink_guards is not None:
         extra = sink_guards(lifter, dict(
             def_of=def_of, inv_ret=inv_ret, sites=sites, taint=taint,
             dom_by_sub=dom_by_sub, pdom_by_sub=pdom_by_sub))
+    contexts = _SiteContexts(lifter, taint, trusted_args, entry_guards, sub_sender,
+                             site_facts) if per_site else None
     findings: list = []
     for sub in lifter.subs:
         dom = dom_by_sub[sub.id]
@@ -1104,124 +1232,162 @@ def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset(),
         fails = _all_fail_blocks(by_id)
         dead = _dead_itxn_field_writes(sub)
         pidx = {id(p.register): i for i, p in enumerate(sub.parameters)}
+        egp = entry_guards.get(sub.id, {})
+        merged_credit = ({i: v[0] for i, v in egp.items()},
+                         {i: v[1] for i, v in egp.items()},
+                         bool(sub_sender.get(sub.id)))
+        # A sub whose params are clean everywhere judges identically in every
+        # context; only a tainted param can make the merge matter.
+        refinable = (contexts is not None and sub.id in called and not sender_only
+                     and any(taint.get(id(p.register)) for p in sub.parameters))
+
+        def judge(view, credit, b, idx, value_args):
+            """``(sources, guards, valreg, feeding)`` of one sink under the
+            taint ``view`` and entry ``credit`` (``({param: checks_input},
+            {param: checks_sender}, every path in pins the sender)``), or
+            ``None`` when nothing tainted reaches it."""
+            sources: set = set()
+            valreg = None
+            for a in value_args:
+                if isinstance(a, pre_ir.Register):
+                    tt = view.get(id(a), set())
+                    if tt:
+                        sources |= tt
+                        valreg = a
+                elif isinstance(a, pre_ir.Undefined):
+                    # The lift could not resolve this operand, so it
+                    # cannot be shown clean either. Skipping the sink
+                    # would report NOTHING for a value the attacker may
+                    # well control — the silent direction. Report it
+                    # with its own source label instead.
+                    sources.add(UNKNOWN_SOURCE)
+            if not sources:
+                return None
+            if valreg is not None:
+                # VALUE walk (stops below `len`/`bitlen`/`bzero`): the
+                # registers a value is computed FROM, which is what a
+                # check must constrain to constrain it.
+                walked = _value_tree(valreg, def_of, inv_ret, sites)
+                sink_regs = {id(r) for r, _ in walked}
+                # HAZARD: only the TAINTED sub-terms may satisfy a value
+                # check. `sink_regs` is the sink operand's whole def-tree,
+                # so matching a guard against any member credits checks on
+                # co-operands the attacker does not control — with
+                # `Amount = state_rate * arg`, `assert(state_rate <= cap)`
+                # reads as "the input is validated" while `arg` stays
+                # free. The canonical `payout = shares * price` shape.
+                guard_regs = {r for r in sink_regs if view.get(r)}
+                sink_keys = {k for _, oo in walked
+                             if (k := _input_key(_intr(oo) if oo is not None else None)) is not None}
+            else:
+                sink_regs, guard_regs, sink_keys = set(), set(), set()
+            guards = _dominating_guards(by_id, dom, b.id, idx, def_of, guard_regs,
+                                        sink_keys, inv_ret, view)
+            # A failed assert reverts the inner txn too, so one the sink
+            # cannot avoid reaching gates it as well.
+            guards += _post_dominating_guards(by_id, pdom, b.id, idx, def_of,
+                                              guard_regs, sink_keys, inv_ret, view,
+                                              fails)
+            if extra is not None and valreg is not None:
+                guards += extra(sub, b, idx, _intr(b.ops[idx]))
+            credited_regs = set().union(*(g.regs for g in guards if g.checks_input))
+            credited_keys = set().union(*(g.keys for g in guards if g.checks_input))
+            # Interprocedural: a value flowing from a caller-checked param.
+            feeding = {pidx[r] for r in sink_regs if r in pidx}
+            entry_ci, entry_cs, entry_sender = credit
+            caller_ci = {i for i in feeding if entry_ci.get(i)}
+            if caller_ci:
+                guards.append(Guard("caller", None, True, False))
+            if any(entry_cs.get(i) for i in feeding):
+                guards.append(Guard("caller", None, False, True))
+            # ... and the sender pin needs no feeding param at all: every
+            # path INTO this sub runs under one.
+            elif entry_sender:
+                guards.append(Guard("caller", None, False, True))
+            # Interprocedural (callee-side): the sink value was passed to
+            # a helper that validates that param, on a call dominating
+            # the sink; transfer that guard to the caller's value.
+            for cbid in dom.get(b.id, {b.id}):
+                cblk = by_id.get(cbid)
+                if cblk is None:
+                    continue
+                cops = cblk.ops if cbid != b.id else cblk.ops[:idx]
+                for co in cops:
+                    inv = _invoke(co)
+                    callee = lifter.name2sub.get(inv.target) if inv else None
+                    if callee is None:
+                        continue
+                    # A sub that checks the SENDER on every return
+                    # guards this sink by dominating it — no argument
+                    # needs to reach the sink's value, and a `proto 0 0`
+                    # owner-check has none to offer.
+                    if callee_sender.get(callee.id):
+                        guards.append(Guard("callee", None, False, True))
+                    cpg = callee_pg.get(callee.id, {})
+                    for ai, arg in enumerate(inv.args):
+                        ci, cs = cpg.get(ai, (False, False))
+                        if not (ci or cs):
+                            continue
+                        # VALUE walk: the callee checked the param's
+                        # VALUE, which is the argument's value — not
+                        # what lies below a `len` in its def tree.
+                        # `check32(len(arg))` validates a length.
+                        aw = list(_walk(arg, def_of, value_only=True))
+                        aregs = {id(r) for r, _ in aw}
+                        akeys = {k for _, oo in aw
+                                 if (k := _input_key(_intr(oo) if oo else None))
+                                 is not None}
+                        # `guard_regs`, not `sink_regs`: overlapping the
+                        # sink's whole def-tree credits a callee that
+                        # validated an UNTAINTED co-operand — the same
+                        # narrowing the intra-procedural path applies.
+                        if (aregs & guard_regs) or (akeys & sink_keys):
+                            if ci:
+                                guards.append(Guard("callee", None, True, False))
+                                credited_regs |= aregs
+                                credited_keys |= akeys
+                            if cs:
+                                guards.append(Guard("callee", None, False, True))
+            if sender_only:
+                # Byte-taint owns input validation (byte-precise); drop
+                # input-slot guards so only sender/creator checks clear.
+                guards = [g for g in guards if g.checks_sender]
+            elif any(g.checks_input for g in guards):
+                uncovered = _uncovered_leaves(valreg, def_of, inv_ret, view,
+                                              credited_regs, credited_keys, pidx, sites)
+                if any(pi is None or pi not in caller_ci for _, pi in uncovered):
+                    guards = [_without_input_credit(g) for g in guards]
+            return sources, guards, valreg, feeding
+
         for b in sub.body:
             for idx, o in enumerate(b.ops):
                 s = _intr(o)
                 if s is None or id(s) in dead:
                     continue
                 for label, severity, value_args in sink_of(s):
-                    sources: set = set()
-                    valreg = None
-                    for a in value_args:
-                        if isinstance(a, pre_ir.Register):
-                            tt = taint.get(id(a), set())
-                            if tt:
-                                sources |= tt
-                                valreg = a
-                        elif isinstance(a, pre_ir.Undefined):
-                            # The lift could not resolve this operand, so it
-                            # cannot be shown clean either. Skipping the sink
-                            # would report NOTHING for a value the attacker may
-                            # well control — the silent direction. Report it
-                            # with its own source label instead.
-                            sources.add(UNKNOWN_SOURCE)
-                    if not sources:
+                    verdict = judge(taint, merged_credit, b, idx, value_args)
+                    if verdict is None:
                         continue
-                    if valreg is not None:
-                        # VALUE walk (stops below `len`/`bitlen`/`bzero`): the
-                        # registers a value is computed FROM, which is what a
-                        # check must constrain to constrain it.
-                        walked = _value_tree(valreg, def_of, inv_ret, sites)
-                        sink_regs = {id(r) for r, _ in walked}
-                        # HAZARD: only the TAINTED sub-terms may satisfy a value
-                        # check. `sink_regs` is the sink operand's whole def-tree,
-                        # so matching a guard against any member credits checks on
-                        # co-operands the attacker does not control — with
-                        # `Amount = state_rate * arg`, `assert(state_rate <= cap)`
-                        # reads as "the input is validated" while `arg` stays
-                        # free. The canonical `payout = shares * price` shape.
-                        guard_regs = {r for r in sink_regs if taint.get(r)}
-                        sink_keys = {k for _, oo in walked
-                                     if (k := _input_key(_intr(oo) if oo is not None else None)) is not None}
-                    else:
-                        sink_regs, guard_regs, sink_keys = set(), set(), set()
-                    guards = _dominating_guards(by_id, dom, b.id, idx, def_of, guard_regs,
-                                                sink_keys, inv_ret, taint)
-                    # A failed assert reverts the inner txn too, so one the sink
-                    # cannot avoid reaching gates it as well.
-                    guards += _post_dominating_guards(by_id, pdom, b.id, idx, def_of,
-                                                      guard_regs, sink_keys, inv_ret, taint,
-                                                      fails)
-                    if extra is not None and valreg is not None:
-                        guards += extra(sub, b, idx, s)
-                    credited_regs = set().union(*(g.regs for g in guards if g.checks_input))
-                    credited_keys = set().union(*(g.keys for g in guards if g.checks_input))
-                    # Interprocedural: a value flowing from a caller-checked param.
-                    feeding = {pidx[r] for r in sink_regs if r in pidx}
-                    egp = entry_guards.get(sub.id, {})
-                    caller_ci = {i for i in feeding if egp.get(i, (False, False))[0]}
-                    if caller_ci:
-                        guards.append(Guard("caller", None, True, False))
-                    if any(egp.get(i, (False, False))[1] for i in feeding):
-                        guards.append(Guard("caller", None, False, True))
-                    # ... and the sender pin needs no feeding param at all: every
-                    # path INTO this sub runs under one.
-                    elif sub_sender.get(sub.id):
-                        guards.append(Guard("caller", None, False, True))
-                    # Interprocedural (callee-side): the sink value was passed to
-                    # a helper that validates that param, on a call dominating
-                    # the sink; transfer that guard to the caller's value.
-                    for cbid in dom.get(b.id, {b.id}):
-                        cblk = by_id.get(cbid)
-                        if cblk is None:
-                            continue
-                        cops = cblk.ops if cbid != b.id else cblk.ops[:idx]
-                        for co in cops:
-                            inv = _invoke(co)
-                            callee = lifter.name2sub.get(inv.target) if inv else None
-                            if callee is None:
-                                continue
-                            # A sub that checks the SENDER on every return
-                            # guards this sink by dominating it — no argument
-                            # needs to reach the sink's value, and a `proto 0 0`
-                            # owner-check has none to offer.
-                            if callee_sender.get(callee.id):
-                                guards.append(Guard("callee", None, False, True))
-                            cpg = callee_pg.get(callee.id, {})
-                            for ai, arg in enumerate(inv.args):
-                                ci, cs = cpg.get(ai, (False, False))
-                                if not (ci or cs):
-                                    continue
-                                # VALUE walk: the callee checked the param's
-                                # VALUE, which is the argument's value — not
-                                # what lies below a `len` in its def tree.
-                                # `check32(len(arg))` validates a length.
-                                aw = list(_walk(arg, def_of, value_only=True))
-                                aregs = {id(r) for r, _ in aw}
-                                akeys = {k for _, oo in aw
-                                         if (k := _input_key(_intr(oo) if oo else None))
-                                         is not None}
-                                # `guard_regs`, not `sink_regs`: overlapping the
-                                # sink's whole def-tree credits a callee that
-                                # validated an UNTAINTED co-operand — the same
-                                # narrowing the intra-procedural path applies.
-                                if (aregs & guard_regs) or (akeys & sink_keys):
-                                    if ci:
-                                        guards.append(Guard("callee", None, True, False))
-                                        credited_regs |= aregs
-                                        credited_keys |= akeys
-                                    if cs:
-                                        guards.append(Guard("callee", None, False, True))
-                    if sender_only:
-                        # Byte-taint owns input validation (byte-precise); drop
-                        # input-slot guards so only sender/creator checks clear.
-                        guards = [g for g in guards if g.checks_sender]
-                    elif any(g.checks_input for g in guards):
-                        uncovered = _uncovered_leaves(valreg, def_of, inv_ret, taint,
-                                                      credited_regs, credited_keys, pidx, sites)
-                        if any(pi is None or pi not in caller_ci for _, pi in uncovered):
-                            guards = [_without_input_credit(g) for g in guards]
+                    sources, guards, valreg, feeding = verdict
                     guarded = any(g.checks_input or g.checks_sender for g in guards)
+                    if refinable and not guarded:
+                        # HAZARD: the merged verdict judged the union of every
+                        # site's arguments at once. Re-judge per call site
+                        # (:class:`_SiteContexts`); the finding stands iff ONE
+                        # context leaves the sink tainted and unguarded.
+                        per = contexts.judge(sub, lambda view, credit: judge(
+                            view, credit, b, idx, value_args))
+                        if per is not None:
+                            open_ = [v for v in per if v is not None and not any(
+                                g.checks_input or g.checks_sender for g in v[1])]
+                            if open_:
+                                sources = set().union(*(v[0] for v in open_))
+                            elif any(v is not None for v in per):
+                                guards = [g for v in per if v is not None
+                                          for g in v[1]]
+                                guarded = True
+                            else:
+                                continue    # clean in every calling context
                     param_derived = bool(feeding) and not guarded and sub.id not in called
                     state_writers = {}
                     if state_notes and any(is_state_value_label(x) for x in sources):

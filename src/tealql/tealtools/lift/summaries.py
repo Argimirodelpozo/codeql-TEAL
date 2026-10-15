@@ -16,7 +16,7 @@ from ..language.effects import STATE_EFFECTS
 from . import pre_ir
 from .taint_flow import (
     UNKNOWN_SOURCE, _intr, _invoke, _trusted_apparg, source_label, transfer_fixpoint,
-    value_sources,
+    value_sources, sub_local_scratch,
 )
 
 
@@ -121,10 +121,22 @@ def compute_summaries(lifter, trusted_args=frozenset(),
                             changed = True
         return changed
 
+    # HAZARD: a legacy helper that parks its stack args in scratch (`store 71`
+    # on entry, `load 71` later) has no SSA edge from the load to its own
+    # param: the program-wide reaching-def resolves the load straight to every
+    # CALLER's pushed value. Those callers are often `main`, which this
+    # fixpoint never sweeps, so the load read clean and the summary claimed
+    # the result depends on NO argument — every call result of the helper was
+    # silently untainted. Loads the sub must-defines itself read its own
+    # stores instead, so the param markers flow through them.
+    scratch_defs: dict = {}
+    for sub in subs:
+        scratch_defs.update(sub_local_scratch(lifter, sub))
     transfer_fixpoint(lifter, taint,
                       seed_label=lambda s: None if _trusted_apparg(s, trusted_args)
                       else source_label(s) or state_seeds.get(id(s)),
-                      invoke_ins=invoke, per_round=refine, subs=subs)
+                      invoke_ins=invoke, per_round=refine, subs=subs,
+                      scratch_defs=scratch_defs)
     result = {}
     for sub in subs:
         assertions = set()
