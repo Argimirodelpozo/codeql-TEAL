@@ -132,6 +132,7 @@ NON_PRODUCT_MODULES: dict[str, str] = {
     "lift.cache": "revision/file-keyed cache plumbing; no independent product",
     "lift.authority": "lifted-value bridge to shared authority provenance; evidence belongs to its consumers",
     "lift.guards": "guard classification and definition-walk helpers used by lifted findings and evidence",
+    "lift.key_namespace": "state-write key-namespace guard facts; evidence belongs to the tainted-state-write findings",
     "lift.teal_const": "literal conversion plumbing; no independent product",
     "reporting.registry": "detector registration plumbing; findings are outside tealtools views",
 }

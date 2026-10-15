@@ -205,7 +205,8 @@ def _all_fail_blocks(by_id) -> set:
 
 
 def _post_dominating_guards(by_id, pdom, sink_bid, sink_idx, def_of, sink_regs,
-                            sink_keys, inv_ret=None, taint=None, fails=None) -> list:
+                            sink_keys, inv_ret=None, taint=None, fails=None, *,
+                            classify=None) -> list:
     """Checks that MUST run after the sink, and therefore still gate it.
 
     A failed ``assert`` reverts the ENTIRE transaction, inner transactions
@@ -228,6 +229,7 @@ def _post_dominating_guards(by_id, pdom, sink_bid, sink_idx, def_of, sink_regs,
     lies on every such path (``retsub`` returns to the caller and is not a
     program exit, so the exit set below is what makes the claim, not the
     terminator kind)."""
+    classify = classify or _classify      # late-bound: mutation gates patch it
     guards = []
     for d in pdom.get(sink_bid, {sink_bid}):
         blk = by_id.get(d)
@@ -236,18 +238,18 @@ def _post_dominating_guards(by_id, pdom, sink_bid, sink_idx, def_of, sink_regs,
         ops = blk.ops if d != sink_bid else blk.ops[sink_idx + 1:]
         for o in ops:
             if isinstance(o, pre_ir.Assert):
-                guards.append(_classify("assert-after", None, o.condition, def_of,
+                guards.append(classify("assert-after", None, o.condition, def_of,
                                         sink_regs, sink_keys, inv_ret, taint))
         t = blk.terminator
         if isinstance(t, pre_ir.ProgramExit) and isinstance(t.result, pre_ir.Register):
-            guards.append(_classify("exit-after", None, t.result, def_of,
+            guards.append(classify("exit-after", None, t.result, def_of,
                                     sink_regs, sink_keys, inv_ret, taint))
         elif isinstance(t, pre_ir.ConditionalBranch):
             if fails is None:
                 fails = _all_fail_blocks(by_id)
             nz, z = t.non_zero in fails, t.zero in fails
             if nz != z:
-                guards.append(_classify("branch-after", "false" if nz else "true",
+                guards.append(classify("branch-after", "false" if nz else "true",
                                         t.condition, def_of, sink_regs, sink_keys,
                                         inv_ret, taint))
     return guards
@@ -454,6 +456,120 @@ def _invoke_returns(lifter) -> dict:
     return out
 
 
+class _ScratchScan:
+    """Scratch stores/loads of a lift and the CLOBBER question the must-
+    semantics round-trips rest on (see :func:`_scratch_value_edges`): can a
+    store of ``slot`` — or a call into a sub that may (transitively) store it,
+    this sub included — run between op ``s_idx`` of block ``s_bid`` and op
+    ``idx`` of block ``bid``, the first dominating the second?
+
+    ``dynamic``: some ``stores`` writes a slot off the STACK, which can target
+    any slot and destroys the single-writer premise — nothing is provable."""
+
+    def __init__(self, lifter):
+        self.stores: dict = {}     # slot -> [(sub_id, block_id, op_index, register|None)]
+        self.loads: list = []      # (slot, sub_id, block_id, op_index, result_register)
+        self.dynamic = False
+        for s in lifter.subs:
+            for b in s.body:
+                for idx, o in enumerate(b.ops):
+                    intr = _intr(o)
+                    if intr is None:
+                        continue
+                    # Check `stores` BEFORE the `immediates` guard: it takes its slot
+                    # off the STACK so it has none, and behind that guard this
+                    # bail-out is unreachable — a dynamic write would silently leave
+                    # its slot looking single-writer.
+                    if intr.op == "stores":
+                        self.dynamic = True
+                        return
+                    if not intr.immediates:
+                        continue
+                    slot = str(intr.immediates[0])
+                    if intr.op == "store":
+                        val = intr.args[0] if intr.args else None
+                        self.stores.setdefault(slot, []).append(
+                            (s.id, b.id, idx,
+                             val if isinstance(val, pre_ir.Register) else None))
+                    elif (intr.op == "load" and isinstance(o, pre_ir.Assignment)
+                            and o.targets and isinstance(o.targets[0], pre_ir.Register)):
+                        self.loads.append((slot, s.id, b.id, idx, o.targets[0]))
+        self.subs = {s.id: s for s in lifter.subs}
+        self.callees: dict = {s.id: set() for s in lifter.subs}
+        for s in lifter.subs:
+            for b in s.body:
+                for o in b.ops:
+                    inv = _invoke(o)
+                    if inv is not None:
+                        self.callees[s.id].add(inv.target)
+
+    def _reachable_subs(self, start) -> set:
+        seen, stack = set(), [start]
+        while stack:
+            n = stack.pop()
+            if n in seen:
+                continue
+            seen.add(n)
+            stack.extend(self.callees.get(n, ()))
+        return seen
+
+    def _call_may_write(self, inv, sub_id, slot) -> bool:
+        """A call between the store and the load can clobber ``slot`` only if
+        some sub the callee can reach (itself included) stores it — the load's
+        own sub counts, since a recursive activation re-runs its stores."""
+        writers = {st[0] for st in self.stores.get(slot, ())} | {sub_id}
+        return bool(self._reachable_subs(inv.target) & writers)
+
+    @staticmethod
+    def _reach(by_id, starts, forward, avoid):
+        """Blocks reachable from ``starts`` without entering ``avoid``."""
+        edges: dict = {i: [] for i in by_id}
+        for i, b in by_id.items():
+            for t in _succs(b.terminator):
+                if t in edges:
+                    (edges[i] if forward else edges[t]).append(t if forward else i)
+        seen: set = set()
+        stack = [x for x in starts if x != avoid]
+        while stack:
+            n = stack.pop()
+            if n in seen or n == avoid:
+                continue
+            seen.add(n)
+            stack.extend(edges[n])
+        return seen
+
+    def clobbered(self, sub_id, s_bid, s_idx, bid, idx, slot) -> bool:
+        """A store of ``slot`` or a subroutine call that may store it can run
+        between op ``s_idx`` of ``s_bid`` and op ``idx`` of ``bid``."""
+        by_id = {b.id: b for b in self.subs[sub_id].body}
+
+        def _hit(ops) -> bool:
+            for o in ops:
+                inv = _invoke(o)
+                if inv is not None and self._call_may_write(inv, sub_id, slot):
+                    return True
+                i = _intr(o)
+                if (i is not None and i.op == "store" and i.immediates
+                        and str(i.immediates[0]) == slot):
+                    return True
+            return False
+
+        if s_bid == bid:
+            return _hit(by_id[bid].ops[s_idx + 1:idx])
+        fwd = self._reach(by_id, _succs(by_id[s_bid].terminator), True, s_bid)
+        bwd = self._reach(by_id, [bid], False, s_bid)
+        if _hit(by_id[s_bid].ops[s_idx + 1:]):
+            return True
+        for mid in (fwd & bwd) - {bid}:
+            if _hit(by_id[mid].ops):
+                return True
+        # The load's block: ops before the load always run between; those
+        # after it too when the block can reach itself without passing the
+        # store (a loop re-executes the load after them).
+        cyclic = bid in self._reach(by_id, _succs(by_id[bid].terminator), True, s_bid)
+        return _hit(by_id[bid].ops if cyclic else by_id[bid].ops[:idx])
+
+
 def _scratch_value_edges(lifter, dom_by_sub) -> dict:
     """``{id(load_result_register): [stored_register]}`` for scratch round-trips
     the value PROVABLY survives — the same map shape as :func:`_invoke_returns`,
@@ -472,105 +588,11 @@ def _scratch_value_edges(lifter, dom_by_sub) -> dict:
     a dead-end branch (`bz go; int 0; store 0; int 0; return`) used to
     disprove the round-trip program-wide; it cannot run between the store and
     the load, so it never reaches it."""
-    stores: dict = {}          # slot -> [(sub_id, block_id, op_index, register|None)]
-    loads: list = []           # (slot, sub_id, block_id, op_index, result_register)
-    for s in lifter.subs:
-        for b in s.body:
-            for idx, o in enumerate(b.ops):
-                intr = _intr(o)
-                if intr is None:
-                    continue
-                # Check `stores` BEFORE the `immediates` guard: it takes its slot
-                # off the STACK so it has none, and behind that guard this
-                # bail-out is unreachable — a dynamic write would silently leave
-                # its slot looking single-writer.
-                if intr.op == "stores":
-                    return {}                      # dynamic slot: prove nothing
-                if not intr.immediates:
-                    continue
-                slot = str(intr.immediates[0])
-                if intr.op == "store":
-                    val = intr.args[0] if intr.args else None
-                    stores.setdefault(slot, []).append(
-                        (s.id, b.id, idx,
-                         val if isinstance(val, pre_ir.Register) else None))
-                elif (intr.op == "load" and isinstance(o, pre_ir.Assignment)
-                        and o.targets and isinstance(o.targets[0], pre_ir.Register)):
-                    loads.append((slot, s.id, b.id, idx, o.targets[0]))
-
-    subs = {s.id: s for s in lifter.subs}
-    callees: dict = {s.id: set() for s in lifter.subs}
-    for s in lifter.subs:
-        for b in s.body:
-            for o in b.ops:
-                inv = _invoke(o)
-                if inv is not None:
-                    callees[s.id].add(inv.target)
-
-    def _reachable_subs(start) -> set:
-        seen, stack = set(), [start]
-        while stack:
-            n = stack.pop()
-            if n in seen:
-                continue
-            seen.add(n)
-            stack.extend(callees.get(n, ()))
-        return seen
-
-    def _call_may_write(inv, sub_id, slot) -> bool:
-        """A call between the store and the load can clobber ``slot`` only if
-        some sub the callee can reach (itself included) stores it — the load's
-        own sub counts, since a recursive activation re-runs its stores."""
-        writers = {st[0] for st in stores.get(slot, ())} | {sub_id}
-        return bool(_reachable_subs(inv.target) & writers)
-
-    def _reach(by_id, starts, forward, avoid):
-        """Blocks reachable from ``starts`` without entering ``avoid``."""
-        edges: dict = {i: [] for i in by_id}
-        for i, b in by_id.items():
-            for t in _succs(b.terminator):
-                if t in edges:
-                    (edges[i] if forward else edges[t]).append(t if forward else i)
-        seen: set = set()
-        stack = [x for x in starts if x != avoid]
-        while stack:
-            n = stack.pop()
-            if n in seen or n == avoid:
-                continue
-            seen.add(n)
-            stack.extend(edges[n])
-        return seen
-
-    def _clobbered(sub_id, s_bid, s_idx, bid, idx, slot) -> bool:
-        """A store of ``slot`` or a subroutine call can run between the
-        dominating store and the load."""
-        by_id = {b.id: b for b in subs[sub_id].body}
-
-        def _hit(ops) -> bool:
-            for o in ops:
-                inv = _invoke(o)
-                if inv is not None and _call_may_write(inv, sub_id, slot):
-                    return True
-                i = _intr(o)
-                if (i is not None and i.op == "store" and i.immediates
-                        and str(i.immediates[0]) == slot):
-                    return True
-            return False
-
-        if s_bid == bid:
-            return _hit(by_id[bid].ops[s_idx + 1:idx])
-        fwd = _reach(by_id, _succs(by_id[s_bid].terminator), True, s_bid)
-        bwd = _reach(by_id, [bid], False, s_bid)
-        if _hit(by_id[s_bid].ops[s_idx + 1:]):
-            return True
-        for mid in (fwd & bwd) - {bid}:
-            if _hit(by_id[mid].ops):
-                return True
-        # The load's block: ops before the load always run between; those
-        # after it too when the block can reach itself without passing the
-        # store (a loop re-executes the load after them).
-        cyclic = bid in _reach(by_id, _succs(by_id[bid].terminator), True, s_bid)
-        return _hit(by_id[bid].ops if cyclic else by_id[bid].ops[:idx])
+    scan = _ScratchScan(lifter)
+    if scan.dynamic:
+        return {}                                  # dynamic slot: prove nothing
+    stores, loads = scan.stores, scan.loads
+    _clobbered = scan.clobbered
 
     out: dict = {}
     for slot, sub_id, bid, idx, result in loads:
@@ -708,7 +730,12 @@ def _blocks_reaching(by_id, target) -> set:
 
 
 def _dominating_guards(by_id, dom, sink_bid, sink_idx, def_of, sink_regs, sink_keys,
-                       inv_ret=None, taint=None) -> list:
+                       inv_ret=None, taint=None, *, classify=None) -> list:
+    """What every dominating assert / forced branch guarantees at the sink, one
+    ``classify(kind, polarity, condition, ...)`` result each — `_classify`'s
+    Guard by default; a sink policy with its own question (the key-namespace
+    facts of :mod:`.key_namespace`) reuses the SAME placement rules."""
+    classify = classify or _classify      # late-bound: mutation gates patch it
     doms = dom.get(sink_bid, {sink_bid})
     guards = []
     reach_sink = None                       # lazily: blocks that can reach the sink
@@ -721,7 +748,7 @@ def _dominating_guards(by_id, dom, sink_bid, sink_idx, def_of, sink_regs, sink_k
         ops = blk.ops if d != sink_bid else blk.ops[:sink_idx]
         for o in ops:
             if isinstance(o, pre_ir.Assert):
-                guards.append(_classify("assert", None, o.condition, def_of,
+                guards.append(classify("assert", None, o.condition, def_of,
                                         sink_regs, sink_keys, inv_ret, taint))
         # A conditional branch whose outcome is forced: exactly one successor
         # dominates the sink.
@@ -737,7 +764,7 @@ def _dominating_guards(by_id, dom, sink_bid, sink_idx, def_of, sink_regs, sink_k
                     reach_sink = _blocks_reaching(by_id, sink_bid)
                 other = t.zero if nz else t.non_zero
                 if other not in reach_sink:
-                    guards.append(_classify("branch", "true" if nz else "false",
+                    guards.append(classify("branch", "true" if nz else "false",
                                             t.condition, def_of, sink_regs, sink_keys,
                                             inv_ret, taint))
     return guards
@@ -1028,7 +1055,7 @@ def _callee_sender_guards(lifter, def_of, dom_by_sub, inv_ret=None) -> dict:
 
 def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset(),
                         sender_only=False, *, merge_unresolved=True,
-                        state_notes=True) -> list:
+                        state_notes=True, sink_guards=None) -> list:
     """Core taint-to-sink engine: ``sink_of(intrinsic)`` yields ``(label,
     severity, value_args)`` per sink, ``value_args`` being the operands whose
     taint makes it a finding. Returns UNGUARDED-first findings with the full
@@ -1049,7 +1076,12 @@ def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset(),
     callee-transfer checks covers EVERY tainted leaf of its value
     (:func:`_uncovered_leaves`). Otherwise every input credit is withdrawn —
     `Amount = btoi(arg0) + btoi(arg1)` under `assert(btoi(arg0) <= 100)` is
-    reported, because arg1 is what the attacker still chooses."""
+    reported, because arg1 is what the attacker still chooses.
+
+    ``sink_guards(lifter, maps)`` is a sink policy's own guard family: called
+    once with the shared maps, it returns ``guards_for(sub, block, idx,
+    intrinsic) -> [Guard]`` whose input credit joins the coverage check like
+    any other (the state-write key namespace, :mod:`.key_namespace`)."""
     if taint is None:
         taint = user_input_taint(lifter, trusted_args)
     elif merge_unresolved:
@@ -1059,6 +1091,11 @@ def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset(),
     dom_by_sub, pdom_by_sub, def_of, inv_ret, callee_sender, sites = _value_maps(lifter)
     entry_guards, called, sub_sender, callee_pg = _cached_entry_guards(
         lifter, def_of, dom_by_sub, taint, inv_ret, callee_sender)
+    extra = None
+    if sink_guards is not None:
+        extra = sink_guards(lifter, dict(
+            def_of=def_of, inv_ret=inv_ret, sites=sites, taint=taint,
+            dom_by_sub=dom_by_sub, pdom_by_sub=pdom_by_sub))
     findings: list = []
     for sub in lifter.subs:
         dom = dom_by_sub[sub.id]
@@ -1115,6 +1152,8 @@ def _tainted_sink_flows(lifter, sink_of, taint=None, trusted_args=frozenset(),
                     guards += _post_dominating_guards(by_id, pdom, b.id, idx, def_of,
                                                       guard_regs, sink_keys, inv_ret, taint,
                                                       fails)
+                    if extra is not None and valreg is not None:
+                        guards += extra(sub, b, idx, s)
                     credited_regs = set().union(*(g.regs for g in guards if g.checks_input))
                     credited_keys = set().union(*(g.keys for g in guards if g.checks_input))
                     # Interprocedural: a value flowing from a caller-checked param.
@@ -1348,7 +1387,19 @@ def tainted_state_writes(lifter, taint=None, trusted_args=frozenset()) -> list:
     an arbitrary slot: overwrite or erase owner/admin state, collide with or
     destroy a sensitive box. (A key derived from ``txn Sender`` -- the ubiquitous
     per-caller ``box[Sender]`` -- is not a taint source, so it never surfaces.)"""
-    return _tainted_sink_flows(lifter, _state_write_sink_of, taint, trusted_args)
+    return _tainted_sink_flows(lifter, _state_write_sink_of, taint, trusted_args,
+                               sink_guards=_key_namespace_guards)
+
+
+def _key_namespace_guards(lifter, maps):
+    """The state-write key's NAMESPACE confinement (:mod:`.key_namespace`):
+    a prefix exclusion the write cannot avoid, whose namespace holds every
+    slot the program reads with a key it chose itself."""
+    from .key_namespace import KeyNamespaces
+    return KeyNamespaces(lifter, maps["def_of"], maps["inv_ret"], maps["sites"],
+                         maps["taint"], maps["dom_by_sub"], maps["pdom_by_sub"],
+                         _dominating_guards, _post_dominating_guards,
+                         _all_fail_blocks).sink_guards
 
 
 def _log_sink_of(s):
