@@ -10,7 +10,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 dir="${GO_ALGORAND_DIR:?set GO_ALGORAND_DIR to a go-algorand checkout}"
 mkdir -p "$dir/cmd/ttreplay"
-cp "$here/main.go" "$dir/cmd/ttreplay/main.go"
+cp "$here"/*.go "$dir/cmd/ttreplay/"
 cd "$dir"
 GOTOOLCHAIN=auto go build -o ttreplay ./cmd/ttreplay
 echo "built $dir/ttreplay"

@@ -84,3 +84,30 @@ def test_an_update_refused_as_a_downgrade_is_rerun_installing_the_lifted_program
     reqs.clear()
     resp = tt.replay_block(1, 2, {"status": "OK", "lifted": "Cg=="}, None, lifts=object())
     assert len(reqs) == 1 and resp["install_error"].endswith("LIFT_FAIL") and "installs_lifted" not in resp
+
+
+def test_stream_window_grows_backwards_and_unlifted_programs_are_pending_not_judged():
+    """``stream.chunks`` anchors at the end round, so a longer window only adds
+    older chunks; a group whose target app ran a program with no lift is
+    LIFT_PENDING, never a verdict on a program that was not swapped."""
+    import base64
+
+    from tests.replay_harness import stream
+    short, long = stream.chunks(1000, 10 * stream.BLOCK_SECONDS / 86400, 4), \
+        stream.chunks(1000, 20 * stream.BLOCK_SECONDS / 86400, 4)
+    assert short == [(997, 1000), (993, 996), (991, 992)]
+    assert long[:2] == short[:2] and long[-1] == (981, 984) and len(long) == 5
+
+    class NoLifts:
+        def status(self, prog):
+            return None
+    prog = base64.b64encode(b"\x0a\x81\x01\x43").decode()
+    blk = {"round": 7, "targets": {"0": [11, 12]}, "unlifted": {"12": prog},
+           "variants": [{"name": "orig", "groups": [_group(0)]}, {"name": "lifted", "groups": [_group(0)]}]}
+    rows = {r["app"]: r for r in stream.block_rows(blk, NoLifts())}
+    assert rows[11]["status"] == "FAITHFUL" and rows[11]["group"] == 0
+    assert rows[12]["status"] == "LIFT_PENDING"
+    # A divergence is judged per app on the same group.
+    blk["unlifted"] = {}
+    blk["variants"][1]["groups"] = [_group(0, match=False, error="rejected")]
+    assert {r["status"] for r in stream.block_rows(blk, NoLifts())} == {"DIVERGES"}

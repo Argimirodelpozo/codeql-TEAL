@@ -58,6 +58,29 @@ type remote struct {
 	cache    map[string]cached
 	calls    int
 	cacheDir string // optional on-disk cache; every query names a round, so answers never change
+	// noMem keeps only block headers in the in-memory cache (a stream reads
+	// tens of GB of blocks; its overlay keeps the decoded state it needs).
+	noMem    bool
+	inflight map[string]*flight // concurrent requests for one path share one fetch
+}
+
+type flight struct {
+	done   chan struct{}
+	status int
+	body   []byte
+	err    error
+}
+
+var debugFetch = os.Getenv("TTREPLAY_DEBUG") != ""
+
+func (r *remote) callCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.calls
+}
+
+func (r *remote) memo(path string) bool {
+	return !r.noMem || strings.Contains(path, "header-only=true")
 }
 
 func (r *remote) diskPath(path string) string {
@@ -78,6 +101,27 @@ type cached struct {
 // non-2xx statuses are retried with backoff, then reported as errors.
 func (r *remote) get(path string) (int, []byte, error) {
 	r.mu.Lock()
+	if f, ok := r.inflight[path]; ok {
+		r.mu.Unlock()
+		<-f.done
+		return f.status, f.body, f.err
+	}
+	if r.inflight == nil {
+		r.inflight = map[string]*flight{}
+	}
+	f := &flight{done: make(chan struct{})}
+	r.inflight[path] = f
+	r.mu.Unlock()
+	f.status, f.body, f.err = r.fetch(path)
+	r.mu.Lock()
+	delete(r.inflight, path)
+	r.mu.Unlock()
+	close(f.done)
+	return f.status, f.body, f.err
+}
+
+func (r *remote) fetch(path string) (int, []byte, error) {
+	r.mu.Lock()
 	if c, ok := r.cache[path]; ok {
 		r.mu.Unlock()
 		return c.status, c.body, nil
@@ -87,9 +131,11 @@ func (r *remote) get(path string) (int, []byte, error) {
 	if disk != "" {
 		if raw, err := os.ReadFile(disk); err == nil && len(raw) >= 2 {
 			c := cached{status: int(raw[0])<<8 | int(raw[1]), body: raw[2:]}
-			r.mu.Lock()
-			r.cache[path] = c
-			r.mu.Unlock()
+			if r.memo(path) {
+				r.mu.Lock()
+				r.cache[path] = c
+				r.mu.Unlock()
+			}
 			return c.status, c.body, nil
 		}
 	}
@@ -97,6 +143,9 @@ func (r *remote) get(path string) (int, []byte, error) {
 	for attempt := 0; attempt < 6; attempt++ {
 		if attempt > 0 {
 			time.Sleep(time.Duration(1<<attempt) * 250 * time.Millisecond)
+		}
+		if debugFetch {
+			fmt.Fprintln(os.Stderr, "fetch", time.Now().UnixMilli(), path)
 		}
 		req, _ := http.NewRequest("GET", r.base+path, nil)
 		req.Header.Set("User-Agent", "tealql-ttreplay")
@@ -115,9 +164,11 @@ func (r *remote) get(path string) (int, []byte, error) {
 		r.calls++
 		r.mu.Unlock()
 		if resp.StatusCode == 200 || resp.StatusCode == 404 {
-			r.mu.Lock()
-			r.cache[path] = cached{resp.StatusCode, body}
-			r.mu.Unlock()
+			if r.memo(path) {
+				r.mu.Lock()
+				r.cache[path] = cached{resp.StatusCode, body}
+				r.mu.Unlock()
+			}
 			if disk != "" {
 				os.MkdirAll(filepath.Dir(disk), 0o755)
 				tmp := disk + ".tmp" + fmt.Sprint(time.Now().UnixNano())
@@ -164,20 +215,27 @@ type programs struct {
 // API. Every lookup round is the block's predecessor (the evaluator asks for
 // prevHeader.Round), which the node serves from its history.
 type remoteLedger struct {
+	mu        sync.Mutex // guards hdrs, genesis, unsupported (the prefetcher reads concurrently)
 	r         *remote
 	prev      basics.Round
 	overrides map[basics.AppIndex]programs
 	hdrs      map[basics.Round]bookkeeping.BlockHeader
-	genesis   *bookkeeping.BlockHeader
 	// unsupported records lookups this ledger can only approximate; a run that
 	// touched one is reported so its verdict is not trusted blindly.
 	unsupported map[string]bool
 }
 
-func (l *remoteLedger) note(what string) { l.unsupported[what] = true }
+func (l *remoteLedger) note(what string) {
+	l.mu.Lock()
+	l.unsupported[what] = true
+	l.mu.Unlock()
+}
 
 func (l *remoteLedger) BlockHdr(rnd basics.Round) (bookkeeping.BlockHeader, error) {
-	if h, ok := l.hdrs[rnd]; ok {
+	l.mu.Lock()
+	h, ok := l.hdrs[rnd]
+	l.mu.Unlock()
+	if ok {
 		return h, nil
 	}
 	status, body, err := l.r.get(fmt.Sprintf("/v2/blocks/%d?header-only=true&format=msgpack", rnd))
@@ -195,19 +253,18 @@ func (l *remoteLedger) BlockHdr(rnd basics.Round) (bookkeeping.BlockHeader, erro
 	if err := protocol.DecodeReflect(body, &wrapped); err != nil {
 		return bookkeeping.BlockHeader{}, fmt.Errorf("decode header %d: %w", rnd, err)
 	}
+	l.mu.Lock()
 	l.hdrs[rnd] = wrapped.Block
+	l.mu.Unlock()
 	return wrapped.Block, nil
 }
 
 func (l *remoteLedger) genesisHdr() bookkeeping.BlockHeader {
-	if l.genesis == nil {
-		h, err := l.BlockHdr(0)
-		if err != nil {
-			panic(err)
-		}
-		l.genesis = &h
+	h, err := l.BlockHdr(0) // memoised in hdrs
+	if err != nil {
+		panic(err)
 	}
-	return *l.genesis
+	return h
 }
 
 func (l *remoteLedger) GenesisHash() crypto.Digest {
@@ -772,7 +829,9 @@ func replay(req Request) (resp Response) {
 			resp.Variants = append(resp.Variants, VariantResult{Name: v.Name, Error: err.Error()})
 			continue
 		}
-		resp.Variants = append(resp.Variants, evaluate(rem, blk, groups, want, req, v, overrides))
+		led := &remoteLedger{r: rem, prev: basics.Round(req.Round - 1), overrides: overrides,
+			hdrs: map[basics.Round]bookkeeping.BlockHeader{}, unsupported: map[string]bool{}}
+		resp.Variants = append(resp.Variants, evaluate(led, blk, groups, want, req.Prefix, req.Coverage, v))
 	}
 	return
 }
@@ -807,8 +866,26 @@ func installed(installs map[string][]byte, prog []byte) []byte {
 	return prog
 }
 
-func evaluate(rem *remote, blk bookkeeping.Block, groups [][]transactions.SignedTxnWithAD,
-	want map[int]bool, req Request, v Variant, overrides map[basics.AppIndex]programs) (out VariantResult) {
+// replayLedger is what evaluate runs against: the per-block remoteLedger, or a
+// stream view over carried-forward state.
+type replayLedger interface {
+	eval.LedgerForEvaluator
+	unsupportedKeys() []string
+}
+
+func (l *remoteLedger) unsupportedKeys() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	out := make([]string, 0, len(l.unsupported))
+	for k := range l.unsupported {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func evaluate(led replayLedger, blk bookkeeping.Block, groups [][]transactions.SignedTxnWithAD,
+	want map[int]bool, prefix, coverage bool, v Variant) (out VariantResult) {
 	out.Name = v.Name
 	installs := map[string][]byte{}
 	for h, b := range v.Installs {
@@ -830,8 +907,6 @@ func evaluate(rem *remote, blk bookkeeping.Block, groups [][]transactions.Signed
 			last = g
 		}
 	}
-	led := &remoteLedger{r: rem, prev: basics.Round(req.Round - 1), overrides: overrides,
-		hdrs: map[basics.Round]bookkeeping.BlockHeader{}, unsupported: map[string]bool{}}
 	tr := newTracer()
 	ev, err := eval.StartEvaluator(led, blk.BlockHeader, eval.EvaluatorOptions{
 		PaysetHint: last + 1, Validate: false, Generate: false, Tracer: tr,
@@ -841,7 +916,7 @@ func evaluate(rem *remote, blk bookkeeping.Block, groups [][]transactions.Signed
 		return
 	}
 	for gi := 0; gi <= last; gi++ {
-		if !want[gi] && !req.Prefix {
+		if !want[gi] && !prefix {
 			continue
 		}
 		chain := groups[gi]
@@ -911,7 +986,7 @@ func evaluate(rem *remote, blk bookkeeping.Block, groups [][]transactions.Signed
 			}
 			res.BoxWrites[base64.StdEncoding.EncodeToString([]byte(k))] = val
 		}
-		if req.Coverage {
+		if coverage {
 			res.Coverage = map[string][]int{}
 			for app, pcs := range tr.coverage {
 				list := make([]int, 0, len(pcs))
@@ -924,10 +999,7 @@ func evaluate(rem *remote, blk bookkeeping.Block, groups [][]transactions.Signed
 		}
 		out.Groups = append(out.Groups, res)
 	}
-	for k := range led.unsupported {
-		out.Unsupported = append(out.Unsupported, k)
-	}
-	sort.Strings(out.Unsupported)
+	out.Unsupported = led.unsupportedKeys()
 	return
 }
 
@@ -935,7 +1007,7 @@ func evaluate(rem *remote, blk bookkeeping.Block, groups [][]transactions.Signed
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: ttreplay asm|disasm|replay < input")
+		fmt.Fprintln(os.Stderr, "usage: ttreplay asm|disasm|replay|stream < input")
 		os.Exit(2)
 	}
 	in, _ := io.ReadAll(bufio.NewReader(os.Stdin))
@@ -975,6 +1047,13 @@ func main() {
 			os.Exit(1)
 		}
 		out.Encode(replay(req))
+	case "stream":
+		var req StreamRequest
+		if err := json.Unmarshal(in, &req); err != nil {
+			out.Encode(StreamBlock{Error: "bad request: " + err.Error()})
+			os.Exit(1)
+		}
+		stream(req, out)
 	default:
 		fmt.Fprintln(os.Stderr, "unknown command", os.Args[1])
 		os.Exit(2)

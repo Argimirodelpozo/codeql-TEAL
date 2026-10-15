@@ -453,29 +453,8 @@ def run_app(app_id: int, samples: int, seed: int, out: Path) -> list[dict]:
                 log("ORACLE BROKEN", problem)
                 return rows + [{**base, "status": "ORACLE_BROKEN", "detail": problem[:400]}]
             self_tested = problem is None     # inconclusive: test again on the next block
-        lifted = variants.get("lifted") or {"groups": [], "error": "missing lifted variant"}
-        # Judge on the plain run. Only when it ran out of budget, judge on the
-        # extra-budget run instead (over_budget marks those groups): programs
-        # that read `global OpcodeBudget` (OpUp loops) behave differently
-        # with more budget, so the extra must not be the default.
-        plain = {r["group"]: r["status"] for r in classify(orig, lifted)}
-        judged = (variants.get("lifted_xb") or lifted) if "BUDGET" in plain.values() else lifted
-        lcov = sorted({pc for g in judged.get("groups") or [] for pc in (g.get("coverage") or {}).get(str(app_id), [])})
-        ops = {name: {g["group"]: (g.get("ops") or {}).get(str(app_id), 0) for g in v.get("groups") or []}
-               for name, v in variants.items()}
-        cost = {name: {g["group"]: g.get("cost") or 0 for g in v.get("groups") or []}
-                for name, v in variants.items()}
-        groups = classify(orig, judged)
-        for g in groups:
-            g["over_budget"] = plain.get(g["group"]) == "BUDGET"
-            o, lo = ops.get("orig", {}).get(g["group"]), ops.get("lifted_xb", {}).get(g["group"])
-            if o and lo:
-                g["op_ratio"] = round(lo / o, 3)
-            # Group-wide pooled budget: inner calls to OTHER apps cost the same
-            # in both runs, so the difference is the lifted program's overhead.
-            co, cl = cost.get("orig", {}).get(g["group"]), cost.get("lifted_xb", {}).get(g["group"])
-            if co and cl:
-                g["cost_orig"], g["cost_lifted"] = co, cl
+        groups, lcov = judge(variants, app_id)
+        lifted = variants.get("lifted") or {}
         for g in groups:
             rows.append({**base, **g, "orig_pcs": cov, "lifted_pcs": lcov,
                          "protocol_upgraded": bool(resp.get("protocol_upgraded")),
@@ -484,6 +463,38 @@ def run_app(app_id: int, samples: int, seed: int, out: Path) -> list[dict]:
         log(rnd, f"{time.time() - t0:.0f}s http={resp.get('http_calls')}",
             dict(Counter(g["status"] for g in groups)))
     return rows
+
+
+def judge(variants: dict, app_id: int) -> tuple[list[dict], list[int]]:
+    """Per-group verdicts for one block's ``orig`` / ``lifted`` (/ ``lifted_xb``)
+    variants, with cost ratios, and the PCs of ``app_id`` the judged run covered.
+
+    Judged on the plain lifted run. Only where it ran out of budget, on the
+    extra-budget run instead (``over_budget`` marks those groups): programs that
+    read ``global OpcodeBudget`` (OpUp loops) behave differently with more
+    budget, so the extra must not be the default."""
+    orig = variants["orig"]
+    lifted = variants.get("lifted") or {"groups": [], "error": "missing lifted variant"}
+    plain = {r["group"]: r["status"] for r in classify(orig, lifted)}
+    judged = (variants.get("lifted_xb") or lifted) if "BUDGET" in plain.values() else lifted
+    lcov = sorted({pc for g in judged.get("groups") or [] for pc in (g.get("coverage") or {}).get(str(app_id), [])})
+    full = "lifted_xb" if "lifted_xb" in variants else "lifted"   # the run that completed
+    ops = {name: {g["group"]: (g.get("ops") or {}).get(str(app_id), 0) for g in v.get("groups") or []}
+           for name, v in variants.items()}
+    cost = {name: {g["group"]: g.get("cost") or 0 for g in v.get("groups") or []}
+            for name, v in variants.items()}
+    groups = classify(orig, judged)
+    for g in groups:
+        g["over_budget"] = plain.get(g["group"]) == "BUDGET"
+        o, lo = ops.get("orig", {}).get(g["group"]), ops.get(full, {}).get(g["group"])
+        if o and lo:
+            g["op_ratio"] = round(lo / o, 3)
+        # Group-wide pooled budget: inner calls to OTHER apps cost the same in
+        # both runs, so the difference is the lifted program's overhead.
+        co, cl = cost.get("orig", {}).get(g["group"]), cost.get(full, {}).get(g["group"])
+        if co and cl:
+            g["cost_orig"], g["cost_lifted"] = co, cl
+    return groups, lcov
 
 
 def _restatus(r: dict) -> dict:

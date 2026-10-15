@@ -58,14 +58,47 @@ GO_ALGORAND_DIR=~/tools/go-algorand-timetravel tests/replay_harness/ttreplay/bui
 ttreplay asm    < prog.teal       # {"program": b64} | {"error": ...}
 ttreplay disasm < prog.b64        # TEAL
 ttreplay replay < request.json    # see Request / Response in main.go
+ttreplay stream < request.json    # see StreamRequest / StreamBlock in stream.go (JSON lines)
 
-python -m tests.replay_harness.timetravel 1002541853 --samples 30 --out tt_results
+python -m tests.replay_harness.timetravel 1002541853 --samples 30 --out tt_results   # sampled blocks
+python -m tests.replay_harness.stream --out full --days 30 --top 100 --jobs 2       # every block
 ```
 
 `TEALQL_TT_NODE` (default `https://mainnet-api-dt.d13.co`), `TEALQL_INDEXER`
 and `TEALQL_TTREPLAY` configure the harness. The public node has
 `EnableDeveloperAPI` off and serves one simulate group at a time. Neither
 matters here: `ttreplay` only uses its read endpoints.
+
+## Full-window replay (`stream`)
+
+`timetravel.py` samples blocks and re-reads all state per block (~13 s and ~64
+node requests each). `stream.py` replays EVERY block of a window instead:
+
+- **State is carried forward.** `ttreplay stream` keeps an overlay of the
+  chain's own state deltas on top of cold reads at one round (the chunk's start
+  − 1). A key the overlay does not hold was written by no replayed block, so
+  its value at that round is still its value. Each block is advanced with
+  go-algorand's `eval.Eval` (block-end bookkeeping included), and every
+  top-level ApplyData is checked against the block's: on a mismatch the
+  overlay is dropped and the stream re-bases cold on the next block.
+- **Judging** runs before the advance, on the overlay at the block's
+  predecessor: `orig` and `lifted` (every program whose sha256 has a lift is
+  swapped), `lifted_xb` only where the lifted run ran out of budget. Rows are
+  per (group, target app) and use `timetravel.judge`.
+- **Warm-ahead:** the next `prefetch` blocks are fetched and their state
+  (go-algorand's prefetcher, plus what the chain's recorded inner transactions
+  touch) loaded while the current block evaluates; concurrent requests for one
+  path share a fetch.
+- **The window grows backwards** from a fixed end round in `chunk`-block
+  chunks, each resumable from its last completed block. Raising `--days` later
+  only adds older chunks.
+- **Targets** are the `--top` apps by calls in sampled blocks of the window;
+  programs met mid-chunk without a lift are reported, lifted between chunks,
+  and their groups until then are `LIFT_PENDING`. Each app gets the
+  entry-mutant self-test once.
+
+Account totals are not available over REST, so the stream starts each status
+category with a buffer; totals feed no ApplyData.
 
 ## Verdicts
 
