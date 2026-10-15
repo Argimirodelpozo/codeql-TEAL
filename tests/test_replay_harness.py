@@ -78,7 +78,7 @@ def test_an_update_refused_as_a_downgrade_is_rerun_installing_the_lifted_program
     monkeypatch.setattr(tt, "install_map", lambda *a: ({"aa": "Cg=="}, None))
     resp = tt.replay_block(1, 2, {"status": "OK", "lifted": "Cg=="}, None, lifts=object())
     assert resp["installs_lifted"] and len(reqs) == 2
-    assert [v.get("installs") for v in reqs[1]["variants"]] == [None, {"aa": "Cg=="}, {"aa": "Cg=="}]
+    assert [v.get("installs") for v in reqs[1]["variants"]] == [None, {"aa": "Cg=="}]
     # No lift of the new program: the refusal stands, with the reason recorded.
     monkeypatch.setattr(tt, "install_map", lambda *a: ({}, "installed program x: LIFT_FAIL"))
     reqs.clear()
@@ -111,3 +111,33 @@ def test_stream_window_grows_backwards_and_unlifted_programs_are_pending_not_jud
     blk["unlifted"] = {}
     blk["variants"][1]["groups"] = [_group(0, match=False, error="rejected")]
     assert {r["status"] for r in stream.block_rows(blk, NoLifts())} == {"DIVERGES"}
+
+
+def test_extra_budget_goes_only_to_the_groups_the_lift_ran_out_of_budget_in(monkeypatch):
+    """Extra budget is itself an artifact for an OpUp caller (it reads
+    `global OpcodeBudget` and skips its padding calls), so the extra-budget
+    re-run grants it only to groups whose plain lifted run hit the budget —
+    and runs beside the deployed run, whose budget trace it is equalized to."""
+    import tests.replay_harness.timetravel as tt
+    reqs = []
+
+    def fake_run(req):
+        reqs.append(req)
+        out = []
+        for v in req["variants"]:
+            groups = [_group(g) for g in (2, 3)]
+            if v["name"] == "lifted":
+                groups[1] = _group(3, match=False, error="pc=9 dynamic cost budget exceeded")
+            out.append({"name": v["name"], "groups": groups})
+        return {"variants": out}
+    monkeypatch.setattr(tt, "_run_replay", fake_run)
+    resp = tt.replay_block(1, 2, {"status": "OK", "lifted": "Cg=="}, None)
+    assert [v["name"] for v in reqs[0]["variants"]] == ["orig", "lifted"]
+    assert [(v["name"], v.get("extra_groups")) for v in reqs[1]["variants"]] == [("orig", None), ("lifted_xb", [3])]
+    assert [v["name"] for v in resp["variants"]] == ["orig", "lifted", "lifted_xb"]
+    # No budget failure: no extra-budget run at all.
+    reqs.clear()
+    monkeypatch.setattr(tt, "_run_replay", lambda req: reqs.append(req) or {
+        "variants": [{"name": v["name"], "groups": [_group(2)]} for v in req["variants"]]})
+    tt.replay_block(1, 2, {"status": "OK", "lifted": "Cg=="}, None)
+    assert len(reqs) == 1

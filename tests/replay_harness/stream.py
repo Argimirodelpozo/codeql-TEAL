@@ -343,7 +343,11 @@ def main(argv=None) -> int:
 
     meta = run.json("meta.json")
     if meta is None:
-        meta = {"end": args.end or tt._get_json(f"{tt.NODE}/v2/status")["last-round"], "node": tt.NODE}
+        commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=tt.REPO, capture_output=True,
+                                text=True).stdout.strip()
+        # Lifts are cached by program, not by tealql version: the run validates THIS commit's lift.
+        meta = {"end": args.end or tt._get_json(f"{tt.NODE}/v2/status")["last-round"], "node": tt.NODE,
+                "tealql_commit": commit}
         run.save("meta.json", meta)
     end = meta["end"]
     plan = chunks(end, args.days, args.chunk)

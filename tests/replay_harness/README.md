@@ -97,6 +97,20 @@ node requests each). `stream.py` replays EVERY block of a window instead:
   and their groups until then are `LIFT_PENDING`. Each app gets the
   entry-mutant self-test once.
 
+**Budget equalization.** A lifted program costs a little more or less than
+the deployed one, and programs that read `global OpcodeBudget` (OpUp routers,
+budget-padding loops) would react to that: a cost difference, not a behaviour
+change, surfacing as a divergence in someone else's program. Both modes
+therefore record the deployed run's pooled budget at every app program's start
+and end, and the lifted runs reset the pool to those values while the program
+sequence matches: every unswapped program sees exactly the chain's budget, and
+a swapped program's cost is visible only inside its own run (reported as
+`app_cost`). Extra budget (`lifted_xb`) is granted per swapped program run and
+only in the groups whose plain lifted run ran out of budget: elsewhere it is
+itself an artifact (an OpUp caller seeing it skips its padding calls).
+Only the target apps are swapped, so a divergence is attributed to them, not
+to another app that happens to share their program.
+
 Account totals are not available over REST, so the stream starts each status
 category with a buffer; totals feed no ApplyData.
 

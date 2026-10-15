@@ -417,7 +417,23 @@ func (s *streamLedger) unsupportedKeys() []string {
 // whose approval program hashes to a key of swap runs the replacement.
 type streamView struct {
 	*streamLedger
-	swap map[string][]byte
+	swap  map[string][]byte
+	apps  map[basics.AppIndex]bool // only these apps are swapped
+	mu    *sync.Mutex
+	saw   map[basics.AppIndex]bool // apps this view actually swapped
+}
+
+func newView(sl *streamLedger, swap map[string][]byte, apps map[basics.AppIndex]bool) streamView {
+	return streamView{sl, swap, apps, &sync.Mutex{}, map[basics.AppIndex]bool{}}
+}
+
+func (v streamView) isSwapped(app basics.AppIndex) bool {
+	if v.mu == nil {
+		return false
+	}
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.saw[app]
 }
 
 func progSha(p []byte) string {
@@ -427,9 +443,12 @@ func progSha(p []byte) string {
 
 func (v streamView) LookupApplication(rnd basics.Round, addr basics.Address, aidx basics.AppIndex) (ledgercore.AppResource, error) {
 	res, err := v.streamLedger.lookupApp(addr, aidx)
-	if err == nil && res.AppParams != nil {
+	if err == nil && res.AppParams != nil && v.apps[aidx] {
 		if r, ok := v.swap[progSha(res.AppParams.ApprovalProgram)]; ok {
 			res.AppParams.ApprovalProgram = r
+			v.mu.Lock()
+			v.saw[aidx] = true
+			v.mu.Unlock()
 		}
 	}
 	return res, err
@@ -556,7 +575,7 @@ func warmBlock(sl *streamLedger, blk bookkeeping.Block, par int) {
 	if !ok {
 		return
 	}
-	v := streamView{sl, nil}
+	v := newView(sl, nil, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	for range prefetcher.BlockReferences(ctx, v, blk.Round()-1, groups, blk.FeeSink, proto) {
@@ -677,7 +696,7 @@ func stream(req StreamRequest, enc *json.Encoder) {
 
 		// Advance: the chain's own evaluation of the block, checked against it.
 		tr := &chainTracer{}
-		delta, err := eval.Eval(context.Background(), streamView{sl, nil}, blk, false, nil, nil, tr)
+		delta, err := eval.Eval(context.Background(), newView(sl, nil, nil), blk, false, nil, nil, tr)
 		var chain []transactions.ApplyData
 		for _, g := range groups {
 			for _, t := range g {
@@ -761,13 +780,13 @@ func judgeBlock(sl *streamLedger, blk bookkeeping.Block, groups [][]transactions
 		}
 	}
 	run := func(b bookkeeping.Block) []VariantResult {
-		vs := []VariantResult{
-			evaluate(streamView{sl, nil}, b, groups, want, true, req.Coverage, Variant{Name: "orig"}),
-			evaluate(streamView{sl, swap}, b, groups, want, true, req.Coverage, Variant{Name: "lifted"}),
+		orig := evaluate(newView(sl, nil, nil), b, groups, want, true, req.Coverage, Variant{Name: "orig"}, nil)
+		vs := []VariantResult{orig,
+			evaluate(newView(sl, swap, apps), b, groups, want, true, req.Coverage, Variant{Name: "lifted"}, orig.traces),
 		}
-		if anyGroupError(vs[1], "budget exceeded") {
-			vs = append(vs, evaluate(streamView{sl, swap}, b, groups, want, true, req.Coverage,
-				Variant{Name: "lifted_xb", ExtraBudget: req.ExtraBudget}))
+		if bg := budgetGroups(vs[1]); len(bg) > 0 {
+			vs = append(vs, evaluate(newView(sl, swap, apps), b, groups, want, true, req.Coverage,
+				Variant{Name: "lifted_xb", ExtraBudget: req.ExtraBudget, ExtraGroups: bg}, orig.traces))
 		}
 		return vs
 	}

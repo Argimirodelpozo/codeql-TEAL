@@ -358,11 +358,7 @@ def replay_block(app_id: int, rnd: int, lift: dict, cache_dir: Path, lifts: Path
     ``install_map``'s replacements installed instead (``installs_lifted``)."""
     variants = [{"name": "orig"}]
     if lift.get("status") == "OK":
-        override = {str(app_id): {"approval": lift["lifted"]}}
-        variants += [{"name": "lifted", "overrides": override},
-                     # Same program with simulate's maximum extra budget: judges
-                     # behaviour even where the recompiled code costs more.
-                     {"name": "lifted_xb", "overrides": override, "extra_budget": EXTRA_BUDGET}]
+        variants.append({"name": "lifted", "overrides": {str(app_id): {"approval": lift["lifted"]}}})
     req = {"node": NODE, "round": rnd, "apps": [app_id], "prefix": True, "coverage": True,
            "variants": variants, "cache_dir": str(cache_dir)}
     resp = _run_replay(req)
@@ -379,6 +375,20 @@ def replay_block(app_id: int, rnd: int, lift: dict, cache_dir: Path, lifts: Path
                     v["installs"] = installs
             resp = {**_run_replay(req), "protocol_upgraded": resp.get("protocol_upgraded", False),
                     "installs_lifted": True}
+    # Groups the recompiled program ran out of budget in are re-run with
+    # simulate's maximum extra budget (judging behaviour where the lift costs
+    # more) — only those groups: elsewhere the extra is itself an artifact,
+    # OpUp callers read `global OpcodeBudget` and skip their padding calls.
+    lifted = next((v for v in resp.get("variants") or [] if v.get("name") == "lifted"), None)
+    short = [g["group"] for g in (lifted or {}).get("groups") or []
+             if any(m in (g.get("error") or "") + "".join(t.get("error") or "" for t in g.get("txns") or [])
+                    for m in _BUDGET_MARKERS)]
+    if short:
+        xb = {**next(v for v in req["variants"] if v["name"] == "lifted"), "name": "lifted_xb",
+              "extra_budget": EXTRA_BUDGET, "extra_groups": short}
+        again = _run_replay({**req, "variants": [{"name": "orig"}, xb]})
+        resp["variants"] = list(resp["variants"]) + [v for v in again.get("variants") or []
+                                                     if v.get("name") == "lifted_xb"]
     return resp
 
 

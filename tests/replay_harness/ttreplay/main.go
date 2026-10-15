@@ -596,11 +596,74 @@ type tracer struct {
 	// MaxAppProgramCost per inner group, minus what is left at the end.
 	budgetAdded    int
 	budgetConsumed int
+	appCost        map[basics.AppIndex]int // each app's own opcode cost (cx.Cost) summed over its runs
+
+	// Budget equalization. trace records the pooled budget at every app
+	// program's start and end, in execution order. With ref (the deployed
+	// run's trace of the same group) set, the pool is reset to ref's value at
+	// each start and end while the program sequence matches, so programs
+	// that read `global OpcodeBudget` (OpUp routers) see exactly the chain's
+	// budget: a swapped program's different cost is visible only inside its
+	// own run. Swapped programs get progExtra at their start (the
+	// extra-budget variant), which their end reset takes back.
+	trace     *groupTrace
+	ref       *groupTrace
+	si, ei    int
+	aligned   bool
+	swapped   func(basics.AppIndex) bool
+	progExtra int
+}
+
+type progMark struct {
+	App  basics.AppIndex
+	Pool int
+}
+
+type groupTrace struct {
+	starts, ends []progMark
 }
 
 func newTracer() *tracer {
 	return &tracer{ads: map[int]transactions.ApplyData{}, errs: map[int]string{},
-		coverage: map[basics.AppIndex]map[int]bool{}, ops: map[basics.AppIndex]int{}}
+		coverage: map[basics.AppIndex]map[int]bool{}, ops: map[basics.AppIndex]int{},
+		appCost: map[basics.AppIndex]int{}, trace: &groupTrace{}, aligned: true}
+}
+
+func (t *tracer) equalize(marks []progMark, i *int, app basics.AppIndex, pool *int) {
+	if t.ref != nil && t.aligned {
+		if *i < len(marks) && marks[*i].App == app {
+			*pool = marks[*i].Pool
+		} else {
+			t.aligned = false // the runs took different paths; the verdict shows it
+		}
+	}
+	*i++
+}
+
+func (t *tracer) BeforeProgram(cx *logic.EvalContext) {
+	if cx.RunMode() != logic.ModeApp || cx.PooledApplicationBudget == nil {
+		return
+	}
+	app, pool := cx.AppID(), cx.PooledApplicationBudget
+	t.trace.starts = append(t.trace.starts, progMark{app, *pool})
+	if t.ref != nil {
+		t.equalize(t.ref.starts, &t.si, app, pool)
+	}
+	if t.swapped != nil && t.swapped(app) {
+		*pool += t.progExtra
+	}
+}
+
+func (t *tracer) AfterProgram(cx *logic.EvalContext, pass bool, evalError error) {
+	if cx.RunMode() != logic.ModeApp || cx.PooledApplicationBudget == nil {
+		return
+	}
+	app, pool := cx.AppID(), cx.PooledApplicationBudget
+	t.appCost[app] += cx.Cost()
+	t.trace.ends = append(t.trace.ends, progMark{app, *pool})
+	if t.ref != nil {
+		t.equalize(t.ref.ends, &t.ei, app, pool)
+	}
 }
 
 // BeforeTxnGroup adds the variant's extra budget to the top-level group's pool,
@@ -688,6 +751,10 @@ type Variant struct {
 	// chain's older-version program is a "version downgrade" the AVM refuses;
 	// installing the replacement of that program is the faithful counterpart.
 	Installs map[string]string `json:"installs"`
+	// ExtraGroups, when set, limits ExtraBudget to these groups: the ones
+	// whose plain lifted run ran out of budget. Elsewhere extra budget is
+	// itself an artifact (OpUp callers read it and skip their inner calls).
+	ExtraGroups []int `json:"extra_groups"`
 }
 
 type TxnResult struct {
@@ -709,11 +776,13 @@ type GroupResult struct {
 	BoxWrites  map[string]string `json:"box_writes"` // b64 key -> b64 value ("" = deleted)
 	Coverage   map[string][]int  `json:"coverage,omitempty"`
 	Ops        map[string]int    `json:"ops"`
-	Cost       int               `json:"cost"` // pooled app budget consumed by the whole group
+	Cost       int               `json:"cost"`     // pooled app budget consumed by the whole group
+	AppCost    map[string]int    `json:"app_cost"` // each app's own opcode cost in the group
 	MatchChain bool              `json:"match_chain"`
 }
 
 type VariantResult struct {
+	traces      map[int]*groupTrace // per evaluated group, for equalizing later variants
 	Name        string        `json:"name"`
 	Groups      []GroupResult `json:"groups"`
 	Unsupported []string      `json:"unsupported,omitempty"`
@@ -823,6 +892,7 @@ func replay(req Request) (resp Response) {
 	if len(variants) == 0 {
 		variants = []Variant{{Name: "chain-programs"}}
 	}
+	var ref map[int]*groupTrace
 	for _, v := range variants {
 		overrides, err := decodeOverrides(v.Overrides)
 		if err != nil {
@@ -831,7 +901,11 @@ func replay(req Request) (resp Response) {
 		}
 		led := &remoteLedger{r: rem, prev: basics.Round(req.Round - 1), overrides: overrides,
 			hdrs: map[basics.Round]bookkeeping.BlockHeader{}, unsupported: map[string]bool{}}
-		resp.Variants = append(resp.Variants, evaluate(led, blk, groups, want, req.Prefix, req.Coverage, v))
+		res := evaluate(led, blk, groups, want, req.Prefix, req.Coverage, v, ref)
+		if ref == nil && len(overrides) == 0 && len(v.Installs) == 0 && res.Error == "" {
+			ref = res.traces // the first unmodified variant is the deployed run
+		}
+		resp.Variants = append(resp.Variants, res)
 	}
 	return
 }
@@ -855,6 +929,30 @@ func warm(rem *remote, blk bookkeeping.Block, groups [][]transactions.SignedTxnW
 	}
 }
 
+func containsInt(xs []int, x int) bool {
+	for _, y := range xs {
+		if y == x {
+			return true
+		}
+	}
+	return false
+}
+
+// budgetGroups lists the groups a variant lost to the opcode budget.
+func budgetGroups(v VariantResult) []int {
+	out := []int{}
+	for _, g := range v.Groups {
+		hit := strings.Contains(g.Error, "budget exceeded")
+		for _, t := range g.Txns {
+			hit = hit || strings.Contains(t.Error, "budget exceeded")
+		}
+		if hit {
+			out = append(out, g.Group)
+		}
+	}
+	return out
+}
+
 func installed(installs map[string][]byte, prog []byte) []byte {
 	if len(prog) == 0 {
 		return prog
@@ -871,6 +969,12 @@ func installed(installs map[string][]byte, prog []byte) []byte {
 type replayLedger interface {
 	eval.LedgerForEvaluator
 	unsupportedKeys() []string
+	isSwapped(basics.AppIndex) bool // runs a replacement program in this view
+}
+
+func (l *remoteLedger) isSwapped(app basics.AppIndex) bool {
+	o, ok := l.overrides[app]
+	return ok && o.Approval != nil
 }
 
 func (l *remoteLedger) unsupportedKeys() []string {
@@ -884,9 +988,14 @@ func (l *remoteLedger) unsupportedKeys() []string {
 	return out
 }
 
+// evaluate runs the block's groups up to the last wanted one. With ref (the
+// deployed run's traces), the pooled budget is equalized to it around every
+// program (see tracer), and ExtraBudget goes to each swapped program run
+// instead of the group's pool.
 func evaluate(led replayLedger, blk bookkeeping.Block, groups [][]transactions.SignedTxnWithAD,
-	want map[int]bool, prefix, coverage bool, v Variant) (out VariantResult) {
+	want map[int]bool, prefix, coverage bool, v Variant, ref map[int]*groupTrace) (out VariantResult) {
 	out.Name = v.Name
+	out.traces = map[int]*groupTrace{}
 	installs := map[string][]byte{}
 	for h, b := range v.Installs {
 		r, err := base64.StdEncoding.DecodeString(b)
@@ -931,13 +1040,24 @@ func evaluate(led replayLedger, blk bookkeeping.Block, groups [][]transactions.S
 			}
 		}
 		*tr = *newTracer()
-		if want[gi] {
+		extra := v.ExtraBudget
+		if v.ExtraGroups != nil && !containsInt(v.ExtraGroups, gi) {
+			extra = 0
+		}
+		if ref != nil {
+			tr.ref, tr.swapped, tr.progExtra = ref[gi], led.isSwapped, extra
+			if tr.ref == nil {
+				tr.ref = &groupTrace{} // the deployed run did not reach it: no equalization
+				tr.aligned = false
+			}
+		} else if want[gi] {
 			// Only reported groups: prefix programs that read global
 			// OpcodeBudget (OpUp loops) would otherwise create fewer inner
 			// apps and shift every later created ID in the block.
-			tr.extra = v.ExtraBudget
+			tr.extra = extra
 		}
 		evalErr := ev.TransactionGroup(group...)
+		out.traces[gi] = tr.trace
 		if !want[gi] {
 			if evalErr != nil {
 				// The prefix never touches an overridden app, so this is the
@@ -953,6 +1073,10 @@ func evaluate(led replayLedger, blk bookkeeping.Block, groups [][]transactions.S
 			res.Ops[fmt.Sprint(uint64(app))] = n
 		}
 		res.Cost = tr.budgetConsumed
+		res.AppCost = map[string]int{}
+		for app, c := range tr.appCost {
+			res.AppCost[fmt.Sprint(uint64(app))] = c
+		}
 		if evalErr != nil {
 			res.Error = evalErr.Error()
 		}
