@@ -11,7 +11,7 @@ false or provably neutralised), `INTENDED` (true, but the author's evident
 design, e.g. creator-gated update or close-out to the creator), `UNKNOWN`
 (not decidable from the program text, or not read).
 
-**Coverage:** 1535/1952 cells decided (79%); critical/high cells 834/915 (91%). Overall labelled precision TP/(TP+FP) = 387/772 = 0.50.
+**Coverage:** 1519/1951 cells decided (78%); critical/high cells 817/898 (91%). Overall labelled precision TP/(TP+FP) = 387/739 = 0.52.
 
 > **Caveats.** Precision is over DECIDED cells only — UNKNOWN cells are
 > excluded, so a detector with many UNKNOWNs has a wide error bar. `INTENDED`
@@ -21,24 +21,24 @@ design, e.g. creator-gated update or close-out to the creator), `UNKNOWN`
 > rest were read individually. The ratchet's 231 programs are a random
 > mainnet sample, deduplicated by content hash, not a holdout set.
 
-Sampled rather than fully triaged (cells left unlabelled): `tainted-fund-flow` (32 unlabelled), `tainted-log` (129 unlabelled), `unsafe-division-order` (86 unlabelled), `tainted-state-write` (6 unlabelled), `arbitrary-inner-asset` (3 unlabelled), `arbitrary-inner-appcall` (7 unlabelled).
+Sampled rather than fully triaged (cells left unlabelled): `tainted-fund-flow` (32 unlabelled), `tainted-log` (128 unlabelled), `unsafe-division-order` (86 unlabelled), `tainted-state-write` (6 unlabelled), `arbitrary-inner-asset` (3 unlabelled), `arbitrary-inner-appcall` (7 unlabelled).
 
 | Detector | Cells | Contracts | Decided | TP | FP | INTENDED | UNKNOWN | Precision |
 | --- | --: | --: | --: | --: | --: | --: | --: | --: |
-| `tainted-fund-flow` | 284 | 67 | 57% | 17 | 86 | 59 | 122 | 0.17 |
+| `tainted-fund-flow` | 300 | 67 | 54% | 17 | 86 | 59 | 138 | 0.17 |
 | `is-deletable` | 219 | 164 | 100% | 67 | 7 | 144 | 1 | 0.91 |
 | `inner-txn-close-rekey` | 202 | 83 | 99% | 7 | 2 | 190 | 3 | 0.78 |
 | `is-updatable` | 173 | 130 | 100% | 61 | 10 | 102 | 0 | 0.86 |
-| `tainted-log` | 157 | 48 | 18% | 0 | 0 | 28 | 129 | — |
+| `tainted-log` | 173 | 48 | 26% | 0 | 0 | 45 | 128 | — |
 | `unsafe-division-order` | 126 | 36 | 32% | 15 | 13 | 12 | 86 | 0.54 |
 | `delete-funds-check` | 100 | 67 | 97% | 63 | 11 | 23 | 3 | 0.85 |
 | `timelock-upgrade` | 97 | 87 | 100% | 0 | 8 | 89 | 0 | 0.00 |
 | `unprotected-deletable` | 97 | 67 | 99% | 67 | 15 | 14 | 1 | 0.82 |
-| `tainted-state-write` | 82 | 20 | 93% | 2 | 62 | 12 | 6 | 0.03 |
 | `unprotected-updatable` | 76 | 47 | 95% | 61 | 11 | 0 | 4 | 0.85 |
 | `inner-txn-fee` | 66 | 26 | 100% | 6 | 3 | 57 | 0 | 0.67 |
 | `group-size-check` | 64 | 29 | 56% | 2 | 34 | 0 | 28 | 0.06 |
 | `unvalidated-group-sibling` | 57 | 29 | 88% | 2 | 45 | 3 | 7 | 0.04 |
+| `tainted-state-write` | 49 | 15 | 88% | 2 | 29 | 12 | 6 | 0.06 |
 | `arbitrary-inner-asset` | 43 | 25 | 86% | 5 | 24 | 8 | 6 | 0.17 |
 | `abi-method-selector` | 39 | 34 | 100% | 2 | 26 | 11 | 0 | 0.07 |
 | `partial-tainted-fund-flow` | 31 | 13 | 81% | 3 | 21 | 1 | 6 | 0.12 |
@@ -124,18 +124,6 @@ text alone.
 - **reach-participant-gate** ×1 — e.g. `app_1050058216.teal:3059`: Reach delete path (label13, phase load 1 == 2) asserts Sender is one of the two participant addresses held in global state (load 255 / load 251, or load 251 alone on label89), then asserts OC==5 and closes assets and ALGO to the creator — not deletable by anyone
 - **owner-multisig-gate-missed** ×1 — e.g. `app_900123673.teal:1283`: Delete calls label18 (rejects unless txn Sender equals one of the stored "owner_N" addresses) and asserts the recorded approvals >= global "thres"
 
-### `tainted-state-write`
-
-- **key-namespace-prefix-check** ×33 — e.g. `app_2645463331.teal:589`: callee label41 asserts the key prefix (extract 0 2) is not "i." and requires owner/admin before box_del (same code as app_2300200702.teal:589) *Fixable: a key prefix check (extract 0 2 != "i.") in a callee that returns 0 excludes the internal namespace.*
-- **member-gated-key** ×8 — e.g. `app_900123673.teal:690`: multisig-style app: label18 rejects (return 0) any Sender not in "owner_N"; keys are proposal names chosen by owners and must already hold a 120-byte proposal record
-- **constant-prefix-key-namespace** ×6 — e.g. `app_1850333786.teal:966`: key = "GRA"||arg1: the constant 3-byte prefix confines the write to the per-item royalty cache, refreshed from the asset creator's own local state — no admin/owner key ("ST","SL","FA",...) shares the prefix (same code as app_1050051479.teal:963)
-- **scratch-store-from-other-path** ×6 — e.g. `app_1850333786.teal:1161`: key = "GRP"||itob(i) with i a loop index from state "NOA" on a path asserting NumAppArgs == 0 and Sender == "SL"; the ApplicationArgs source is a store to slot 13 on a different method path (same code as app_1050051479.teal:1158) *Fixable: the reaching store of the scratch slot is a constant on this path.*
-- **key-from-constant-table** ×3 — e.g. `app_3550180073.teal:419`: key = "t"||substring3("01234p", i, i+1)||suffix: substring3 panics outside the 6-char constant, so the key set is fixed (t0_ra..tp_lp)
-- **bounded-key-component** ×2 — e.g. `app_2200606875.teal:1993`: ve-lock slope-change bucket "sc"||itob(t): every caller passes an unlock time asserted to be a multiple of 604800 and within [now+4w, now+~4y] (label22 / label24) or read back from the user's validated lock box
-- **sender-pinned-to-foreign-admin-app** ×2 — e.g. `app_2450560800.teal:887`: label74 asserts Sender == "MNA" of the superadmin app (label30) before the TokenManager box write
-- **key-validated-against-trusted-app** ×1 — e.g. `app_3550011936.teal:482`: decrement of listing counter "as"||itob(asset): both callers first assert the listing app was created by this app (AppCreator == CurrentApplicationAddress) and its "asset" global == the asset
-- **admin-gated-namespaced-key** ×1 — e.g. `app_177244932.teal:198`: setTransferRule: requires the caller's local "roles" bit 2 (granted by admins) and the key is "rule"||itob(from)||itob(to) — a constant-prefixed rule table
-
 ### `unprotected-updatable`
 
 - **foreign-app-admin-gate-missed** ×5 — e.g. `app_3400287920.teal:48`: update method asserts OC==4; its helper asserts txn Sender == the parent market app's global "market_friend_addr" (market_app_id = CallerApplicationID at creation) *Fixable via authority layer: admin read from an app id written only at creation/under creator pin.*
@@ -170,6 +158,17 @@ text alone.
 - **receiver-pin-in-returned-boolean** ×4 — e.g. `app_2200117730.teal:801`: same helper as app_1050027265:785: AssetReceiver == CurrentApplicationAddress in the same && chain as the amount read *Fixable: the pin is in the same && chain as the read, returned through retsub.*
 - **receiver-pinned-to-party** ×2 — e.g. `app_3350348253.teal:4244`: loan disbursement: the lender pays the borrower directly; the receiver is asserted == state "addrb" (a P2P transfer, not a credit to the app)
 - **escrow-setup-funding** ×2 — e.g. `app_151644583.teal:102`: creator-only setup (gtxn 0 Sender == "Creator") funding the escrow named in ApplicationArgs 0, then stored as "AssetEscrow"; not a credit
+
+### `tainted-state-write`
+
+- **member-gated-key** ×8 — e.g. `app_900123673.teal:690`: multisig-style app: label18 rejects (return 0) any Sender not in "owner_N"; keys are proposal names chosen by owners and must already hold a 120-byte proposal record
+- **constant-prefix-key-namespace** ×6 — e.g. `app_1850333786.teal:966`: key = "GRA"||arg1: the constant 3-byte prefix confines the write to the per-item royalty cache, refreshed from the asset creator's own local state — no admin/owner key ("ST","SL","FA",...) shares the prefix (same code as app_1050051479.teal:963)
+- **scratch-store-from-other-path** ×6 — e.g. `app_1850333786.teal:1161`: key = "GRP"||itob(i) with i a loop index from state "NOA" on a path asserting NumAppArgs == 0 and Sender == "SL"; the ApplicationArgs source is a store to slot 13 on a different method path (same code as app_1050051479.teal:1158) *Fixable: the reaching store of the scratch slot is a constant on this path.*
+- **key-from-constant-table** ×3 — e.g. `app_3550180073.teal:419`: key = "t"||substring3("01234p", i, i+1)||suffix: substring3 panics outside the 6-char constant, so the key set is fixed (t0_ra..tp_lp)
+- **bounded-key-component** ×2 — e.g. `app_2200606875.teal:1993`: ve-lock slope-change bucket "sc"||itob(t): every caller passes an unlock time asserted to be a multiple of 604800 and within [now+4w, now+~4y] (label22 / label24) or read back from the user's validated lock box
+- **sender-pinned-to-foreign-admin-app** ×2 — e.g. `app_2450560800.teal:887`: label74 asserts Sender == "MNA" of the superadmin app (label30) before the TokenManager box write
+- **key-validated-against-trusted-app** ×1 — e.g. `app_3550011936.teal:482`: decrement of listing counter "as"||itob(asset): both callers first assert the listing app was created by this app (AppCreator == CurrentApplicationAddress) and its "asset" global == the asset
+- **admin-gated-namespaced-key** ×1 — e.g. `app_177244932.teal:198`: setTransferRule: requires the caller's local "roles" bit 2 (granted by admins) and the key is "rule"||itob(from)||itob(to) — a constant-prefixed rule table
 
 ### `arbitrary-inner-asset`
 

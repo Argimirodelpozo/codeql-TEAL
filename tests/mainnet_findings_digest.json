@@ -84,17 +84,17 @@
   "tainted-fund-flow": {
    "contracts": 67,
    "crashes": 0,
-   "findings": 284
+   "findings": 300
   },
   "tainted-log": {
    "contracts": 48,
    "crashes": 0,
-   "findings": 157
+   "findings": 173
   },
   "tainted-state-write": {
-   "contracts": 20,
+   "contracts": 15,
    "crashes": 0,
-   "findings": 82
+   "findings": 49
   },
   "timelock-upgrade": {
    "contracts": 87,
@@ -132,7 +132,6 @@
    "tainted-asset-admin": "2118",
    "tainted-fund-flow": "551,2406,2503,2505,2507,2521,2523,3522",
    "tainted-log": "306,682,1111,1337,1429",
-   "tainted-state-write": "589,1078,1086",
    "timelock-upgrade": "227",
    "unsafe-division-order": "1476,1517,2292,2741"
   },
@@ -199,7 +198,7 @@
    "tainted-asset-admin": "886",
    "tainted-fund-flow": "672,674,694,732,1507,1664,1681,1716",
    "tainted-log": "341,382,1614",
-   "tainted-state-write": "550,600,603,930,938,948,1069,1077,1087,1253,2707",
+   "tainted-state-write": "550,2707",
    "unprotected-updatable": "79",
    "unsafe-division-order": "1486,2751"
   },
@@ -385,7 +384,7 @@
    "tainted-asset-admin": "890",
    "tainted-fund-flow": "676,678,698,736,1522,1679,1696,1731",
    "tainted-log": "345,386,1629",
-   "tainted-state-write": "554,604,607,934,942,952,1084,1092,1102,1268,2722",
+   "tainted-state-write": "554,2722",
    "unprotected-updatable": "79",
    "unsafe-division-order": "1501,2766"
   },
@@ -568,7 +567,7 @@
    "inner-txn-close-rekey": "509,538",
    "is-deletable": "515",
    "is-updatable": "551",
-   "tainted-fund-flow": "157,259",
+   "tainted-fund-flow": "157,186,215,259,285,311",
    "timelock-upgrade": "551",
    "unvalidated-group-sibling": "801"
   },
@@ -662,7 +661,6 @@
    "tainted-asset-admin": "2097",
    "tainted-fund-flow": "551,2385,2482,2484,2486,2500,2502,3480",
    "tainted-log": "306,682,1111,1337,1429",
-   "tainted-state-write": "589,1078,1086",
    "timelock-upgrade": "227",
    "unsafe-division-order": "2271,3409"
   },
@@ -843,7 +841,7 @@
    "unprotected-deletable": "2336"
   },
   "92fd7baf5f9da9de": {
-   "tainted-log": "1358,1448,1970,2000",
+   "tainted-log": "94,117,147,169,185,211,231,254,1358,1448,2000",
    "tainted-state-write": "1993",
    "unsafe-division-order": "1736,1928"
   },
@@ -855,7 +853,6 @@
    "tainted-asset-admin": "2112",
    "tainted-fund-flow": "545,2400,2492,2494,2496,2510,2512,3519",
    "tainted-log": "300,676,1105,1331,1423",
-   "tainted-state-write": "583,1072,1080",
    "timelock-upgrade": "221",
    "unsafe-division-order": "1470,1511,2286,2730"
   },
@@ -903,7 +900,7 @@
    "inner-txn-close-rekey": "493,522",
    "is-deletable": "499",
    "is-updatable": "535",
-   "tainted-fund-flow": "155,251",
+   "tainted-fund-flow": "155,182,209,251,275,299",
    "timelock-upgrade": "535",
    "unvalidated-group-sibling": "785"
   },
@@ -933,7 +930,6 @@
    "tainted-asset-admin": "245",
    "tainted-fund-flow": "445,606,611,714,719,727,732,758",
    "tainted-log": "688",
-   "tainted-state-write": "293,303,338",
    "unprotected-updatable": "79"
   },
   "a222d5f2a47414e5": {
@@ -1059,7 +1055,7 @@
   "ae6098a180db5aed": {
    "is-updatable": "34",
    "tainted-fund-flow": "811",
-   "tainted-log": "236,351,521",
+   "tainted-log": "92,236,351,521",
    "timelock-upgrade": "34",
    "unsafe-division-order": "370"
   },
@@ -1070,7 +1066,7 @@
   },
   "aecda94473307b1a": {
    "group-size-check": "184,268",
-   "tainted-log": "2385,2406,2427,2443",
+   "tainted-log": "2323,2354,2385,2406,2427,2443,2525",
    "unsafe-division-order": "346,418,431,486,542,546,635",
    "unvalidated-group-sibling": "1613,1669,2006,2010"
   },
@@ -1103,7 +1099,7 @@
   },
   "b1ec32ec887509c4": {
    "is-updatable": "41",
-   "tainted-log": "941",
+   "tainted-log": "194,941",
    "timelock-upgrade": "41",
    "unsafe-division-order": "1268"
   },
@@ -1144,7 +1140,7 @@
   },
   "b896d648afd17b4f": {
    "is-updatable": "33",
-   "tainted-log": "477",
+   "tainted-log": "101,477",
    "tainted-state-write": "678,690",
    "timelock-upgrade": "33",
    "unsafe-division-order": "697"
@@ -1367,7 +1363,7 @@
    "inner-txn-close-rekey": "501,530",
    "is-deletable": "507",
    "is-updatable": "543",
-   "tainted-fund-flow": "156,255",
+   "tainted-fund-flow": "156,184,212,255,280,305",
    "timelock-upgrade": "543",
    "unvalidated-group-sibling": "793"
   },
@@ -1442,7 +1438,7 @@
    "inner-txn-close-rekey": "517,546",
    "is-deletable": "523",
    "is-updatable": "559",
-   "tainted-fund-flow": "158,263",
+   "tainted-fund-flow": "158,188,218,263,290,317",
    "timelock-upgrade": "559",
    "unvalidated-group-sibling": "809"
   },
@@ -1454,7 +1450,7 @@
   "ef5d53b0aae5db76": {
    "group-size-check": "192,288",
    "is-updatable": "324",
-   "tainted-log": "2496,2527,2548,2569,2585",
+   "tainted-log": "2434,2465,2496,2527,2548,2569,2585,2667",
    "timelock-upgrade": "324",
    "unsafe-division-order": "492,564,577,632,688,692,781",
    "unvalidated-group-sibling": "1661,1722,2089,2093"
@@ -1489,7 +1485,6 @@
    "tainted-asset-admin": "315",
    "tainted-fund-flow": "589,735,740,874,879,891,896,908,913,943",
    "tainted-log": "841",
-   "tainted-state-write": "363,373,482",
    "unprotected-updatable": "79",
    "unsafe-division-order": "714,1668"
   },
