@@ -61,7 +61,8 @@ ttreplay replay < request.json    # see Request / Response in main.go
 ttreplay stream < request.json    # see StreamRequest / StreamBlock in stream.go (JSON lines)
 
 python -m tests.replay_harness.timetravel 1002541853 --samples 30 --out tt_results   # sampled blocks
-python -m tests.replay_harness.stream --out full --days 30 --top 100 --jobs 2       # every block
+GOMAXPROCS=1 GOMEMLIMIT=1GiB nice -n 19 ionice -c3 \
+  python -m tests.replay_harness.stream --out full --days 30 --top 100              # every block (days; gentle defaults)
 ```
 
 `TEALQL_TT_NODE` (default `https://mainnet-api-dt.d13.co`), `TEALQL_INDEXER`

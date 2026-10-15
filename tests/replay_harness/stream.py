@@ -10,7 +10,8 @@ covers ``[end - (i+1)*chunk + 1, end - i*chunk]``. Asking for more days later
 only adds older chunks, and a chunk resumes from its last completed block, so
 a run can be stopped and extended at will::
 
-    python -m tests.replay_harness.stream --out full --days 30 --top 100 --jobs 2
+    GOMAXPROCS=1 GOMEMLIMIT=1GiB nice -n 19 ionice -c3 \
+        python -m tests.replay_harness.stream --out full --days 30 --top 100
     python -m tests.replay_harness.stream --out full --summarize
 
 Targets: the ``--top`` apps by call count (inner calls included) in a sample
@@ -349,9 +350,11 @@ def main(argv=None) -> int:
     ap.add_argument("--top", type=int, default=100)
     ap.add_argument("--target-samples", type=int, default=600, help="blocks sampled to rank the targets")
     ap.add_argument("--chunk", type=int, default=20000, help="blocks per chunk (one cold start each)")
-    ap.add_argument("--jobs", type=int, default=2, help="chunks streamed concurrently (be polite)")
-    ap.add_argument("--prefetch", type=int, default=8, help="blocks warmed ahead per stream")
-    ap.add_argument("--lift-jobs", type=int, default=4)
+    # Defaults are deliberately gentle: the run takes days and shares the machine
+    # (and a free public node). Run it as `GOMAXPROCS=1 GOMEMLIMIT=1GiB nice -n 19 ionice -c3 ...`.
+    ap.add_argument("--jobs", type=int, default=1, help="chunks streamed concurrently")
+    ap.add_argument("--prefetch", type=int, default=2, help="blocks warmed ahead per stream")
+    ap.add_argument("--lift-jobs", type=int, default=1)
     ap.add_argument("--summarize", action="store_true")
     args = ap.parse_args(argv)
     run = Run(Path(args.out))
