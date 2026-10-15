@@ -33,7 +33,7 @@ def lift_to_teal(source, *, aggressive: bool = False,
     from puya.errors import InternalError
     from puya.ir.models import ProgramKind, SlotAllocation, SlotAllocationStrategy
     from puya.mir.main import program_ir_to_mir
-    from puya.options import PuyaOptions
+    from puya.options import LocalsCoalescingStrategy, PuyaOptions
     from puya.teal.main import mir_to_teal
     from puya.teal.output import emit_teal
     from ..ssa import SSAProgram
@@ -73,8 +73,19 @@ def lift_to_teal(source, *, aggressive: bool = False,
                 provider = CompiledProgramProvider()
             except Exception:
                 provider = object.__new__(CompiledProgramProvider)
+            # AGGRESSIVE coalescing, not Puya's default ``root_operand``: that strategy
+            # merges only registers sharing a SOURCE-variable root (``x#0``/``x#1``),
+            # and every lifted register has its own synthetic root (``tmp%4367``), so
+            # it coalesces nothing. Main (no ``proto``) then pre-allocates the UNION
+            # of every cross-block value of every disjoint method arm on its f-stack
+            # and addresses it with one-byte ``bury``/``dig`` immediates -- a router
+            # with inlined method bodies (mainnet app 3690309159) needed ``bury 447``
+            # and failed to assemble. Interference-based coalescing shares slots
+            # between arms that are never live together (460 -> 47 there).
             ctx = ArtifactCompileContext(
-                options=PuyaOptions(), compilation_set={}, sources_by_path={},
+                options=PuyaOptions(
+                    locals_coalescing_strategy=LocalsCoalescingStrategy.aggressive),
+                compilation_set={}, sources_by_path={},
                 compiled_program_provider=provider, output_path_provider=None)
             program = M.Program(
                 kind=ProgramKind.approval, main=main, subroutines=list(subs),
