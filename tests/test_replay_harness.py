@@ -141,3 +141,13 @@ def test_extra_budget_goes_only_to_the_groups_the_lift_ran_out_of_budget_in(monk
         "variants": [{"name": v["name"], "groups": [_group(2)]} for v in req["variants"]]})
     tt.replay_block(1, 2, {"status": "OK", "lifted": "Cg=="}, None)
     assert len(reqs) == 1
+
+
+def test_a_divergence_naming_its_app_is_not_charged_to_the_other_targets_of_the_group():
+    from tests.replay_harness.stream import attribute
+    err = "logic eval error: - would result negative. Details: app=7, pc=421"
+    rows = [{"round": 1, "group": 0, "app": a, "status": "DIVERGES", "detail": err} for a in (5, 7)]
+    rows.append({"round": 1, "group": 1, "app": 5, "status": "DIVERGES", "detail": err})   # 7 not in group 1
+    rows.append({"round": 1, "group": 2, "app": 5, "status": "DIVERGES", "detail": "txn 0: $.dt: x"})
+    got = [(r["group"], r["app"], r["status"]) for r in attribute(rows)]
+    assert got == [(0, 5, "CO_DIVERGED"), (0, 7, "DIVERGES"), (1, 5, "DIVERGES"), (2, 5, "DIVERGES")]

@@ -30,6 +30,7 @@ import concurrent.futures as cf
 import hashlib
 import json
 import random
+import re
 import subprocess
 import sys
 import threading
@@ -260,9 +261,29 @@ def self_tests(run: Run, lifts: Lifts) -> dict:
 
 # ------------------------------------------------------------------ summary
 
+_FAILING_APP = re.compile(r"Details: app=(\d+)")
+
+
+def attribute(rows: list[dict]) -> list[dict]:
+    """A group calling several target apps is judged once, and a divergence is
+    recorded against each of them. When the failure names the app whose
+    program failed (``Details: app=N``) and N is one of the group's targets,
+    the others are CO_DIVERGED: their own lift is not what failed."""
+    by_group: dict[tuple, set] = defaultdict(set)
+    for r in rows:
+        by_group[(r["round"], r["group"])].add(r["app"])
+    out = []
+    for r in rows:
+        m = _FAILING_APP.search(r.get("detail") or "") if r["status"] == "DIVERGES" else None
+        if m and int(m.group(1)) != r["app"] and int(m.group(1)) in by_group[(r["round"], r["group"])]:
+            r = {**r, "status": "CO_DIVERGED", "culprit": int(m.group(1))}
+        out.append(r)
+    return out
+
+
 def load_rows(out: Path) -> list[dict]:
     p = out / "rows.jsonl"
-    return [json.loads(line) for line in p.open()] if p.exists() else []
+    return attribute([json.loads(line) for line in p.open()]) if p.exists() else []
 
 
 def summarize(run: Run) -> str:
@@ -288,8 +309,12 @@ def summarize(run: Run) -> str:
         f"{len(rows):,} judged (group, app) rows: "
         + ", ".join(f"{k} {v:,}" for k, v in total.most_common()) + ".",
         "",
-        "| app | blocks | rows | FAITHFUL | DIVERGES | BUDGET | lift pending/fail | oracle miss | PCs hit | self-test |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "DIVERGES counts only the app whose program failed when the error names it; the other target apps "
+        "of that group are CO_DIVERGED. AFTER_DIVERGENCE rows follow a divergence in the same block "
+        "(state no longer comparable) and are not verdicts.",
+        "",
+        "| app | blocks | rows | FAITHFUL | DIVERGES | co-diverged / after | BUDGET | lift pending/fail | oracle miss | PCs hit | self-test |",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for t in targets:
         a = t["app"]
@@ -297,7 +322,7 @@ def summarize(run: Run) -> str:
         st = selftest.get(str(a))
         lines.append(
             f"| {a} | {len(rounds[a]):,} | {sum(c.values()):,} | {c['FAITHFUL']:,} | {c['DIVERGES']:,} | "
-            f"{c['BUDGET']:,} | {c['LIFT_PENDING'] + c['LIFT_FAIL'] + c['LIFT_TIMEOUT'] + c['ASM_FAIL']:,} | "
+            f"{c['CO_DIVERGED']:,} / {c['AFTER_DIVERGENCE']:,} | {c['BUDGET']:,} | {c['LIFT_PENDING'] + c['LIFT_FAIL'] + c['LIFT_TIMEOUT'] + c['ASM_FAIL']:,} | "
             f"{c['REPLAY_MISS'] + c['REPLAY_ERROR']:,} | {len(cov[a]):,} | "
             f"{'—' if st is None else ('ok' if st['ok'] else 'BROKEN')} |")
     bad = [r for r in rows if r["status"] in ("DIVERGES", "BUDGET", "VERSION_ARTIFACT")]
