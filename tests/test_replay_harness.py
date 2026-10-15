@@ -1,10 +1,10 @@
 """Verdict logic of the historical-replay differential
-(``tests/behavioral_lift/timetravel.py``). The replay itself needs the network and
+(``tests/replay_harness/timetravel.py``). The replay itself needs the network and
 a built ``ttreplay``; what decides FAITHFUL vs DIVERGES is pure and pinned here.
 """
 from __future__ import annotations
 
-from tests.behavioral_lift.timetravel import _entry_mutant, classify, first_diff, instruction_count
+from tests.replay_harness.timetravel import _entry_mutant, classify, first_diff, instruction_count
 
 
 def _group(gi, *, match=True, error="", txns=None, boxes=None):
@@ -61,7 +61,7 @@ def test_an_update_refused_as_a_downgrade_is_rerun_installing_the_lifted_program
     programs replaced — on the lifted variants only, the deployed run untouched."""
     import base64
 
-    import tests.behavioral_lift.timetravel as tt
+    import tests.replay_harness.timetravel as tt
     assert tt.program_version(base64.b64encode(bytes([9, 0x20])).decode()) == 9
     assert tt.program_version(base64.b64encode(bytes([0x81, 0x01])).decode()) == 129
     assert tt.at_version("#pragma version 9\nint 1\n", 11) == "#pragma version 11\nint 1\n"

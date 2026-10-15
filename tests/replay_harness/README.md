@@ -1,10 +1,10 @@
-# ttreplay — historical-replay oracle for the lift
+# Replay harness — historical replay of real mainnet blocks
 
 `ttreplay` re-evaluates real mainnet blocks with go-algorand's own block
 evaluator. It reads ledger state lazily from a **time-travel algod**
 ([d13co/go-algorand@timetravel](https://github.com/d13co/go-algorand/tree/timetravel)),
 which serves every account, app, asset and box at any past round. Any app's
-programs can be swapped for the evaluation. `../timetravel.py` uses it to check
+programs can be swapped for the evaluation. `timetravel.py` uses it to check
 that the lift-recompiled program does what the deployed one did, on real inputs
 against real state. The older dryrun gates mostly exercise routing: they run
 with empty state and synthetic inputs.
@@ -49,7 +49,7 @@ evaluated.
 ```bash
 git clone --depth 1 -b timetravel https://github.com/d13co/go-algorand ~/tools/go-algorand-timetravel
 cd ~/tools/go-algorand-timetravel && make crypto/libs   # or copy crypto/libs from a built checkout
-GO_ALGORAND_DIR=~/tools/go-algorand-timetravel tests/behavioral_lift/ttreplay/build.sh
+GO_ALGORAND_DIR=~/tools/go-algorand-timetravel tests/replay_harness/ttreplay/build.sh
 ```
 
 ## Use
@@ -59,7 +59,7 @@ ttreplay asm    < prog.teal       # {"program": b64} | {"error": ...}
 ttreplay disasm < prog.b64        # TEAL
 ttreplay replay < request.json    # see Request / Response in main.go
 
-python -m tests.behavioral_lift.timetravel 1002541853 --samples 30 --out tt_results
+python -m tests.replay_harness.timetravel 1002541853 --samples 30 --out tt_results
 ```
 
 `TEALQL_TT_NODE` (default `https://mainnet-api-dt.d13.co`), `TEALQL_INDEXER`

@@ -19,7 +19,7 @@ see exactly the state they saw on chain. Groups after the first non-faithful
 group of a block are AFTER_DIVERGENCE (their state may already differ) and
 are not counted.
 
-  python -m tests.behavioral_lift.timetravel APP_ID [APP_ID ...] \
+  python -m tests.replay_harness.timetravel APP_ID [APP_ID ...] \
       [--samples N] [--seed S] [--out DIR] [--jobs J]
 
 Environment: TEALQL_TT_NODE (default https://mainnet-api-dt.d13.co),
@@ -193,7 +193,7 @@ def lift_program(program_b64: str, cache: Path) -> dict:
     t0 = time.time()
     try:
         proc = subprocess.run(
-            [sys.executable, "-m", "tests.behavioral_lift.timetravel", "--lift-one", str(src), str(out)],
+            [sys.executable, "-m", "tests.replay_harness.timetravel", "--lift-one", str(src), str(out)],
             cwd=REPO, capture_output=True, text=True, timeout=LIFT_TIMEOUT)
         meta["lift_seconds"] = round(time.time() - t0, 1)
         if proc.returncode or not out.exists():
@@ -587,7 +587,7 @@ def main(argv=None) -> int:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     if not Path(TTREPLAY).exists():
-        print(f"ttreplay not found at {TTREPLAY}; build it with tests/behavioral_lift/ttreplay/build.sh",
+        print(f"ttreplay not found at {TTREPLAY}; build it with tests/replay_harness/ttreplay/build.sh",
               file=sys.stderr)
         return 2
     rows: list[dict] = []

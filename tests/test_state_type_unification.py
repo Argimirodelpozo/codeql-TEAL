@@ -1,7 +1,7 @@
 """Reads of one constant state key carry ONE recovered type
 (``type_recovery._infer_state_types``).
 
-Found by the historical-replay gate (``tests/behavioral_lift/timetravel.py``):
+Found by the historical-replay gate (``tests/replay_harness/timetravel.py``):
 mainnet app 3192677198 did not lift. Its owner key was put from an
 account-typed register and from a constant, and read in several places; the
 reads only witnessed "bytes", which was counted as a rival claim, so the key
