@@ -261,7 +261,8 @@ class _Result:
 
     __slots__ = ("args", "phis", "exit", "unresolved", "divergent",
                  "frame_deferred", "frame_skewed", "return_shapes",
-                 "contexts", "contexts_complete", "recursive_returns")
+                 "contexts", "contexts_complete", "recursive_returns",
+                 "call_residuals")
 
     def __init__(self):
         self.args: dict = {}
@@ -284,6 +285,13 @@ class _Result:
         # underflow, so those reads REFUSE instead of resolving one-per-cell
         # wrong. Legacy retsub reads are top-relative and stay unaffected.
         self.frame_skewed: set = set()
+        # id(callsub PyOp) -> [(calling routine, anchored, residual)]: the
+        # caller's stack UNDER the call's arguments (bottom-first; None when
+        # the arguments themselves underflowed), one entry per execution
+        # context. `anchored` says the caller's list bottom IS its frame base
+        # at the call (height-unpoisoned block). This is what a callee's
+        # `_CallerCell` resolves against.
+        self.call_residuals: dict = {}
 
 
 class _Param:
@@ -303,6 +311,28 @@ class _Param:
 
     def __repr__(self) -> str:
         return f"param{self.index}@{self.sub_key[1]}"
+
+
+class _CallerCell:
+    """A cell ``depth`` (1 = nearest) BELOW a routine's model bottom — under
+    its arguments, in the CALLER's residual.
+
+    Only a forward join arm in a sub mints it: the arm's physical stack is
+    shorter than the merge, and since that arm's list IS bottom-anchored
+    (height-unpoisoned predecessor, unskewed routine) the missing cell is the
+    caller's cell at a FIXED depth — plain ops may read it, the AVM bounds
+    only ``frame_*`` ops and ``retsub`` by the frame. Like :class:`_Param` it
+    is a private marker resolved by :func:`_bind_params` against each call
+    site's residual, and never survives into public operands."""
+
+    __slots__ = ("sub_key", "depth")
+
+    def __init__(self, sub_key, depth):
+        self.sub_key = sub_key
+        self.depth = depth
+
+    def __repr__(self) -> str:
+        return f"below{self.depth}@{self.sub_key[1]}"
 
 
 def simulate(blocks, bb_to_sub, proto_io, return_point, phi_factory,
@@ -396,6 +426,7 @@ def simulate(blocks, bb_to_sub, proto_io, return_point, phi_factory,
             local.contexts = res.contexts
             local.divergent = res.divergent
             local.recursive_returns = res.recursive_returns
+            local.call_residuals = res.call_residuals
             if res.return_shapes is not None:
                 local.return_shapes = res.return_shapes.fork()
         context_poison = poisoned | {
@@ -471,7 +502,8 @@ def simulate(blocks, bb_to_sub, proto_io, return_point, phi_factory,
         else:
             ph.partial = True
     if bind_params:
-        _bind_params(blocks, res, arity, bb_to_sub, phi_factory)
+        _bind_params(blocks, res, arity, bb_to_sub, phi_factory,
+                     sub_entries=sub_entries)
     return res
 
 
@@ -707,7 +739,8 @@ def _callee_first(by_sub, bb_to_sub):
     return order
 
 
-def _bind_params(blocks, res, arity, bb_to_sub, phi_factory):
+def _bind_params(blocks, res, arity, bb_to_sub, phi_factory,
+                 sub_entries=frozenset()):
     """Replace every :class:`_Param` with what the CALL SITES actually pass.
 
     Simulating a routine leaves its incoming slots symbolic, because a callee is
@@ -762,6 +795,74 @@ def _bind_params(blocks, res, arity, bb_to_sub, phi_factory):
         # touch ``.key()``/``.defined_by`` dies. Exhaustion is a refusal.
         return None if isinstance(v, _Param) else v
 
+    def skewed(routine):
+        context = res.contexts.get(routine)
+        return (routine in res.frame_skewed
+                or routine in getattr(context, "frame_skewed", ()))
+
+    def below(cell):
+        """``(values, partial)`` for a :class:`_CallerCell`, or None (refuse).
+
+        Each call site's residual holds the cell ``depth`` under its
+        arguments (top-relative, so as sound as the caller's own model);
+        past it, a sub caller's anchored list continues into ITS caller,
+        while main's bottom is physical — that call path underflows on the
+        AVM, so its arm drops and the phi is `partial` (panic-pruning).
+        Unknown cells, unanchored callers, recursion and exhausted hops
+        refuse: the resolved subset must never read as the whole answer.
+        A ``(routine, depth)`` reached twice (two callers sharing a caller,
+        or recursion revisiting the same cell) names the SAME value set, so
+        the worklist is a least fixpoint of the union — revisits add nothing;
+        a chain of more than 16 distinct hops refuses."""
+        values, partial = [], False
+        seen = {(cell.sub_key, cell.depth)}
+        work = [(cell.sub_key, cell.depth)]
+        while work:
+            key, depth = work.pop()
+            entries = [entry for cb in sites_by_key.get(key, ())
+                       for entry in res.call_residuals.get(id(cb.ops[-1]), ())]
+            if not entries:
+                return None
+            for routine, anchored, residual in entries:
+                if residual is None:
+                    return None
+                if depth <= len(residual):
+                    v = residual[-depth]
+                    if isinstance(v, _Param):
+                        v = resolve(v)
+                    if v is None:
+                        return None
+                    values.append(v)
+                elif routine not in sub_entries:
+                    partial = True
+                elif not anchored or skewed(routine):
+                    return None
+                elif (routine.key, depth - len(residual)) not in seen:
+                    if len(seen) >= 16:
+                        return None
+                    seen.add((routine.key, depth - len(residual)))
+                    work.append((routine.key, depth - len(residual)))
+        return values, partial
+
+    sites_by_key = {sub.key: callers for sub, callers in sites.items()}
+
+    def rebind(ph):
+        args = []
+        for a in ph.args:
+            if isinstance(a, _Param):
+                args.append(resolve(a))
+            elif isinstance(a, _CallerCell):
+                got = below(a)
+                if got is None:
+                    args.append(None)
+                else:
+                    args.extend(got[0])
+                    if got[1]:
+                        ph.partial = True
+            else:
+                args.append(a)
+        ph.args = args
+
     for context in [res, *res.contexts.values()]:
         for ins in context.args.values():
             for j, v in enumerate(ins):
@@ -773,7 +874,7 @@ def _bind_params(blocks, res, arity, bb_to_sub, phi_factory):
                     st[j] = resolve(v)
     for phis in res.phis.values():
         for _slot, ph in phis:
-            ph.args = [resolve(a) if isinstance(a, _Param) else a for a in ph.args]
+            rebind(ph)
     # The phis minted RIGHT HERE need it too. A call site may pass one of its own
     # caller's params straight through, so a param phi's arguments can themselves
     # be `_Param`s — and these phis are not in `res.phis`, so the sweep above
@@ -968,11 +1069,33 @@ def _run_routine(sub, body_list, res, arity, bb_to_sub, return_point,
     # (the AVM bounds only frame ops by the frame; verified live).
     is_main = sub not in sub_entries
 
+    def below_frame(pred, block, top_slot):
+        # A FORWARD arm shorter than the merge. In a sub its missing cell is
+        # under the frame base — the caller's cell, not an underflow — at a
+        # depth fixed by the arm's own height, PROVIDED the arm's list is
+        # bottom-anchored: a height-poisoned predecessor (an earlier
+        # top-aligned join), a routine that already dipped below its band,
+        # or a guard-refined divergent edge stack all break that, and the
+        # arm is then unknown (None: the public phi refuses). Marking it
+        # `partial` instead let the other arm's constant stand alone.
+        if (pred is None or pred.key in poisoned or sub in res.frame_skewed
+                or pred not in res.exit
+                or (res.return_shapes is not None
+                    and (pred, block) in res.return_shapes.edges)):
+            return None
+        return _CallerCell(sub.key, top_slot - len(res.exit[pred]))
+
     def merge_value(block, top_slot, bottom_index, incoming, _is_loop):
         ph = phi_factory(block, top_slot)
-        ph.args.extend(value for _pred, present, value in incoming if present)
-        if any(not present for _pred, present, _value in incoming):
-            ph.partial = True
+        for pred, present, value in incoming:
+            if present:
+                ph.args.append(value)
+            elif is_main:
+                # Main's bottom is physical: reading this cell on that arm
+                # underflows, so `partial`'s panic-pruning contract holds.
+                ph.partial = True
+            else:
+                ph.args.append(below_frame(pred, block, top_slot))
         res.phis.setdefault(block, []).append((bottom_index, ph))
         return ph, ph
 
@@ -1154,6 +1277,9 @@ def _exec(o, b, stack, nargs, res, bb_to_sub, retsubs, arity, phi_factory,
         a_in, r_out = arity.get(callee, (0, 0)) if callee is not None else (0, 0)
         take = min(a_in, len(stack))
         res.args[id(o)] = [stack.pop() for _ in range(take)]
+        res.call_residuals.setdefault(id(o), []).append(
+            (routine, b.key not in poisoned,
+             list(stack) if take == a_in else None))
         if take < a_in:
             res.unresolved.add(id(o))
         rets = retsubs.get(callee, ())

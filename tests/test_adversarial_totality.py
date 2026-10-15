@@ -247,31 +247,31 @@ def test_a_divergent_legacy_call_recovers_the_callers_residual(tmp_path):
 
 def test_a_divergent_join_keeps_the_deep_paths_residual(tmp_path):
     """Max-window merge: a join whose paths arrive at different depths must
-    keep the DEEP path's below-window cells, as phis marked ``partial``.
+    keep the DEEP path's below-window cells.
 
     The min-window rule truncated to the shallowest pred, so consuming past
-    it read None where the deep path holds a real value. Padding to the
-    deepest pred is sound under panic-pruning: consuming a cell on the
-    shallow path is an AVM underflow — that path dies at the op, so every
-    execution past it took a listed arm. The mark tells reachability-style
-    consumers an arm is missing; value consumers may use the args as-is."""
+    it read None where the deep path holds a real value. What the SHALLOW
+    path holds there depends on the routine: in MAIN the cell does not exist
+    — consuming it is an AVM underflow, that path dies at the op, so the phi
+    is ``partial`` over the deep arm (panic-pruning; pinned by
+    ``test_review_2026_10_10_stacksim``'s forward-absent-arm test). In a SUB
+    it is the CALLER's cell under the frame base (plain ops are unbounded,
+    see the module docstring), so the phi names it as a real arm — this test
+    used to pin that sub cell as ``partial``, i.e. the deep path's constant
+    standing alone where the shallow path's last ``pop`` reads the caller's 1."""
     teal = tmp_path / "maxwin.teal"
     teal.write_text(
         "#pragma version 8\nint 1\ncallsub s\npop\nreturn\n"
         "s:\nproto 0 1\nint 1\nint 2\nint 3\ntxn NumAppArgs\nbnz stwo\n"
         "b sjoin\nstwo:\nint 8\nsjoin:\n+\npop\npop\npop\nint 1\nretsub\n"
     )
-    prog = SSAProgram(str(teal))
-    partials = [p for p in prog.phis.values() if p.partial]
-    assert len(partials) == 1, (
-        f"expected exactly the below-window slot to be partial, got "
-        f"{[(p.stack_index, p.partial) for p in prog.phis.values()]}")
-    (p,) = partials
-    assert p.stack_index == 4 and len(p.args) == 1, (
-        "the deep path's bottom cell must survive as the slot-4 phi's only arm")
-    full = [p for p in prog.phis.values() if not p.partial]
-    assert all(len(p.args) == 2 for p in full), (
-        "in-window slots must still merge BOTH paths")
+    merged = list(SSAProgram(str(teal)).phis.values())
+    assert not any(p.partial for p in merged)
+    assert all(len(p.args) == 2 for p in merged), (
+        "every slot merges both paths; the shallow one's bottom is the caller's")
+    (bottom,) = [p for p in merged if p.stack_index == 4]
+    assert sorted(a.line for a in bottom.args) == [2, 8], (
+        "slot 4: the sub's own `int 1` (deep path) and the caller's (shallow)")
 
 
 def test_a_net_popping_loops_later_laps_are_marked_not_silent(tmp_path):

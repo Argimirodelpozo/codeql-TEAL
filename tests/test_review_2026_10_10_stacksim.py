@@ -13,8 +13,6 @@ twins ride along as controls so a fix cannot regress the shape it refines.
 """
 from __future__ import annotations
 
-import pytest
-
 from tealql.tealtools.analysis import FactDomain
 from tealql.tealtools.ssa import SSAProgram, stacksim
 from tealql.tealtools.ssa.models import Phi
@@ -355,17 +353,71 @@ def test_a_join_reached_at_two_depths_makes_the_legacy_sub_divergent():
 
 
 # ---------------------------------------------------------------------------
-# Open: a FORWARD join arm absent inside a subroutine is the caller's cell
-# at a fixed depth (recoverable), not an underflow; today it is published as
-# a `partial` constant. Strict xfail: whoever recovers it removes the marker.
+# Finding: a FORWARD join arm absent inside a subroutine is the caller's cell
+# at a fixed depth (recoverable), not an underflow; it was published as a
+# `partial` constant. The AVM bounds only `frame_*` ops and `retsub` by the
+# frame (go-algorand `opRetSub`: "retsub executed with stack below frame"),
+# so plain ops read the caller's residual freely.
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason='forward absent arm in a sub reads the caller cell; '
-                                       'publish a phi over the caller residual or refuse')
+_SUB = ('s:\nproto 0 1\ntxn Fee\nbz a\nint 1\nint 2\nb j\na:\nint 3\nj:\npop\nitob\n'
+        'log\nint 0\nretsub\n')
+
+
 def test_a_forward_absent_arm_inside_a_sub_is_the_callers_cell():
-    body = ('int 55\ncallsub s\nint 1\nreturn\ns:\nproto 0 1\ntxn Fee\nbz a\nint 1\nint 2\n'
-            'b j\na:\nint 3\nj:\npop\nitob\nlog\nint 0\nretsub\n')
-    p = program(body)
-    truth = oracle('#pragma version 10\n' + body, 17)
-    assert truth == {1, 55}
-    assert_contains(p, 17, 'itob', truth, refusal_ok=True)
+    """``s``'s ``a`` arm reaches ``j`` one cell shorter; its ``itob`` reads the
+    cell under the frame base — the caller's 55. The merge published only the
+    deep arm's 1 (``partial``), a definite constant on a path that reads 55.
+    Recovered: the arm is the caller residual at depth ``slot - len(arm)``."""
+    def check(main, itob_line, truth_expected, *, partial=False, refused=False):
+        body = main + _SUB
+        p = program(body)
+        truth = oracle('#pragma version 10\n' + body, itob_line)
+        assert truth == truth_expected
+        assert_contains(p, itob_line, 'itob', truth, refusal_ok=refused)
+        value, _ = claim(p, itob_line, 'itob')
+        if refused:
+            assert value is None and not p.health().complete
+        else:
+            assert isinstance(value, Phi) and value.partial is partial
+        return p
+
+    # The defect: one caller, the arm resolves to its 55.
+    check('int 55\ncallsub s\nint 1\nreturn\n', 17, {1, 55})
+    # Two callers: one arm per call site's residual.
+    check('txn NumAppArgs\nbz o\nint 55\ncallsub s\nint 1\nreturn\no:\nint 66\n'
+          'callsub s\nint 1\nreturn\n', 24, {1, 55, 66})
+    # Through an intermediate sub whose own residual is empty: its anchored
+    # list continues into main's.
+    check('int 55\ncallsub t\nint 1\nreturn\nt:\nproto 0 0\ncallsub s\nretsub\n',
+          21, {1, 55})
+    # Control: main's bottom is physical — that arm underflows on the AVM, so
+    # it drops and the phi stays `partial` over the deep arm (panic-pruning).
+    check('callsub s\nint 1\nreturn\n', 16, {1}, partial=True)
+    # Control: the short arm comes through an earlier height-conflicting join
+    # (`x`), so its list is NOT bottom-anchored and `slot - len(arm)` names
+    # the wrong caller cell (55 where the AVM reads 99) — refuse.
+    unanchored = ('int 99\nint 55\ncallsub s\nint 1\nreturn\n'
+                  + _SUB.replace('proto 0 1\n', 'proto 0 1\ntxn NumAppArgs\nbz x\nint 9\nx:\n')
+                        .replace('a:\nint 3\n', 'a:\npop\nint 3\n'))
+    p = program(unanchored)
+    truth = oracle('#pragma version 10\n' + unanchored, 23)
+    assert truth == {1, 55, 99}
+    assert_contains(p, 23, 'itob', truth, refusal_ok=True)
+    # Control: the arm already DIPPED below the band (`a: pop` with nothing
+    # local), so its list bottom is not the frame base either — refuse.
+    dipped = 'int 99\nint 55\ncallsub s\nint 1\nreturn\n' + _SUB.replace('a:\n', 'a:\npop\n')
+    p = program(dipped)
+    truth = oracle('#pragma version 10\n' + dipped, 19)
+    assert truth == {1, 99}
+    assert_contains(p, 19, 'itob', truth, refusal_ok=True)
+    # Control: the same for an INTERMEDIATE caller — `t` calls from a
+    # height-conflicting block, so a cell past its residual is not at
+    # `depth - len(residual)` in main on every path (99 vs 55) — refuse.
+    via = ('int 99\nint 55\ncallsub t\nint 1\nreturn\nt:\nproto 0 0\ntxn NumAppArgs\nbz y\n'
+           'int 77\ny:\ncallsub s\nretsub\n'
+           's:\nproto 0 1\ntxn Fee\nbz j\nint 1\nint 2\nj:\npop\nitob\nlog\nint 0\nretsub\n')
+    p = program(via)
+    truth = oracle('#pragma version 10\n' + via, 23)
+    assert truth == {1, 55, 99}
+    assert_contains(p, 23, 'itob', truth, refusal_ok=True)
