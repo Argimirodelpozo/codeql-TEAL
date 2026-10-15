@@ -630,3 +630,64 @@ def test_typed_all_register_phi_with_cross_family_arm_is_repaired():
         f"cross-family arm not repaired to a typed unknown: {repaired}")
     assert ok.args[0].value is ca and ok.args[1].value is cb, (
         "the agreeing all-register phi must stay untouched")
+
+
+def test_subroutine_entry_is_first_even_when_its_body_starts_above_it(tmp_path):
+    """A sub's pre-IR ``body[0]`` is its ENTRY for every consumer, so the body
+    must not be laid out in plain source order when the sub branches back into
+    a block sitting ABOVE its label.
+
+    Line order made that upstream tail the entry; Puya then dropped the real
+    entry (and everything only it reaches) as unreachable. Mainnet app
+    1104000629 lost `label59`'s `load 0 || txn GroupIndex` guard that way, and
+    the recompiled program ran `txn GroupIndex - 1` at index 0 and panicked
+    where the deployed one approved. Control folded in: the tail above the
+    entry still lifts (``pushint 7`` survives on its own arm)."""
+    from tealql.tealtools.lift.backend import lift_to_teal
+
+    src = tmp_path / "entry_below_tail.teal"
+    src.write_text(
+        "#pragma version 10\n"
+        "callsub sub\n"
+        "pushint 5\n"
+        "==\n"
+        "return\n"
+        "tail:\n"            # part of `sub`'s body, laid out ABOVE its entry
+        "pushint 7\n"
+        "retsub\n"
+        "sub:\n"
+        "txn NumAppArgs\n"
+        "bnz tail\n"
+        "pushint 5\n"
+        "retsub\n"
+    )
+    teal = lift_to_teal(str(src))
+    sub = teal.split("\nsub:\n", 1)[1]
+    ops = [ln.split("//")[0].strip() for ln in sub.splitlines()]
+    assert ops[0] == "txn NumAppArgs", (
+        f"sub's lifted entry is {ops[0]!r}: the block above the label was taken "
+        f"as the entry and the real one dropped\n{teal}")
+    assert "pushint 5" in ops and "pushint 7" in ops, teal
+
+
+def test_app_1104000629_label59_keeps_its_groupindex_guard():
+    """Real-program pin for the defect above (historical-replay gate: deployed
+    approves, lifted panics ``- would result negative`` at the recompiled
+    ``txn GroupIndex; intc 1; -`` inside ``label48``).
+
+    ``label59``'s body holds ``label49`` (source line ~540), laid out ABOVE its
+    entry (line ~657). With ``label49`` taken as the entry, the lifted
+    ``label59`` called ``label48`` unconditionally — skipping the deployed
+    ``load 0 || txn GroupIndex`` guard that makes ``GroupIndex - 1`` safe.
+    Fixture: the deployed disassembly, unmodified."""
+    from pathlib import Path
+
+    from tealql.tealtools.lift.backend import lift_to_teal
+
+    src = Path(__file__).resolve().parent / "contracts" / "app-1104000629" / "approval.teal"
+    teal = lift_to_teal(str(src))
+    body = teal.split("\nlabel59:\n", 1)[1].split("\n\n", 1)[0]
+    ops = [ln.split("//")[0].strip() for ln in body.splitlines()]
+    assert ops[:3] == ["load 0", "txn GroupIndex", "||"] and ops[3].startswith("bnz "), (
+        f"label59 no longer opens with its `load 0 || txn GroupIndex` guard:\n{body}")
+    assert "callsub label61" in ops, body

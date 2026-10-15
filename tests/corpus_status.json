@@ -2440,6 +2440,10 @@
    "diagnostics": [],
    "path": "mainnet-random-probes/app_3100303099.teal"
   },
+  "a8be3889ec363970": {
+   "diagnostics": [],
+   "path": "contracts/app-1104000629/approval.teal"
+  },
   "a950f75d9a68fb12": {
    "diagnostics": [],
    "path": "tealtools/sec_guide/rekey_to/scratch_space__fixed_scratch_overwrite/prog.teal"

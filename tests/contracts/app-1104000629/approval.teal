@@ -1,0 +1,690 @@
+#pragma version 10
+txn ApplicationID
+bz label1
+txn OnCompletion
+bz label2
+pushbytes 0x576865726576657220796f7520676f2e2e202020 // "Wherever you go..   "
+pushbytes 0x576861746576657220796f7520646f2e2e202020 // "Whatever you do..   "
+pushbytes 0x492077696c6c2062652072696768742068657265 // "I will be right here"
+pushbytes 0x2077616974696e6720666f7220636f696e732e20 // " waiting for coins. "
+pushbytes 0x57686174657665722069742074616b65732e2e20 // "Whatever it takes.. "
+pushbytes 0x4f7220686f77206d79204f5320627265616b732c // "Or how my OS breaks,"
+pushbytes 0x492077696c6c2062652072696768742068657265 // "I will be right here"
+pushbytes 0x2077616974696e6720666f7220636f696e732e20 // " waiting for coins. "
+pushbytes 0x202020202020446179206166746572206461792e // "      Day after day."
+txn OnCompletion
+pushint 3
+>
+bnz label3
+label16:
+pushint 0
+return
+label1:
+pushint 1
+return
+label3:
+txn RekeyTo
+global ZeroAddress
+==
+txn Sender
+global CreatorAddress
+==
+&&
+return
+label2:
+txn NumAppArgs
+txna ApplicationArgs 0
+dup
+pushbytes 0x72656b6579 // "rekey"
+==
+bnz label4
+txn RekeyTo
+global CurrentApplicationAddress
+==
+assert
+len
+==
+bnz label5
+txn Fee
+callsub label6
+store 3
+b label7
+label5:
+callsub label8
+callsub label9
+txna ApplicationArgs 2
+btoi
+store 24
+callsub label10
+b label4
+label6:
+txn GroupIndex
+bnz label11
+retsub
+label11:
+txn GroupIndex
+pushint 1
+-
+gloads 3
++
+retsub
+label33:
+global MinTxnFee
+*
+dup
+itxn_field Fee
+load 3
++
+store 3
+retsub
+label15:
+txn GroupIndex
+bz label12
+gload 0 1
+retsub
+label12:
+load 1
+retsub
+label48:
+load 0
+bnz label13
+txn GroupIndex
+pushint 1
+-
+gloads 2
+retsub
+label13:
+load 2
+retsub
+label17:
+load 23
+bnz label4
+load 2
+load 3
+gtxna 0 Assets 0
+bnz label14
+callsub label15
++
+label14:
+>
+bz label16
+label4:
+itxn_begin
+global CreatorAddress
+itxn_field RekeyTo
+txn Sender
+dup
+itxn_field Sender
+itxn_field Receiver
+pushint 0
+dup
+itxn_field Amount
+itxn_field Fee
+pushint 1
+dup
+itxn_field TypeEnum
+itxn_submit
+return
+label21:
+load 0
+pushint 3
++
+store 0
+label7:
+load 0
+txna ApplicationArgs 0
+len
+<
+bz label17
+callsub label8
+callsub label18
+callsub label10
+callsub label19
+dup
+store 61
+load 60
+dup2
+>
+bz label16
+-
+load 23
+bz label20
+pushint 9999
+*
+pushint 10000
+/
+store 2
+b label21
+label8:
+txna ApplicationArgs 0
+load 0
+pushint 3
+extract3
+dupn 2
+pushint 0
+getbyte
+txnas Applications
+store 21
+pushint 1
+getbyte
+txnas Assets
+store 22
+pushint 2
+getbyte
+txnas Assets
+store 23
+retsub
+label20:
+store 2
+b label17
+label29:
+load 21
+pushint 658337046
+==
+bnz label22
+load 21
+pushint 659677335
+==
+bnz label22
+load 21
+pushint 659678644
+==
+bnz label22
+pushint 605753404
+retsub
+label22:
+pushint 658336870
+retsub
+label10:
+load 21
+pushint 1002541853
+==
+bnz label23
+load 21
+pushbytes 0x666c66 // "flf"
+app_global_get_ex
+pop
+bnz label24
+load 21
+pushbytes 0x4c544944 // "LTID"
+app_global_get_ex
+pop
+bnz label25
+load 21
+pushbytes 0x636f // "co"
+app_global_get_ex
+swap
+pop
+bnz label26
+load 21
+pushbytes 0x01 // 0x01
+app_global_get_ex
+pop
+len
+bnz label27
+err
+label24:
+itxn_begin
+load 21
+app_params_get AppAddress
+assert
+callsub label28
+callsub label29
+store 200
+callsub label30
+callsub label31
+load 23
+bz label32
+load 23
+itxn_field Assets
+label32:
+load 200
+itxn_field Applications
+pushbytes 0x736566 // "sef"
+itxn_field ApplicationArgs
+load 24
+itob
+itxn_field ApplicationArgs
+itxn_submit
+retsub
+label26:
+itxn_begin
+pushint 6
+itxn_field TypeEnum
+pushint 5
+itxn_field OnCompletion
+pushbytes 0x068101 // 0x068101
+itxn_field ApprovalProgram
+pushbytes 0x068101 // 0x068101
+itxn_field ClearStateProgram
+pushint 1
+callsub label33
+itxn_next
+load 21
+app_params_get AppAddress
+assert
+callsub label28
+load 22
+store 31
+load 23
+store 32
+load 31
+load 32
+>
+bz label34
+load 22
+store 32
+load 23
+store 31
+label34:
+pushint 4
+callsub label31
+load 31
+itxn_field Assets
+load 32
+itxn_field Assets
+pushint 971350278
+itxn_field Applications
+callsub label35
+pushbytes 0x00 // 0x00
+itxn_field ApplicationArgs
+pushbytes 0x00 // 0x00
+itxn_field ApplicationArgs
+pushbytes 0x01 // 0x01
+itxn_field ApplicationArgs
+pushbytes 0x01 // 0x01
+itxn_field ApplicationArgs
+itxn_submit
+retsub
+label35:
+load 22
+load 23
+>
+bz label36
+pushbytes 0xeabe829d // 0xeabe829d
+itxn_field ApplicationArgs
+pushbytes 0x0000000000000000 // 0x0000000000000000
+itxn_field ApplicationArgs
+retsub
+label36:
+pushbytes 0xb9d542fb // 0xb9d542fb
+itxn_field ApplicationArgs
+retsub
+label23:
+itxn_begin
+load 101
+pushint 1
++
+dup
+store 101
+txnas Accounts
+callsub label28
+load 22
+store 31
+load 23
+store 32
+load 32
+load 31
+>
+bz label37
+load 22
+store 32
+load 23
+store 31
+label37:
+pushint 2
+callsub label31
+load 31
+itxn_field Assets
+load 32
+itxn_field Assets
+load 101
+txnas Accounts
+itxn_field Accounts
+pushbytes 0x73776170 // "swap"
+itxn_field ApplicationArgs
+pushbytes 0x66697865642d696e707574 // "fixed-input"
+itxn_field ApplicationArgs
+load 24
+itob
+itxn_field ApplicationArgs
+itxn_submit
+retsub
+label25:
+itxn_begin
+load 21
+app_params_get AppAddress
+assert
+callsub label28
+load 22
+store 31
+load 23
+store 32
+load 31
+load 32
+>
+bz label38
+load 22
+store 32
+load 23
+store 31
+label38:
+callsub label39
+callsub label31
+load 31
+itxn_field Assets
+load 32
+itxn_field Assets
+pushbytes 0x53574150 // "SWAP"
+itxn_field ApplicationArgs
+load 24
+itob
+itxn_field ApplicationArgs
+itxn_submit
+retsub
+label27:
+pushbytes 0x03 // 0x03
+store 53
+pushint 90
+bzero
+store 54
+load 22
+load 23
+&&
+bnz label40
+load 23
+bnz label41
+pushbytes 0x04 // 0x04
+store 53
+b label41
+label40:
+load 21
+pushbytes 0x00 // 0x00
+app_global_get_ex
+pop
+pushint 32
+extract_uint64
+load 22
+==
+bnz label41
+pushbytes 0x04 // 0x04
+store 53
+label41:
+load 54
+load 53
+replace2 0
+store 54
+load 54
+load 20
+itob
+replace2 1
+store 54
+load 54
+load 24
+itob
+replace2 9
+store 54
+itxn_begin
+load 21
+app_params_get AppAddress
+assert
+callsub label28
+pushint 3
+callsub label31
+load 23
+bz label42
+load 23
+itxn_field Assets
+label42:
+pushbytes 0x00 // 0x00
+itxn_field ApplicationArgs
+pushbytes 0x03 // 0x03
+itxn_field ApplicationArgs
+pushbytes 0x0000000000000000 // 0x0000000000000000
+itxn_field ApplicationArgs
+load 54
+itxn_field ApplicationArgs
+itxn_submit
+retsub
+label28:
+load 22
+bnz label43
+pushint 1
+itxn_field TypeEnum
+txn Sender
+itxn_field Sender
+itxn_field Receiver
+load 20
+itxn_field Amount
+pushint 1
+callsub label33
+retsub
+label43:
+pushint 4
+itxn_field TypeEnum
+txn Sender
+itxn_field Sender
+itxn_field AssetReceiver
+load 20
+itxn_field AssetAmount
+load 22
+itxn_field XferAsset
+pushint 1
+callsub label33
+retsub
+label31:
+itxn_next
+pushint 6
+itxn_field TypeEnum
+txn Sender
+itxn_field Sender
+pushint 0
+itxn_field OnCompletion
+load 21
+itxn_field ApplicationID
+callsub label33
+retsub
+label30:
+load 200
+pushint 658336870
+==
+bnz label44
+pushint 2
+retsub
+label44:
+pushint 8
+retsub
+label39:
+load 21
+pushbytes 0x434f4e54524143545f4e414d45 // "CONTRACT_NAME"
+app_global_get_ex
+bz label45
+pushbytes 0x5b53495d205041435420414d4d // "[SI] PACT AMM"
+==
+bnz label44
+pushint 2
+retsub
+label45:
+pop
+pushint 2
+retsub
+label19:
+global OpcodeBudget
+pushint 200
+<
+bz label46
+itxn_begin
+pushint 6
+itxn_field TypeEnum
+pushint 5
+itxn_field OnCompletion
+pushbytes 0x068101 // 0x068101
+itxn_field ApprovalProgram
+pushbytes 0x068101 // 0x068101
+itxn_field ClearStateProgram
+pushint 1
+callsub label33
+itxn_submit
+label46:
+load 23
+bnz label47
+txn Sender
+balance
+retsub
+label47:
+txn Sender
+load 23
+asset_holding_get AssetBalance
+pop
+retsub
+label49:
+load 22
+pushint 0
+gtxnas 0 Assets
+==
+assert
+callsub label48
+callsub label15
+dup2
+>
+bz label16
+-
+store 20
+retsub
+label58:
+load 23
+bz label49
+callsub label48
+store 20
+retsub
+label51:
+load 22
+bz label50
+pushint 0
+retsub
+label50:
+pushint 420000000
+retsub
+label61:
+callsub label51
+pushint 1000000
+/
+dup
+bz label52
+txn Lease
+pushint 21
+extract_uint64
+swap
+%
+pushint 1
++
+pushint 1000000
+*
+dup
+callsub label53
++
+dup
+retsub
+label53:
+txn Note
+pushint 1
+getbyte
+dup
+pushint 49
+==
+bnz label54
+dup
+pushint 50
+==
+bnz label55
+dup
+pushint 56
+==
+bnz label56
+label54:
+pop
+pushint 1337
+retsub
+label55:
+pop
+pushint 299792
+retsub
+label56:
+pop
+pushint 80085
+retsub
+label9:
+txna ApplicationArgs 1
+btoi
+dupn 2
+store 1
+store 20
+assert
+load 23
+bnz label57
+retsub
+label52:
+pop
+txn Sender
+load 22
+asset_holding_get AssetBalance
+pop
+txn Lease
+pushint 21
+extract_uint64
+swap
+%
+pushint 1
++
+dupn 2
+retsub
+label60:
+callsub label48
+bz label16
+gtxna 0 Assets 0
+bnz label58
+callsub label48
+store 20
+retsub
+label18:
+callsub label59
+load 23
+bnz label57
+txn Sender
+balance
+store 60
+retsub
+label59:
+load 0
+txn GroupIndex
+||
+bnz label60
+callsub label61
+store 1
+store 20
+assert
+retsub
+label57:
+txn Sender
+load 23
+asset_holding_get AssetBalance
+swap
+store 60
+bz label62
+retsub
+label62:
+itxn_begin
+pushint 4
+itxn_field TypeEnum
+txn Sender
+dup
+itxn_field Sender
+itxn_field AssetReceiver
+pushint 0
+itxn_field AssetAmount
+load 23
+itxn_field XferAsset
+pushint 1
+callsub label33
+itxn_submit
+retsub

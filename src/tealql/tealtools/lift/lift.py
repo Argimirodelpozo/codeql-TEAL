@@ -501,6 +501,16 @@ class _Lifter:
             self._prepare_frame_returns(gb)
             self._finish_frame_phis()
             body = [self._build_block(bb) for bb in gb]
+            # `body[0]` IS the entry for every consumer (Puya, the backend, the
+            # taint walk), but `gb` is in SOURCE order — and a sub's body can
+            # hold blocks that sit above its entry (a `b`/`bz` back into code
+            # laid out earlier). Line order there makes that upstream block the
+            # entry: the real entry, and everything only it reaches, is dropped
+            # as unreachable (app 1104000629: `label59`'s `load 0 || GroupIndex`
+            # guard vanished, exposing a `GroupIndex - 1` underflow).
+            k = gb.index(entry)
+            if k:
+                body.insert(0, body.pop(k))
             if s is None:
                 file = all_blocks[0].file.split("/")[-1] if all_blocks else "program"
                 self.subs.append(pre_ir.Subroutine(id=file, parameters=[], returns=[],
