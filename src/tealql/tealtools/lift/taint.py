@@ -110,6 +110,15 @@ def _transfer_rules(lifter, trusted_args, state_seeds, taint):
             return lbl if not _trusted_apparg(src, trusted_args) else None
         return state_seeds.get(id(src))
 
+    def _foreign(sid, index):
+        # Another procedure's param the callee reads through scratch (its
+        # caller parked it there): that param's taint here, i.e. the union
+        # of its call sites', never cleaner than any one of them.
+        sub = lifter.name2sub.get(sid)
+        if sub is None or index >= len(sub.parameters):
+            return {UNKNOWN_SOURCE}
+        return set(taint.get(id(sub.parameters[index].register), ()))
+
     def _inv(o, inv, reg_t):
         outputs = ()
         changed = False
@@ -118,7 +127,7 @@ def _transfer_rules(lifter, trusted_args, state_seeds, taint):
             # result <- the callee's summary: its internal-source returns
             # plus only the params that actually flow through.
             args = [reg_t(a) for a in inv.args]
-            outputs = summary[callee.id].output_sources(args)
+            outputs = summary[callee.id].output_sources(args, _foreign)
             for i, p in enumerate(callee.parameters):   # arg -> callee param
                 if i < len(inv.args):
                     pt = reg_t(inv.args[i])

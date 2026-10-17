@@ -24,11 +24,20 @@ from .taint_flow import (
 class ValueDependency:
     internal_sources: frozenset = frozenset()
     passthrough: frozenset = frozenset()
+    #: ``(sub id, param index)`` of ANOTHER procedure's parameters this value
+    #: depends on — through scratch: ``wrap(p)`` does ``store 5`` of ``p`` and
+    #: calls ``amount``, whose ``load 5`` resolves to ``wrap``'s param.
+    foreign: frozenset = frozenset()
 
-    def apply(self, arg_sources) -> set:
+    def apply(self, arg_sources, foreign_sources=None) -> set:
+        """``foreign_sources(sub_id, index) -> set`` resolves :attr:`foreign`;
+        without it a foreign dependency is unknown, never clean."""
         out = set(self.internal_sources)
         for i in self.passthrough:
             out.update(arg_sources[i] if i < len(arg_sources) else {UNKNOWN_SOURCE})
+        for sid, i in self.foreign:
+            out.update(foreign_sources(sid, i) if foreign_sources is not None
+                       else {UNKNOWN_SOURCE})
         return out
 
 
@@ -60,19 +69,27 @@ class SubSummary:
         """Parameters influencing entry assertions; no sanitizer claim."""
         return frozenset(int(e.subject) for e in self.assertions)
 
-    def output_sources(self, arg_sources) -> tuple[set, ...]:
-        return tuple(result.apply(arg_sources) for result in self.results)
+    def output_sources(self, arg_sources, foreign_sources=None) -> tuple[set, ...]:
+        return tuple(result.apply(arg_sources, foreign_sources) for result in self.results)
 
-    def result_sources(self, arg_sources) -> set:
+    def result_sources(self, arg_sources, foreign_sources=None) -> set:
         """Aggregate presentation view; use output_sources for call transfers."""
-        return set().union(*self.output_sources(arg_sources))
+        return set().union(*self.output_sources(arg_sources, foreign_sources))
 
 
 def _dependency(markers, sub_id) -> ValueDependency:
     return ValueDependency(
         frozenset(m for m in markers if not isinstance(m, tuple)),
         frozenset(m[2] for m in markers if isinstance(m, tuple) and m[1] == sub_id),
+        frozenset((m[1], m[2]) for m in markers
+                  if isinstance(m, tuple) and m[1] != sub_id),
     )
+
+
+def _marker(sub_id, index) -> set:
+    """Inside the summary fixpoint a foreign dependency stays a param marker,
+    so it becomes ``sub_id``'s passthrough once it flows back into ``sub_id``."""
+    return {("p", sub_id, index)}
 
 
 def compute_summaries(lifter, trusted_args=frozenset(),
@@ -105,7 +122,8 @@ def compute_summaries(lifter, trusted_args=frozenset(),
         if callee is None or callee.id not in acc:
             unknown = {UNKNOWN_SOURCE}.union(*args)
             return tuple(unknown for _ in getattr(op, "targets", ())), False
-        return tuple(_dependency(m, callee.id).apply(args) for m in acc[callee.id]), False
+        return tuple(_dependency(m, callee.id).apply(args, _marker)
+                     for m in acc[callee.id]), False
 
     def refine(reg_t):
         changed = False
@@ -132,10 +150,17 @@ def compute_summaries(lifter, trusted_args=frozenset(),
     scratch_defs: dict = {}
     for sub in subs:
         scratch_defs.update(sub_local_scratch(lifter, sub))
+    # The sweep covers `main` too, though `main` has no summary of its own: a
+    # helper's load of a slot it does NOT must-define reads (program-wide
+    # reaching-def) whatever its callers stored there, and those stores are
+    # very often in `main` (`btoi(arg0); store 5; callsub amount`). Left
+    # unswept, main's stored value had no taint here, so the helper's result
+    # claimed no source and every call result read clean. Main's TOP stores
+    # likewise must reach the unknown-scratch state the helpers' loads test.
     transfer_fixpoint(lifter, taint,
                       seed_label=lambda s: None if _trusted_apparg(s, trusted_args)
                       else source_label(s) or state_seeds.get(id(s)),
-                      invoke_ins=invoke, per_round=refine, subs=subs,
+                      invoke_ins=invoke, per_round=refine, subs=lifter.subs,
                       scratch_defs=scratch_defs)
     result = {}
     for sub in subs:
@@ -174,11 +199,13 @@ def compute_summaries(lifter, trusted_args=frozenset(),
                         EffectDependency('unknown-call', 0, (), call.target),)
                     for effect in effects:
                         key = effect.procedure, effect.line, effect.op, effect.immediates
-                        deps = tuple(_dependency(d.apply(args), sub.id) for d in effect.operands)
+                        deps = tuple(_dependency(d.apply(args, _marker), sub.id)
+                                     for d in effect.operands)
                         old = effect_maps[sub.id].get(key)
                         if old is not None:
                             deps = tuple(ValueDependency(a.internal_sources | b.internal_sources,
-                                                         a.passthrough | b.passthrough)
+                                                         a.passthrough | b.passthrough,
+                                                         a.foreign | b.foreign)
                                          for a, b in zip(old.operands, deps))
                         new = EffectDependency(effect.op, effect.line, deps,
                                                effect.procedure, effect.immediates)

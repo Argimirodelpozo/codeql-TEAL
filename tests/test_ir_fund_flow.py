@@ -552,3 +552,74 @@ def test_helper_params_are_judged_per_call_site(shape, tmp_path):
     control = 'txna ApplicationArgs 0\nbyte "c"\n==\nbnz site_c\n'
     open_ = receivers(control)
     assert len(open_) == 1 and open_[0].sources == {"ApplicationArgs"}
+
+
+_SCRATCH_FED_HELPER = """#pragma version 8
+txn ApplicationID
+bz create
+{feed}
+{call}
+itxn_begin
+int pay
+itxn_field TypeEnum
+txn Sender
+itxn_field Receiver
+itxn_field Amount
+itxn_submit
+int 1
+return
+create:
+int 1
+return
+wrap:
+proto 1 1
+frame_dig -1
+store 6
+callsub amount
+retsub
+park:
+proto 1 0
+frame_dig -1
+store 6
+retsub
+amount:
+proto 0 1
+{own}load {slot}
+int 2
+*
+retsub
+"""
+
+
+def test_helper_reading_a_slot_only_its_caller_stores_keeps_the_callers_taint(tmp_path):
+    """`main` stores `btoi(arg0)` in slot 5 and calls `amount`, which never
+    writes slot 5 but returns `load 5 * 2`. The summary fixpoint never swept
+    `main`, so the reaching store's value had no taint there: the summary
+    claimed `amount` returns a clean value and `Amount = amount()` read clean.
+    The same through a non-main caller: `wrap(p)` parks its param in slot 6
+    and calls `amount` reading slot 6 — a dependency on ANOTHER sub's
+    parameter, which the summary dropped (neither internal nor passthrough);
+    and `main` calling `park(p)` (parks `p` in slot 6) then `amount`
+    directly, where that dependency resolves to `park`'s param taint.
+    Controls: a constant in the slot stays clean, and a helper that
+    must-defines the slot itself (`int 9; store 5` first) reads its own
+    store, not the caller's."""
+    arg = "txna ApplicationArgs 0\nbtoi"
+    direct, wrapped = "store 5\ncallsub amount", "callsub wrap"
+    parked = "callsub park\ncallsub amount"
+    cases = [
+        (dict(feed=arg, call=direct, own="", slot=5), [("Amount", False)]),
+        (dict(feed=arg, call=wrapped, own="", slot=6), [("Amount", False)]),
+        (dict(feed="int 100", call=direct, own="", slot=5), []),
+        (dict(feed="int 100", call=wrapped, own="", slot=6), []),
+        (dict(feed=arg, call=parked, own="", slot=6), [("Amount", False)]),
+        (dict(feed="int 100", call=parked, own="", slot=6), []),
+        (dict(feed=arg, call=direct, own="int 9\nstore 5\n", slot=5), []),
+    ]
+    for i, (fmt, want) in enumerate(cases):
+        d = tmp_path / str(i)
+        d.mkdir()
+        teal = _SCRATCH_FED_HELPER.format(**fmt)
+        line = teal.splitlines().index("itxn_field Amount") + 1
+        got = sorted((f.field, f.line, f.guarded) for f in _flows(teal, d))
+        assert got == [(fld, line, g) for fld, g in want], (fmt, got)
