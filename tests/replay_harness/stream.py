@@ -21,7 +21,10 @@ Verdict rows (``rows.jsonl``) are per (group, target app): the statuses of
 ``timetravel.classify``, plus LIFT_PENDING (the app's program at that block
 had no lift yet: it changed during the chunk, lifts happen between chunks) and
 LIFT_FAIL. Each target app also gets the entry-mutant oracle self-test once,
-on a block where it was judged (``selftest.json``).
+on a block where it was judged (``selftest.json``). After each chunk, every
+DIVERGES group gets the cost control (``timetravel.cost_control``, recorded in
+``controls.jsonl``): reproduced by the deployed program made as much costlier,
+it reads COST_ARTIFACT.
 """
 from __future__ import annotations
 
@@ -282,9 +285,59 @@ def attribute(rows: list[dict]) -> list[dict]:
     return out
 
 
+def apply_controls(rows: list[dict], controls: dict[tuple, dict]) -> list[dict]:
+    """A DIVERGES row whose cost control reproduced it (``timetravel.cost_control``)
+    is COST_ARTIFACT; the group's other DIVERGES targets are CO_DIVERGED with it."""
+    culprit = {(k[0], k[1]): k[2] for k, c in controls.items() if c.get("reproduced")}
+    out = []
+    for r in rows:
+        k = (r["round"], r["group"])
+        if r["status"] == "DIVERGES" and k in culprit:
+            if culprit[k] == r["app"]:
+                c = controls[(*k, r["app"])]
+                r = {**r, "status": "COST_ARTIFACT", "control": {f: c[f] for f in ("site", "pad", "extra")}}
+            else:
+                r = {**r, "status": "CO_DIVERGED", "culprit": culprit[k]}
+        out.append(r)
+    return out
+
+
+def load_controls(out: Path) -> dict[tuple, dict]:
+    p = out / "controls.jsonl"
+    rows = [json.loads(line) for line in p.open()] if p.exists() else []
+    return {(c["round"], c["group"], c["app"]): c for c in rows}
+
+
+def run_controls(run: Run) -> Counter:
+    """Cost control for every DIVERGES (round, group) not yet controlled: the
+    app the failure names first, then the group's other diverging targets,
+    until one reproduces. Each try is recorded, so a rerun skips it."""
+    done = load_controls(run.out)
+    pending: dict[tuple, list[dict]] = defaultdict(list)
+    for r in load_rows(run.out):
+        if r["status"] == "DIVERGES":
+            pending[(r["round"], r["group"])].append(r)
+    stats: Counter = Counter()
+    for (rnd, grp), rows in sorted(pending.items()):
+        named = _FAILING_APP.search(rows[0].get("detail") or "")
+        rows.sort(key=lambda r: (not named or r["app"] != int(named.group(1)), r["app"]))
+        for r in rows:
+            if (rnd, grp, r["app"]) in done:
+                continue
+            c = {"round": rnd, "group": grp, "app": r["app"],
+                 **tt.cost_control(r["app"], rnd, grp, r.get("detail") or "", run.out)}
+            with run.lock, (run.out / "controls.jsonl").open("a") as fh:
+                fh.write(json.dumps(c) + "\n")
+            stats["reproduced" if c["reproduced"] else "not_reproduced"] += 1
+            if c["reproduced"]:
+                break
+    return stats
+
+
 def load_rows(out: Path) -> list[dict]:
     p = out / "rows.jsonl"
-    return attribute([json.loads(line) for line in p.open()]) if p.exists() else []
+    rows = [json.loads(line) for line in p.open()] if p.exists() else []
+    return attribute(apply_controls(rows, load_controls(out)))
 
 
 def summarize(run: Run) -> str:
@@ -312,9 +365,11 @@ def summarize(run: Run) -> str:
         "",
         "DIVERGES counts only the app whose program failed when the error names it; the other target apps "
         "of that group are CO_DIVERGED. AFTER_DIVERGENCE rows follow a divergence in the same block "
-        "(state no longer comparable) and are not verdicts.",
+        "(state no longer comparable) and are not verdicts. COST_ARTIFACT: the deployed program, padded with "
+        "no-ops costing at most the lift's extra opcodes, diverges the same way (OpUp routers size their budget "
+        "calls, and pay their fees, from `global OpcodeBudget`).",
         "",
-        "| app | blocks | rows | FAITHFUL | DIVERGES | co-diverged / after | BUDGET | lift pending/fail | oracle miss | PCs hit | self-test |",
+        "| app | blocks | rows | FAITHFUL | DIVERGES | co-diverged / after | BUDGET / cost artifact | lift pending/fail | oracle miss | PCs hit | self-test |",
         "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for t in targets:
@@ -323,10 +378,10 @@ def summarize(run: Run) -> str:
         st = selftest.get(str(a))
         lines.append(
             f"| {a} | {len(rounds[a]):,} | {sum(c.values()):,} | {c['FAITHFUL']:,} | {c['DIVERGES']:,} | "
-            f"{c['CO_DIVERGED']:,} / {c['AFTER_DIVERGENCE']:,} | {c['BUDGET']:,} | {c['LIFT_PENDING'] + c['LIFT_FAIL'] + c['LIFT_TIMEOUT'] + c['ASM_FAIL']:,} | "
+            f"{c['CO_DIVERGED']:,} / {c['AFTER_DIVERGENCE']:,} | {c['BUDGET']:,} / {c['COST_ARTIFACT']:,} | {c['LIFT_PENDING'] + c['LIFT_FAIL'] + c['LIFT_TIMEOUT'] + c['ASM_FAIL']:,} | "
             f"{c['REPLAY_MISS'] + c['REPLAY_ERROR']:,} | {len(cov[a]):,} | "
             f"{'—' if st is None else ('ok' if st['ok'] else 'BROKEN')} |")
-    bad = [r for r in rows if r["status"] in ("DIVERGES", "BUDGET", "VERSION_ARTIFACT")]
+    bad = [r for r in rows if r["status"] in ("DIVERGES", "BUDGET", "VERSION_ARTIFACT", "COST_ARTIFACT")]
     if bad:
         lines += ["", "## Non-faithful rows (first per app/status)", ""]
         seen = set()
@@ -335,8 +390,11 @@ def summarize(run: Run) -> str:
             if k in seen:
                 continue
             seen.add(k)
+            ctl = r.get("control")
             lines.append(f"- **{r['status']}** app {r['app']} round {r['round']} group {r['group']}: "
-                         f"`{(r.get('detail') or '')[:300]}`")
+                         f"`{(r.get('detail') or '')[:300]}`"
+                         + (f" (deployed + {ctl['pad']} no-ops at {ctl['site']} reproduces it; lift "
+                            f"{ctl['extra']:+d} opcodes)" if ctl else ""))
     return "\n".join(lines) + "\n"
 
 
@@ -356,9 +414,16 @@ def main(argv=None) -> int:
     ap.add_argument("--prefetch", type=int, default=2, help="blocks warmed ahead per stream")
     ap.add_argument("--lift-jobs", type=int, default=1)
     ap.add_argument("--summarize", action="store_true")
+    ap.add_argument("--controls", action="store_true", help="run the cost control on uncontrolled DIVERGES rows")
     args = ap.parse_args(argv)
     run = Run(Path(args.out))
     if args.summarize:
+        text = summarize(run)
+        (run.out / "SUMMARY.md").write_text(text)
+        print(text)
+        return 0
+    if args.controls:
+        print(dict(run_controls(run)))
         text = summarize(run)
         (run.out / "SUMMARY.md").write_text(text)
         print(text)
@@ -405,6 +470,7 @@ def main(argv=None) -> int:
                 log("chunk", c, fut.result())
             except Exception as e:          # one chunk's failure must not lose the others
                 log("chunk", c, "FAILED", f"{type(e).__name__}: {e}")
+            log("cost controls", dict(run_controls(run)))
             (run.out / "SUMMARY.md").write_text(summarize(run))
     self_tests(run, lifts)
     text = summarize(run)

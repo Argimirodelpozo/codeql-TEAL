@@ -151,3 +151,55 @@ def test_a_divergence_naming_its_app_is_not_charged_to_the_other_targets_of_the_
     rows.append({"round": 1, "group": 2, "app": 5, "status": "DIVERGES", "detail": "txn 0: $.dt: x"})
     got = [(r["group"], r["app"], r["status"]) for r in attribute(rows)]
     assert got == [(0, 5, "CO_DIVERGED"), (0, 7, "DIVERGES"), (1, 5, "DIVERGES"), (2, 5, "DIVERGES")]
+
+
+def test_a_divergence_the_deployed_program_reproduces_when_made_as_costly_is_a_cost_artifact(monkeypatch):
+    """App 3715247030 (an OpUp router) sizes its budget calls from `global
+    OpcodeBudget` and pays their fees from the ALGO balance its final
+    `balance >= before + min_out` assert reads: the lift's +17/+44 opcodes moved
+    an OpUp call / failed that assert. The control pads the DEPLOYED program with
+    at most that many no-ops; only the SAME divergence signature counts."""
+    import tests.replay_harness.timetravel as tt
+    from tests.replay_harness.stream import apply_controls
+    teal = ("#pragma version 10\nint 0\nstore 1\nloop:\nload 1\nint 1\n+\nstore 1\nload 1\nint 3\n<\n"
+            "bnz loop\ncallsub sub\nint 1\nreturn\nsub:\nproto 0 0\nretsub")
+    assert tt.loop_heads(teal) == ["loop"]
+    assert tt.loop_heads("sub:\nretsub\ncallsub sub\nloop:\nb loop") == ["loop"]   # a call back is no loop
+    assert tt.pad_program(teal, None, 4).split("\n")[1:5] == ["pushint 1", "pop"] * 2
+    assert tt.pad_program(teal, "sub", 2).split("\n")[-5:-1] == ["proto 0 0", "pushint 1", "pop", "retsub"]
+    want = "transaction T: logic eval error: assert failed pc=50. Details: app=9, pc=50"
+
+    def fake_replay(app, rnd, lift, cache, lifts=None):
+        prog = lift["lifted"]
+        if prog == "REAL":
+            lifted = _group(0, match=False, error=want)
+            orig, lifted = {**_group(0), "app_cost": {"9": 100}}, {**lifted, "app_cost": {"9": 100 + extra}}
+        else:
+            lines = prog.split("\n")
+            at_loop = lines[lines.index("loop:") + 1] == "pushint 1"
+            pad = prog.count("pushint 1") * 2
+            orig = _group(0)
+            if at_loop and pad >= 6:
+                lifted = _group(0, match=False, error=want.replace("pc=50", "pc=68"))
+            elif not at_loop:            # diverges, but differently: not the lift's divergence
+                lifted = _group(0, match=False, error="assert failed pc=3. Details: app=9, pc=3")
+            else:
+                lifted = _group(0)
+        return {"variants": [{"name": "orig", "groups": [orig]}, {"name": "lifted", "groups": [lifted]}]}
+    monkeypatch.setattr(tt, "programs_at", lambda app, rnd: ("b64", "clear"))
+    monkeypatch.setattr(tt, "lift_program", lambda prog, cache: {"status": "OK", "lifted": "REAL"})
+    monkeypatch.setattr(tt, "disassemble", lambda prog: teal)
+    monkeypatch.setattr(tt, "assemble", lambda src: (src, None))
+    monkeypatch.setattr(tt, "replay_block", fake_replay)
+    extra = 6
+    got = tt.cost_control(9, 100, 0, want, tt.Path("/nonexistent"))
+    assert got == {"reproduced": True, "site": "loop", "pad": 6, "extra": 6, "tried": 4}
+    extra = 1                      # the lift is not costlier here: nothing to control for
+    assert tt.cost_control(9, 100, 0, want, tt.Path("/nonexistent")) == {
+        "reproduced": False, "why": "lift costs +1 here", "extra": 1}
+
+    rows = [{"round": 1, "group": 0, "app": a, "status": "DIVERGES", "detail": "txn 0: $.dt.itx[7]"} for a in (5, 9)]
+    rows.append({"round": 2, "group": 0, "app": 5, "status": "DIVERGES", "detail": "x"})
+    controls = {(1, 0, 9): {**got}, (2, 0, 5): {"reproduced": False}}
+    out = [(r["round"], r["app"], r["status"], r.get("culprit")) for r in apply_controls(rows, controls)]
+    assert out == [(1, 5, "CO_DIVERGED", 9), (1, 9, "COST_ARTIFACT", None), (2, 5, "DIVERGES", None)]

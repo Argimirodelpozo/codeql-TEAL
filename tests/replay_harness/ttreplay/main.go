@@ -139,10 +139,13 @@ func (r *remote) fetch(path string) (int, []byte, error) {
 			return c.status, c.body, nil
 		}
 	}
+	// Transport errors, 429 and 5xx are retried for ~8 minutes (backoff capped
+	// at a minute): the public node has outages of minutes (Cloudflare 530/1033),
+	// and a multi-day run would rather wait than record REPLAY_ERROR rows.
 	var lastErr error
-	for attempt := 0; attempt < 6; attempt++ {
+	for attempt := 0; attempt < 14; attempt++ {
 		if attempt > 0 {
-			time.Sleep(time.Duration(1<<attempt) * 250 * time.Millisecond)
+			time.Sleep(min(time.Duration(1<<attempt)*250*time.Millisecond, time.Minute))
 		}
 		if debugFetch {
 			fmt.Fprintln(os.Stderr, "fetch", time.Now().UnixMilli(), path)

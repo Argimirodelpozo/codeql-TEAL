@@ -112,6 +112,20 @@ itself an artifact (an OpUp caller seeing it skips its padding calls).
 Only the target apps are swapped, so a divergence is attributed to them, not
 to another app that happens to share their program.
 
+**Cost control.** Equalization stops at the swapped program's own boundary:
+inside it, an OpUp router reading `global OpcodeBudget` still sees the lift's
+extra opcodes. It then makes its OpUp calls at other points (a different
+inner-txn sequence), or pays one more 1000 µAlgo fee out of the ALGO balance
+its final `balance >= before + min_out` assert reads, and fails. Both happened
+for router 3715247030 in the 30-day run, at +17 and +44 opcodes. After each
+chunk (`stream --controls` on demand), every DIVERGES group is replayed with
+the DEPLOYED program padded with `pushint 1; pop` no-ops, at its entry and at
+each loop head, at most as many as the lift's extra cost. If the deployed
+program then diverges with the same signature (pcs blanked), the row is
+COST_ARTIFACT. That means "indistinguishable from the cost difference", not
+"proven faithful", so these rows stay listed in the summary. Results are kept
+in `controls.jsonl`.
+
 Account totals are not available over REST, so the stream starts each status
 category with a buffer; totals feed no ApplyData.
 
@@ -122,6 +136,8 @@ category with a buffer; totals feed no ApplyData.
 | FAITHFUL | lifted ApplyData equals the chain's and its box writes equal `orig`'s |
 | DIVERGES | anything else, with the first differing JSON path or the error |
 | BUDGET | the lifted program ran out of opcode budget (a cost artifact) |
+| COST_ARTIFACT | DIVERGES, but the deployed program made as much costlier diverges identically (cost control) |
+| CO_DIVERGED | another target of the same group is the one whose program failed |
 | AFTER_DIVERGENCE | a later group in a block where the lifted run committed different state; not counted |
 | REPLAY_MISS / REPLAY_ERROR | the unmodified program did not reproduce the chain: an oracle problem, not counted |
 | LIFT_FAIL / LIFT_TIMEOUT / ASM_FAIL | the lift could not produce a program |

@@ -427,6 +427,92 @@ def oracle_self_test(app_id: int, rnd: int, lift: dict, out: Path) -> str | None
     return None
 
 
+# ------------------------------------------------------------------ cost control
+#
+# Programs that read `global OpcodeBudget` (OpUp routers) decide how many budget
+# calls to make, and where, from the budget left; each such call's fee comes out
+# of the app's own balance. The lifted program costs a few opcodes more, so it can
+# make its OpUp calls at other points (a different inner-txn sequence) or pay one
+# more fee and fail its own `balance >= before + min_out` check. Neither is the
+# lift computing something else. The control: pad the DEPLOYED program with
+# no-ops (at most the lift's extra cost) and replay it; if the deployed program
+# then diverges with the same signature, the divergence is the cost's.
+
+_PC = re.compile(r"pc=\d+")
+_BRANCH = re.compile(r"^\s*(?:b|bz|bnz|callsub)\s+(\S+)")
+
+
+def divergence_signature(detail: str) -> str:
+    """A divergence's detail with its pcs blanked (padding moves them)."""
+    return _PC.sub("pc=?", detail or "")
+
+
+def loop_heads(teal: str) -> list[str]:
+    """Labels some later instruction branches back to, in source order."""
+    lines = teal.splitlines()
+    defined: dict[str, int] = {}
+    heads: list[str] = []
+    for i, ln in enumerate(lines):
+        s = ln.split("//")[0].strip()
+        if s.endswith(":"):
+            defined[s[:-1]] = i
+        m = _BRANCH.match(s)
+        if m and m.group(1) in defined and m.group(1) not in heads and not s.startswith("callsub"):
+            heads.append(m.group(1))
+    return sorted(heads, key=defined.get)
+
+
+def pad_program(teal: str, site: str | None, ops: int) -> str:
+    """``teal`` with ``ops`` cost-1 opcodes (``pushint 1; pop`` pairs) at the
+    program entry (``site`` None: after ``#pragma``) or right after label
+    ``site`` (and after its ``proto``, which must stay first)."""
+    lines = teal.splitlines()
+    if site is None:
+        i = next((k + 1 for k, ln in enumerate(lines) if ln.strip().startswith("#pragma")), 0)
+    else:
+        i = lines.index(f"{site}:") + 1
+        if i < len(lines) and lines[i].strip().startswith("proto"):
+            i += 1
+    return "\n".join(lines[:i] + ["pushint 1", "pop"] * max(1, ops // 2) + lines[i:]) + "\n"
+
+
+def cost_control(app_id: int, rnd: int, group: int, detail: str, out: Path) -> dict:
+    """Does the deployed program, made at most as much costlier as its lift,
+    diverge in ``group`` of block ``rnd`` exactly as the lift did? Returns
+    ``{"reproduced": True, "site", "pad", "extra"}`` or ``{"reproduced": False, ...}``."""
+    progs = programs_at(app_id, rnd - 1)
+    if progs is None:
+        return {"reproduced": False, "why": "no program"}
+    cache_dir, lifts = out / "httpcache", out / "lifts"
+    lift = lift_program(progs[0], lifts)
+    if lift.get("status") != "OK":
+        return {"reproduced": False, "why": f"lift {lift.get('status')}"}
+    resp = replay_block(app_id, rnd, lift, cache_dir, lifts)
+    v = {x["name"]: x for x in resp.get("variants") or []}
+    cost = {name: next(((g.get("app_cost") or {}).get(str(app_id), 0) for g in x.get("groups") or []
+                        if g["group"] == group), 0) for name, x in v.items()}
+    extra = cost.get("lifted", 0) - cost.get("orig", 0)
+    if extra < 2:
+        return {"reproduced": False, "why": f"lift costs {extra:+d} here", "extra": extra}
+    want = divergence_signature(detail)
+    teal = disassemble(progs[0])
+    tried = 0
+    for site in [None, *loop_heads(teal)]:
+        for pad in sorted({p for p in (2, 6, 16, extra) if p <= extra}):
+            program, err = assemble(pad_program(teal, site, pad))
+            if program is None:
+                continue
+            tried += 1
+            r = replay_block(app_id, rnd, {"status": "OK", "lifted": program}, cache_dir, lifts)
+            rv = {x["name"]: x for x in r.get("variants") or []}
+            if "orig" not in rv:
+                continue
+            g = next((x for x in judge(rv, app_id)[0] if x["group"] == group), None)
+            if g and g["status"] == "DIVERGES" and divergence_signature(g.get("detail")) == want:
+                return {"reproduced": True, "site": site or "entry", "pad": pad, "extra": extra, "tried": tried}
+    return {"reproduced": False, "extra": extra, "tried": tried}
+
+
 def run_app(app_id: int, samples: int, seed: int, out: Path) -> list[dict]:
     log = lambda *a: print(f"[{app_id}]", *a, flush=True)  # noqa: E731
     rounds = sample_rounds(app_id, samples, seed)
