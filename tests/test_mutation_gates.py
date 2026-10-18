@@ -100,11 +100,10 @@ def test_always_reaching_enforcement_is_caught(monkeypatch):
 
     Targets the COLLECTING walk `_collect_field_enforcement_bbs`: since the
     2026-09-02 per-exit conversion of timelock-upgrade / delete-funds-check it is
-    the one enforcement engine every benchmarked detector runs; the boolean twin
-    `def_forward_reaches_enforcement` has no detector caller left (only
-    `test_field_enforcement_soundness` uses it as an oracle), so mutating IT
-    measured nothing — both gates here reported "survived" against a dead
-    function until retargeted."""
+    the one enforcement engine every benchmarked detector runs. (A boolean twin
+    with no detector caller once sat here as the mutation target, so mutating
+    it measured nothing — both gates reported "survived" against a dead
+    function until retargeted; the twin has since been deleted.)"""
     def every_block(prog, var, label_lines, out, seen, *a, **k):
         out.update(prog.blocks.values())
 

@@ -327,63 +327,6 @@ def branch_reject_polarity(
 
 
 
-def def_forward_reaches_enforcement(
-    prog: SSAProgram,
-    var: SSAVar,
-    *,
-    label_lines: Optional[dict[tuple[str, str], int]] = None,
-    seen: Optional[set[SSAVar]] = None,
-    scratch_fwd: Optional[dict] = None,
-    field_vars: Optional[set] = None,
-) -> bool:
-    """The SSA chain rooted at ``var`` terminates in an ``assert`` or a
-    :func:`branch_gates_rejection` branch, walking through every consuming opcode
-    that produces a def (``&&``, ``dup``, …) and through provably-preserving
-    scratch round-trips.
-
-    ``field_vars`` names the field seeds under test, which is what makes a ``||``
-    decidable: ``assert(A || B)`` enforces A only when B pins the same field.
-    Without it a ``||`` stops the walk (conservative)."""
-    if seen is None:
-        seen = set()
-    if var in seen:
-        return False
-    seen.add(var)
-    label_lines = label_lines if label_lines is not None else _label_to_bb_first_line(prog)
-    if scratch_fwd is None:
-        scratch_fwd = scratch_forward_map(prog)
-    for fwd in scratch_fwd.get(var, ()):        # survive a store/load round-trip
-        # `field_vars` must survive the round-trip too — dropping it made a
-        # `||` after a scratch bridge non-enforcing while the collecting twin
-        # (`_collect_field_enforcement_bbs`) kept it: same walk, two verdicts.
-        if def_forward_reaches_enforcement(
-                prog, fwd, label_lines=label_lines, seen=seen,
-                scratch_fwd=scratch_fwd, field_vars=field_vars):
-            return True
-    for cons in var.uses:
-        if cons.op in _FORCING_SINK_OPS:
-            return True
-        if cons.op in ("bnz", "bz") and branch_gates_rejection(
-                prog, cons, label_lines):
-            return True
-        # A disjunction does not carry enforcement to THIS operand unless every
-        # other arm pins the same field — see _disjunction_is_enforcing.
-        if cons.op in _DISJUNCTION_OPS and not _disjunction_is_enforcing(
-                prog, cons, var, field_vars):
-            continue
-        for out in cons.outputs:
-            if not isinstance(out, SSAVar):
-                continue
-            if def_forward_reaches_enforcement(
-                prog, out, label_lines=label_lines, seen=seen,
-                scratch_fwd=scratch_fwd, field_vars=field_vars,
-            ):
-                return True
-    return False
-
-
-
-
 def _fall_through_bb(prog: SSAProgram, bb: BasicBlock) -> Optional[BasicBlock]:
     """The successor reached by NOT taking ``bb``'s terminating branch — identified
     as the successor at the smallest source line strictly greater than

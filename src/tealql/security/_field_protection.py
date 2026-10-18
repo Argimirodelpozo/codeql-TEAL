@@ -54,9 +54,12 @@ def _collect_field_enforcement_bbs(
     scratch_fwd: Optional[dict] = None, field_vars: Optional[set] = None,
 ) -> None:
     """Record the BASIC BLOCK of every enforcement site the SSA chain from a
-    field-comparison result reaches — :func:`def_forward_reaches_enforcement`'s
-    traversal, but collecting instead of returning on the first hit, which is what
-    lets the caller demand a MUST-reach. Scratch-aware like its boolean twin."""
+    field-comparison result reaches (an ``assert``/``return`` sink, or a
+    :func:`branch_gates_rejection` branch), walking through every consuming
+    opcode that produces a def and through provably-preserving scratch
+    round-trips. Collecting every site rather than answering yes/no is what lets
+    the caller demand a MUST-reach. ``field_vars`` names the field seeds under
+    test, which is what makes a ``||`` decidable."""
     if var in seen:
         return
     seen.add(var)
@@ -68,7 +71,7 @@ def _collect_field_enforcement_bbs(
     for cons in var.uses:
         if cons.op in _FORCING_SINK_OPS:
             # `assert V`, or the approving exit `return V` — approving through
-            # that block means V held (same sink set as the boolean twin).
+            # that block means V held.
             if cons.basic_block is not None:
                 out.add(cons.basic_block)
         elif cons.op in ("bnz", "bz"):
@@ -79,7 +82,7 @@ def _collect_field_enforcement_bbs(
                 out.add(cons.basic_block)
         # A ``||`` carries enforcement to this arm only when every OTHER arm pins
         # the same field, else the other arm alone satisfies the assert and this
-        # one is unconstrained. Same rule as the boolean twin.
+        # one is unconstrained.
         if cons.op in _DISJUNCTION_OPS and not _disjunction_is_enforcing(
                 prog, cons, var, field_vars):
             continue
