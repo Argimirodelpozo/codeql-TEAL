@@ -14,9 +14,7 @@ from ..language.avm import is_state_value_label
 from ..language.avm import is_current_sender_read, is_group_signer_read
 from ..diagnostics.evidence import GuardEvidence
 from ..analysis.guard_coverage import (
-    BOOL_AND, BOOL_OR, BOOL_PASS, CMP_OPS, EQ_OPS, NEQ_OPS, OPAQUE,
-    PREDICATE_OPS, SELF_CANCEL_OPS, VALUE_OPAQUE_OPS, Coverage, CoverageWalker,
-    NO_COVERAGE,
+    OPAQUE, VALUE_OPAQUE_OPS, Coverage, CoverageWalker, NO_COVERAGE,
 )
 
 #: Reads of the CURRENT transaction's Sender. HAZARD: the ``gtxn*`` family is
@@ -29,16 +27,8 @@ _TXN_SENDER_FAM = frozenset({"txn", "txna", "txnas"})
 #: The op semantics (boolean combinators, comparison sense, existence
 #: predicates, length-vs-value, self-cancelling ops) live in the shared walker
 #: :mod:`tealql.tealtools.analysis.guard_coverage` with their HAZARDs; these
-#: aliases keep this module's walks on the same tables.
+#: alias keeps this module's walks on the same table.
 _VALUE_OPAQUE_OPS = VALUE_OPAQUE_OPS
-_SELF_CANCEL_OPS = SELF_CANCEL_OPS
-_EQ_OPS = EQ_OPS
-_NEQ_OPS = NEQ_OPS
-_CMP_OPS = CMP_OPS
-_BOOL_AND = BOOL_AND
-_BOOL_OR = BOOL_OR
-_PREDICATE_OPS = PREDICATE_OPS
-_BOOL_PASS = BOOL_PASS
 
 #: Reads of the current app's own global/local state — the slots whose WRITERS
 #: the storage-authority analysis can inspect. A `==` pin of an attacker input
