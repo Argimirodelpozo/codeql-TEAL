@@ -115,6 +115,23 @@ class TestExtract:
         assert names == {"transfer", "add_one"}
         assert tbl["0x03b5c0af"].arg_types == ("uint64",)
 
+    def test_selectors_on_separate_lines_feed_one_match(self):
+        # `method "a"` and `method "b"` on their own lines, then one `match`: each selector pairs
+        # with its own target. Read line by line, both paired with the first target and every
+        # method after the first was silently dropped.
+        src = (
+            "#pragma version 10\n"
+            "main:\n"
+            '    method "add_one(uint64)uint64"\n'
+            '    method "get_address()address"\n'
+            "    txna ApplicationArgs 0\n"
+            "    match handle_add handle_addr\n"
+            "    err\n"
+            "handle_add:\n    int 1\n    return\n"
+            "handle_addr:\n    int 1\n    return\n")
+        named = {m.name: (s, e) for s, e, m in method_line_ranges(src)}
+        assert named == {"add_one": (8, 10), "get_address": (11, 13)}
+
     def test_empty_on_raw_bytecode(self):
         # no `method "..."` text -> optional layer contributes nothing
         assert extract_method_table("#pragma version 8\npushbytes 0x03b5c0af\nint 1\nreturn\n") == {}

@@ -253,11 +253,21 @@ def method_line_ranges(source: str, method_table: "dict | None" = None):
             boundaries.add(toks[1])
 
     entry_method = {}                      # target_label -> AbiMethod
-    for i, ln in enumerate(lines):
-        methods = _dispatch_methods(ln, method_table)   # ordered, aligned w/ targets
+    i = 0
+    while i < len(lines):
+        methods = _dispatch_methods(lines[i], method_table)   # ordered, aligned w/ targets
         if not methods:
+            i += 1
             continue
-        for j in range(i, min(i + 8, len(lines))):   # find the dispatch op below
+        # A RUN of selector lines feeds one dispatch op: `method "a"` / `method "b"` on separate
+        # lines, then `match L1 L2`, pairs a->L1 and b->L2. Pairing each line with the op on its
+        # own matched every one of them to L1, and every method after the first was dropped.
+        start = i
+        i += 1
+        while i < len(lines) and (more := _dispatch_methods(lines[i], method_table)):
+            methods = methods + more
+            i += 1
+        for j in range(start, min(i + 8, len(lines))):   # find the dispatch op below
             toks = lines[j].strip().split()
             if not toks:
                 continue
