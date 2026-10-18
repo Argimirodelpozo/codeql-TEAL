@@ -470,21 +470,6 @@ def approval_exit_protected_for_field(
     )
 
 
-def approval_exit_protected_for_signed_txn_field(
-    prog: SSAProgram, exit_bb: BasicBlock, field: str,
-    *, file: Optional[str] = None, safe: Optional[str] = None,
-) -> bool:
-    """Protected for the SIGNED txn's own ``field`` only, per
-    :func:`_signed_txn_field_reads` — the delegated-LOGICSIG drain-field detectors."""
-    if file is None:
-        file = exit_bb.file
-    seeds = ssavar_outputs(_signed_txn_field_reads(prog, field, file=file))
-    return _approval_exit_protected_for_seeds(prog, exit_bb, seeds, file=file,
-                                              safe=safe)
-
-
-
-
 def approval_exit_protected_for_arg_reads(
     prog: SSAProgram, exit_bb: BasicBlock, immediates: str,
     *, file: Optional[str] = None,

@@ -19,7 +19,6 @@ class CloseRemainderToDetector(_ApprovalExitProtectedDetector):
     # CloseRemainderTo empties the SIGNER's account on a payment txn, and an
     # appl txn has no such field — a delegated-logicsig concern.
     applies_to = frozenset({"logicsig"})
-    signed_txn = True   # only the SIGNED txn's own field protects the signer
     violation_cls = CloseRemainderToViolation
     # Pinned to ZeroAddress / a fixed address — not merely compared.
     safe_value = "address-pin"

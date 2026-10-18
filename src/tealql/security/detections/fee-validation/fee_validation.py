@@ -18,10 +18,9 @@ class FeeValidationDetector(_ApprovalExitProtectedDetector):
     # An unpinned Fee drains the SIGNER via a huge fee, and only a delegated
     # logicsig approves someone else's constructed txn.
     applies_to = frozenset({"logicsig"})
-    # The check must read the SIGNED txn's OWN Fee, which also credits the
+    # The base seeds the SIGNED txn's OWN Fee reads, which also credits the
     # dynamic-self `gtxns Fee` and the pinned `gtxn N Fee` forms; an unpinned
     # sibling `gtxn N` still does not count.
-    signed_txn = True
     violation_cls = FeeValidationViolation
     # An UPPER bound: `Fee > 0` compares the field and caps nothing.
     safe_value = "upper-bound"
