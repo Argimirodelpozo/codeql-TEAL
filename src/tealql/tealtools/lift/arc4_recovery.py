@@ -668,15 +668,19 @@ def guess_encoded_types_scored(main, subs):
 # HAZARD: selecting the first constant as the key or the first register as the
 # value confuses app_local_put's ACCOUNT with its VALUE, recovering a later
 # ``itob(uint64)`` read as arc4.Address.
+# Derived from box_recovery._STORAGE_OPS (the one storage operand table): the
+# app-state WHOLE-value puts -> (scope, key_idx, value_idx) and the app-state
+# whole-value reads -> (scope, key_idx). Box ops are out of scope here.
+from .box_recovery import _STORAGE_OPS  # noqa: E402
 _STATE_PUT_LAYOUT = {
-    AVMOp.app_global_put: ("global", 0, 1),
-    AVMOp.app_local_put: ("local", 1, 2),
+    AVMOp[name]: (kind, kidx, vidx)
+    for name, (kind, kidx, vidx, _res) in _STORAGE_OPS.items()
+    if kind != "box" and vidx is not None
 }
 _STATE_GET_KEY_IDX = {
-    AVMOp.app_global_get: ("global", 0),
-    AVMOp.app_local_get: ("local", 1),
-    AVMOp.app_global_get_ex: ("global", 1),
-    AVMOp.app_local_get_ex: ("local", 2),
+    AVMOp[name]: (kind, kidx)
+    for name, (kind, kidx, _vidx, is_result) in _STORAGE_OPS.items()
+    if kind != "box" and is_result
 }
 
 
