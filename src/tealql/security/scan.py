@@ -18,7 +18,7 @@ from tealql.tealtools.diagnostics.errors import (
 )
 from tealql.tealtools.ssa import SSAProgram
 from tealql.tealtools.diagnostics.health import AnalysisDegradation, AnalysisHealth, AnalysisResult, health_for
-from . import DETECTORS
+from . import DETECTORS, SEVERITY_LEVELS
 from .config import ConfigError, DetectionConfig, glob_match
 
 logger = logging.getLogger("tealql.security.scan")
@@ -182,7 +182,7 @@ class _DetectorSelection:
 
 
 # Ascending. "informational" is reported but never fails by default (fail_on).
-SEVERITY_ORDER = ("informational", "low", "medium", "high", "critical")
+SEVERITY_ORDER = tuple(reversed(SEVERITY_LEVELS))
 
 
 @dataclass(frozen=True)
@@ -320,13 +320,9 @@ class ScanFinding:
         """Severity, in precedence order: the per-detector options override; else the
         VIOLATION's own ``severity`` when valid (the IR taint family grades per sink
         field); else the detector's declared class ``severity``."""
-        if self.severity_override is not None:
-            return self.severity_override
-        from . import SEVERITY_LEVELS, severity_of
-        v = getattr(self.violation, "severity", None)
-        if isinstance(v, str) and v.lower() in SEVERITY_LEVELS:
-            return v.lower()
-        return severity_of(self.detector_name)
+        from .findings import resolve_severity
+        return resolve_severity(self.violation, self.detector_name,
+                                self.severity_override)
 
     @property
     def confidence(self) -> str:
