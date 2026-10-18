@@ -14,7 +14,6 @@ from types import MappingProxyType
 _DATA = json.loads(Path(__file__).with_name('op_specs.json').read_text())
 SPEC_REVISION = _DATA['revision']
 SPEC_VERSION = _DATA['version']
-SPEC_SOURCE_HASHES = MappingProxyType(_DATA['source_sha256'])
 
 
 @dataclass(frozen=True)
@@ -86,17 +85,3 @@ def result_type(op, index=0, version=SPEC_VERSION):
 # their mechanical signatures; backend compilation must report unsupported.
 PUYA_57_UNSUPPORTED = frozenset(name for name in SPECS
                                if name.startswith('app_box_') or name in {'poseidon2', 'app_params_set'})
-
-
-def support_inventory(version=SPEC_VERSION) -> dict:
-    return {'version': version, 'supported': 1 <= version <= SPEC_VERSION,
-            'revision': SPEC_REVISION,
-            'extensions': {'sumhash512': 'legacy extension outside the pinned consensus spec'},
-            'opcodes': {
-        name: {'analysis': 'custom' if name in {'callsub', 'retsub', 'proto', 'dig', 'bury',
-                    'cover', 'uncover', 'popn', 'dupn', 'match', 'pushints', 'pushbytess',
-                    'frame_dig', 'frame_bury'} else 'generic',
-               'puya_5_7': 'unsupported' if name in PUYA_57_UNSUPPORTED else 'opcode-present',
-               'modes': spec.modes, 'fields': sorted(spec.fields),
-               'puya_5_7_unsupported_fields': sorted(field for field, detail in spec.fields.items() if detail[1] > 12)}
-        for name in SPECS if (spec := opcode_spec(name, version)) is not None}}

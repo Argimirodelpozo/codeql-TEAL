@@ -18,9 +18,8 @@ The generator performs no network access and executes no upstream code. It
 rejects changed input hashes. Updating the target requires deliberately reviewing
 the new upstream revision, hashes, generated differences, and custom transfers.
 
-`language.spec.support_inventory()` separates generic/custom analysis transfers
-from opcode presence and unsupported fields in Puya 5.7. Opcode presence is not
-a promise of successful lowering for every program. Foreign-box instructions,
+`language.spec.PUYA_57_UNSUPPORTED` names the opcodes Puya 5.7 lacks. Opcode
+presence is not a promise of successful lowering for every program. Foreign-box instructions,
 `app_params_set`, and `poseidon2` now retain their operands in the frontend and
 produce explicit unsupported-backend errors when lowered with Puya 5.7. The
 versioned spec also covers the new block and application fields.
