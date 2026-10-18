@@ -8,6 +8,23 @@ from tealql.tealtools.cfg.path_predicates import PathPredicateAnalysis
 from tealql.tealtools.ssa import Phi, SSAProgram, SSAVar
 
 
+def revision_memo(prog, attr: str, build):
+    """The value memoised on ``prog.<attr>`` as ``(revision, value)``, rebuilt by
+    ``build()`` whenever ``prog.revision`` (default 0) has moved. The revision is
+    read BEFORE ``build`` runs, so a build that bumps it is not trusted past
+    itself. Key composition is the caller's: anything finer than the revision
+    (e.g. a per-argument dict) lives inside ``value``."""
+    revision = getattr(prog, "revision", 0)
+    cached = getattr(prog, attr, None)
+    if cached is None or cached[0] != revision:
+        cached = (revision, build())
+        try:
+            setattr(prog, attr, cached)
+        except AttributeError:  # only if SSAProgram ever gains __slots__
+            pass
+    return cached[1]
+
+
 def _constant_facts_cached(prog: SSAProgram):
     """Revision-scoped constants shared by the detector value-flow walks.
 
@@ -16,15 +33,8 @@ def _constant_facts_cached(prog: SSAProgram):
     idempotent but expensive under coverage tracing; retain the immutable fact
     object while the canonical program revision is unchanged.
     """
-    revision = getattr(prog, "revision", 0)
-    cached = getattr(prog, "_sec_constant_facts", None)
-    if cached is None or cached[0] != revision:
-        cached = (revision, prog.facts(FactDomain.CONSTANTS))
-        try:
-            prog._sec_constant_facts = cached
-        except AttributeError:  # only if SSAProgram ever gains __slots__
-            pass
-    return cached[1]
+    return revision_memo(prog, "_sec_constant_facts",
+                         lambda: prog.facts(FactDomain.CONSTANTS))
 
 
 
@@ -33,16 +43,8 @@ def cached_path_predicates(prog: SSAProgram) -> PathPredicateAnalysis:
     guard-family detectors would otherwise each re-run the branch/assert analysis,
     the bulk of a scan's per-contract cost. Sound because the analysis is a pure
     read of the CFG; a caller-SEEDED ``path_predicates`` bypasses the cache."""
-    revision = getattr(prog, "revision", 0)
-    cached = getattr(prog, "_sec_path_predicates", None)
-    if cached is None or cached[0] != revision:
-        pp = PathPredicateAnalysis(prog)
-        try:
-            prog._sec_path_predicates = (revision, pp)
-        except AttributeError:      # only if SSAProgram ever gains __slots__
-            pass
-        return pp
-    return cached[1]
+    return revision_memo(prog, "_sec_path_predicates",
+                         lambda: PathPredicateAnalysis(prog))
 
 
 
@@ -54,16 +56,10 @@ def _frame_param_sources_cached(prog: SSAProgram) -> dict:
     ("every operand must flow"), and "every caller pins this arg" is a different
     claim from "every write to this slot flows" — so it must not be handed the
     unioned map."""
-    revision = getattr(prog, "revision", 0)
-    cached = getattr(prog, "_sec_frame_param_sources", None)
-    if cached is None or cached[0] != revision:
+    def build():
         from tealql.tealtools.ssa.relations import frame_param_sources
-        cached = (revision, frame_param_sources(prog))
-        try:
-            prog._sec_frame_param_sources = cached
-        except AttributeError:      # only if SSAProgram ever gains __slots__
-            pass
-    return cached[1]
+        return frame_param_sources(prog)
+    return revision_memo(prog, "_sec_frame_param_sources", build)
 
 
 def _operand_flows_from_field_var(
@@ -164,9 +160,7 @@ def _scratch_stores_index(prog: SSAProgram) -> dict:
     """``{(file, start_line): scratch_stores}``, built once per program — the
     lookup sits inside two nested fixpoint loops, so a linear graph scan per call
     dominates the runtime."""
-    revision = getattr(prog, "revision", 0)
-    cached = getattr(prog, "_sec_scratch_store_index", None)
-    if cached is None or cached[0] != revision:
+    def build():
         prog._ensure_scratch_influence()
         idx = {}
         for n in prog._graph.nodes:
@@ -176,12 +170,8 @@ def _scratch_stores_index(prog: SSAProgram) -> dict:
             stores = prog._graph.nodes[n].get("scratch_stores")
             if stores is not None:
                 idx.setdefault((loc.file, loc.start_line), stores)
-        cached = (revision, idx)
-        try:
-            prog._sec_scratch_store_index = cached
-        except AttributeError:      # only if SSAProgram ever gains __slots__
-            pass
-    return cached[1]
+        return idx
+    return revision_memo(prog, "_sec_scratch_store_index", build)
 
 
 def _scratch_stores_for(prog: SSAProgram, load_var: SSAVar) -> Optional[list]:
