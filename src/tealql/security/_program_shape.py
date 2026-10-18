@@ -355,8 +355,6 @@ def _txna_reads(
 # ---------------------------------------------------------------------------
 
 
-# Aliased for the detector-facing name; ``avm.py`` is the single metadata home.
-_APP_ONLY_OPS = APP_ONLY_OPS
 
 
 
@@ -369,7 +367,7 @@ def classify_program(prog: SSAProgram, *, file: Optional[str] = None) -> str:
     for a in prog.assignments:
         if not file_match(a.location.file, file):
             continue
-        if a.op in _APP_ONLY_OPS:
+        if a.op in APP_ONLY_OPS:
             return "app"
     return "logicsig"
 

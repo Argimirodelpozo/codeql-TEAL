@@ -411,10 +411,6 @@ class ScanResults(AnalysisResult):
         return self.findings[index]
 
 
-def _notifications_of(results: ScanResults) -> tuple[ScanNotification, ...]:
-    return results.notifications
-
-
 def scan(
     root: Path,
     *,
@@ -617,7 +613,7 @@ def failures(
 
 
 def render_text(findings: ScanResults) -> str:
-    notes = _notifications_of(findings)
+    notes = findings.notifications
     body = "\n".join(f.format() for f in findings) if findings else "(no findings)"
     if not notes:
         return body
@@ -643,7 +639,7 @@ def render_json(findings: ScanResults) -> str:
         "tool": "tealql",
         "complete": findings.complete,
         "findings": [f.to_dict() for f in findings],
-        "notifications": [n.to_dict() for n in _notifications_of(findings)],
+        "notifications": [n.to_dict() for n in findings.notifications],
     }, indent=2)
 
 
@@ -720,7 +716,7 @@ def render_sarif(findings: ScanResults) -> str:
     # invocations[].toolExecutionNotifications — NOT a result. Emitting these as
     # results would put them in the dashboard's finding count and make a broken
     # analysis look like a vulnerable contract.
-    notes = _notifications_of(findings)
+    notes = findings.notifications
     invocation = {"executionSuccessful": not notes}
     if notes:
         invocation["toolExecutionNotifications"] = [

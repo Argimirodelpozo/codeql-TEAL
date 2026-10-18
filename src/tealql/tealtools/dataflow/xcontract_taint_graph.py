@@ -94,7 +94,7 @@ class XContractTaintGraph(NxGraphView):
     ) -> nx.DiGraph:
         big: nx.DiGraph = nx.DiGraph()
         for app_id, tg in tg_by_id.items():
-            _copy_into(big, tg, app_id=app_id)
+            copy_into(big, tg, lambda n, app_id=app_id: XContractNode(app_id=app_id, inner=n))
         for caller_app_id, site in edges:
             callee_tg = callees.get(site.app_id)
             caller_tg = tg_by_id.get(caller_app_id)
@@ -170,10 +170,6 @@ class XContractTaintGraph(NxGraphView):
 
 
 # --- copying ------------------------------------------------------
-
-
-def _copy_into(big: nx.DiGraph, tg: TaintGraph, *, app_id: Optional[int]) -> None:
-    copy_into(big, tg, lambda n: XContractNode(app_id=app_id, inner=n))
 
 
 # --- appcall bridges ----------------------------------------------
@@ -383,10 +379,6 @@ class CrossTaintFinding:
         }
 
 
-def _sensitive_sinks(xtg: "XContractTaintGraph") -> list[tuple[XContractNode, str]]:
-    return sensitive_sinks(xtg)
-
-
 def _boundary_crossing_path(
     xtg: "XContractTaintGraph",
     src: XContractNode,
@@ -431,7 +423,7 @@ def cross_taint_findings(xtg: "XContractTaintGraph") -> list[CrossTaintFinding]:
         xn for xn in xtg.nodes()
         if xn.app_id is None and xtg.caller.is_unknown_scratch(xn.inner)
     ]
-    sinks = _sensitive_sinks(xtg)
+    sinks = sensitive_sinks(xtg)
     findings: list[CrossTaintFinding] = []
     for src in sources:
         reach = xtg.reachable_from(src)
