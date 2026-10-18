@@ -828,6 +828,11 @@ class _Lifter:
         m = self._clone_map_of.get(bb)
         return m.get(blk, blk) if m else blk
 
+    def _label_target(self, bb, lbl):
+        """:meth:`_site_target` of the block label ``lbl`` resolves to (via
+        ``label2line`` -> ``line2block``), or ``None`` when it does not resolve."""
+        return self._site_target(bb, self.line2block.get(self.label2line.get(lbl)))
+
     def _core_type(self, o, op, imm, *, poly=None) -> "str | None":
         """The ONE op→type decision ladder shared by :meth:`type_of` and
         :meth:`_ssa_type` — two hand-copies of it drifted (only one knew the
@@ -1226,7 +1231,7 @@ class _Lifter:
             return None, set()
         cases, targets = [], set()
         for i, lbl in enumerate(labels):
-            blk = self._site_target(bb, self.line2block.get(self.label2line.get(lbl)))
+            blk = self._label_target(bb, lbl)
             if blk is None or blk not in self.bid:
                 return None, set()
             if push is not None and push.op == "pushints":
@@ -1287,8 +1292,7 @@ class _Lifter:
             return pre_ir.Goto(self.bid[succ[0]])
         if len(succ) == 2 and op in COND_BRANCH_OPS and t is not None:
             cond = self._sel_value(t)
-            taken = self._site_target(bb, self.line2block.get(
-                self.label2line.get((t.immediates or "").strip())))
+            taken = self._label_target(bb, (t.immediates or "").strip())
             if taken in succ:
                 other = succ[0] if succ[1] is taken else succ[1]
             else:
@@ -1366,7 +1370,7 @@ class _Lifter:
         order = list(range(n))[::-1]           # label[i] -> ins[n - i]
         cases, targets = [], set()
         for i, lbl in enumerate(labels):
-            blk = self._site_target(bb, self.line2block.get(self.label2line.get(lbl)))
+            blk = self._label_target(bb, lbl)
             ki = 1 + order[i]
             ci = ins[ki] if 0 <= ki < len(ins) else None
             if isinstance(ci, pre_ir.BytesConstant):
@@ -1401,7 +1405,7 @@ class _Lifter:
         labels = (t.immediates or "").split()
         arms, ok = [], True
         for lbl in labels:
-            blk = self._site_target(bb, self.line2block.get(self.label2line.get(lbl)))
+            blk = self._label_target(bb, lbl)
             if blk is None or blk not in self.bid:
                 ok = False
                 break
@@ -1412,7 +1416,7 @@ class _Lifter:
         if ok and ft is not None and ft in self.bid:
             return pre_ir.GotoNth(self._sel_value(t), arms, self.bid[ft])
         if ok and succ:                       # robustness: best-effort default
-            labeled = {self._site_target(bb, self.line2block.get(self.label2line.get(lbl)))
+            labeled = {self._label_target(bb, lbl)
                        for lbl in labels}
             dft = next((s for s in succ if s not in labeled), succ[-1])
             return pre_ir.GotoNth(self._sel_value(t), arms, self.bid[dft])
