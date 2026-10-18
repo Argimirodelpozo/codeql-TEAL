@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 import re
 
-from ..diagnostics.errors import LiftError
+from ..diagnostics.errors import lift_stage
 from . import _puya_compat as _compat
 
 logger = logging.getLogger("tealql.tealtools.lift")
@@ -67,7 +67,7 @@ def lift_to_teal(source, *, aggressive: bool = False,
     # backend placeholder for recovered uint64 evidence.
     main, subs = to_puya_ir._to_puya_for_codegen(prog, diagnostics=diagnostics)
     to_puya_ir.optimize([main, *subs], aggressive=aggressive, diagnostics=diagnostics)
-    try:
+    with lift_stage("backend"):
         with to_puya_ir._puya_error_capture("backend", diagnostics):
             try:
                 provider = CompiledProgramProvider()
@@ -117,10 +117,6 @@ def lift_to_teal(source, *, aggressive: bool = False,
             else:
                 raise RuntimeError("backend lowering did not converge")
             return emit_teal(ctx, teal)
-    except LiftError:
-        raise
-    except Exception as e:
-        raise LiftError(f"{type(e).__name__}: {e}", stage="backend") from e
 
 
 def _destructure_with_orphans(ctx, program) -> None:

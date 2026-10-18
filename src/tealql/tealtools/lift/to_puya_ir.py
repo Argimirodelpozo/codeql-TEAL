@@ -430,14 +430,10 @@ def _puya_error_capture(stage: str, diagnostics: list | None = None):
 
 def _lower_with_unknown_type(prog, diagnostics, unknown_type):
     """Shared guarded lower; ``unknown_type`` is explicit at the boundary."""
-    from ..diagnostics.errors import LiftError
-    try:
+    from ..diagnostics.errors import lift_stage
+    with lift_stage("lower"):
         with _puya_error_capture("lower", diagnostics):
             return _to_puya_impl(prog, unknown_type=unknown_type)
-    except LiftError:
-        raise
-    except Exception as e:
-        raise LiftError(f"{type(e).__name__}: {e}", stage="lower") from e
 
 
 def to_puya(prog, *, diagnostics: list | None = None):
@@ -886,16 +882,12 @@ def optimize(subs, *, max_rounds: int = 100, aggressive: bool = False,
     enables the CODEGEN-CHANGING simplifications the faithful default leaves off.
     Errors puya merely LOGS while rebuilding ops are appended to ``diagnostics``
     (when given) — see :func:`_puya_error_capture`."""
-    from ..diagnostics.errors import LiftError
-    try:
+    from ..diagnostics.errors import lift_stage
+    with lift_stage("optimize"):
         with _puya_error_capture("optimize", diagnostics):
             rounds = _optimize_impl(subs, max_rounds=max_rounds, aggressive=aggressive)
             _coerce_slice_operands(subs, diagnostics)   # typed-zero fallback left a slice len as bytes
         return rounds
-    except LiftError:
-        raise
-    except Exception as e:
-        raise LiftError(f"{type(e).__name__}: {e}", stage="optimize") from e
 
 
 def _optimize_impl(subs, *, max_rounds: int = 100, aggressive: bool = False) -> int:
