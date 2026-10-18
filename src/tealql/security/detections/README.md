@@ -50,7 +50,7 @@ not their implementation layer.
 
 ## Detection shapes — vocabulary
 
-- **strict-dominance txn-field** — a single comparison against `<FIELD>` must dominate every approval exit. One finding per program. Implemented by `_FieldValidatedDetector`.
+- **strict-dominance txn-field** — a single comparison against `<FIELD>` must dominate every approval exit. One finding per program (asset-close-to, over `field_validated_on_all_paths`).
 - **anywhere-checked** — the check just has to exist *somewhere* in the program. One finding per program.
 - **per-exit path-aware** — examine each approval exit's dominating predicates individually. One finding per unprotected exit. Built on `PathPredicateAnalysis`.
 - **OnCompletion-guard** — flag each approval exit reachable under a dangerous `OnCompletion` value. Optional conjuncts: `senderCreatorGuardDominates` for the *unprotected* variants, presence of specific opcodes (`balance`/`min_balance`, `Global.LatestTimestamp`) for funds-safety variants.
