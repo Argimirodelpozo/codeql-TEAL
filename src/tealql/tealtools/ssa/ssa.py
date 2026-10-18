@@ -22,8 +22,6 @@ HAZARD — slot model. Stack slots are 1-based TOP-FIRST, both for phi identity
 HAZARD — the ``PyPhi.args`` graph can be CYCLIC (constant-stack CFG loops), so
 every traversal needs a ``seen`` set. ``PyPhi`` is unified: the public
 Direct/Indirect kind distinction is collapsed here.
-
-CLI: ``python -m tealql.tealtools.ssa.ssa <teal-source>`` renders the build.
 """
 from __future__ import annotations
 
@@ -1222,31 +1220,3 @@ def _apply_pyssa_to(
     prog._phi_to_pyphi = {p: pp for pp, p in phi_map.items()}
 
     return prog
-
-
-def _demo(source: str) -> None:
-    """Render the PySSA-built SSA for a TEAL source (CLI diagnostic dump)."""
-    import time
-    t0 = time.perf_counter()
-    prog = SSAProgram(source)
-    t_graph = time.perf_counter() - t0
-    t0 = time.perf_counter()
-    py = PySSA._construct(prog)
-    t_py = time.perf_counter() - t0
-    if len(py.blocks) <= 30:
-        print(py.render())
-    else:
-        print(f"({len(py.blocks)} blocks — full render suppressed)")
-    print(
-        f"[ssa] graph load: {t_graph:.2f}s  build: {t_py * 1000:.1f}ms  "
-        f"blocks={len(py.blocks)}  vars={len(py.vars)}  phis={len(py.phis)}"
-    )
-
-
-if __name__ == "__main__":
-    import sys
-    if len(sys.argv) != 2:
-        print("usage: python -m tealql.tealtools.ssa <teal-source>",
-              file=sys.stderr)
-        raise SystemExit(2)
-    _demo(sys.argv[1])

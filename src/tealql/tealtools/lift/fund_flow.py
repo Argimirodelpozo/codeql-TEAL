@@ -1586,31 +1586,3 @@ def tainted_fund_flows(lifter, taint=None, trusted_args=frozenset(),
     """Fund-flow specialisation of :func:`tainted_itxn_flows`: tainted values
     reaching Receiver / Amount / CloseRemainderTo and their asset variants."""
     return tainted_itxn_flows(lifter, _FUND_FIELDS, taint, trusted_args, sender_only)
-
-
-def fund_flow_report(lifter, name: str = "<program>") -> str:
-    findings = tainted_fund_flows(lifter)
-    out = [f"attacker-controlled inner-transaction fund flows  --  {name}",
-           "=" * 72]
-    if not findings:
-        out.append("(no user-input-tainted fund-flow itxn fields)")
-        return "\n".join(out)
-    unguarded = [f for f in findings if not f.guarded and not f.param_derived]
-    out.append(f"{len(findings)} tainted fund-flow sink(s); "
-               f"{len(unguarded)} UNGUARDED")
-    out.append("")
-    for f in findings:
-        out.append("  " + f.pretty())
-    return "\n".join(out)
-
-
-if __name__ == "__main__":
-    import sys
-
-    from ..ssa import SSAProgram
-    from .lift import _Lifter
-    for _src in [a for a in sys.argv[1:] if not a.startswith("-")]:
-        _lf = _Lifter(SSAProgram(_src))
-        _lf.build()
-        _nm = _src.rstrip("/").rsplit("/", 1)[-1]
-        print(fund_flow_report(_lf, _nm))
