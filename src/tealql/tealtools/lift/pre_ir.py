@@ -478,6 +478,13 @@ def registers(prog_or_subs):
                         yield r
 
 
+def value_provider(node):
+    """The value provider an op carries: an ``Assignment``'s source, an
+    ``IntrinsicOp``'s wrapped intrinsic (a VOID call or effect), else ``None``."""
+    return (node.source if isinstance(node, Assignment)
+            else node.intrinsic if isinstance(node, IntrinsicOp) else None)
+
+
 def structural_errors(prog: Program) -> list[str]:
     """Return violations of the post-transform pre-IR contract.
 
@@ -566,8 +573,7 @@ def structural_errors(prog: Program) -> list[str]:
                         errors.append(
                             f"{sub.id}: block@{bb.id} uses undefined {value.local_id}"
                         )
-                vp = (node.source if isinstance(node, Assignment)
-                      else node.intrinsic if isinstance(node, IntrinsicOp) else None)
+                vp = value_provider(node)
                 if (isinstance(vp, InvokeSubroutine)
                         and vp.target not in target_subs):
                     errors.append(
