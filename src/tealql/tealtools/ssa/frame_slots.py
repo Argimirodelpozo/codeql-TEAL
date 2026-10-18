@@ -150,19 +150,14 @@ def _op_dip(o, arity):
 
 
 def analyze(blocks, bb_to_sub, proto_io, return_point, edepth,
-            unsafe_callees, arity, *, poisoned=None) -> FrameAnalysis:
+            unsafe_callees, arity, *, poisoned) -> FrameAnalysis:
     """Compute first-class frame-slot provenance for the simulation.
 
     ``instructions`` maps frame reads and proto returns to typed slot merges.
     ``poisoned`` holds bb keys the simulation must treat as bottom-unanchored
     (every frame op there either follows the plan or refuses).
     """
-    if poisoned is None:
-        # Compatibility for external callers using the original signature.
-        poisoned = {b.key for b in blocks
-                    if bb_to_sub.get(b) is not None and b.key not in edepth}
-    else:
-        poisoned = set(poisoned)
+    poisoned = set(poisoned)
     plan: dict = {}
     if not poisoned:
         return FrameAnalysis(plan, frozenset())
@@ -262,27 +257,6 @@ def analyze(blocks, bb_to_sub, proto_io, return_point, edepth,
                 if slots:
                     plan[id(op)] = ReturnSlots(slots)
     return FrameAnalysis(plan, frozenset(poisoned))
-
-
-def build_plan(blocks, bb_to_sub, proto_io, return_point, edepth,
-               unsafe_callees, arity, *, poisoned=None) -> tuple[dict, set]:
-    """Compatibility wrapper returning the former tuple instruction format."""
-    analysis = analyze(blocks, bb_to_sub, proto_io, return_point, edepth,
-                       unsafe_callees, arity, poisoned=poisoned)
-    legacy = {}
-    for key, instruction in analysis.instructions.items():
-        if isinstance(instruction, SlotMerge):
-            legacy[key] = (
-                "merge", instruction.home, instruction.entry_predecessors,
-                instruction.position, instruction.writes)
-        else:
-            legacy[key] = ("ret", {
-                slot: (
-                    "merge", merge.home, merge.entry_predecessors,
-                    merge.position, merge.writes)
-                for slot, merge in instruction.slots.items()
-            })
-    return legacy, set(analysis.poisoned)
 
 
 def _plan_region(region, by_key, sub, bb_to_sub, proto_io, return_point,

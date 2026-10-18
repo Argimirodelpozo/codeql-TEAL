@@ -97,7 +97,6 @@ MODULE_VIEW_COVERAGE: dict[str, tuple[str, ...]] = {
     "reporting.inner_transactions": ("analysis.inner_transactions",),
     "ssa.callee_effects": ("analysis.callee_effects",),
     "ssa.const_fold": ("pass.ssa.constants",),
-    "ssa.frame_band": ("analysis.frame",),
     "ssa.frame_slots": ("analysis.frame",),
     "ssa.inner_txn_fields": ("analysis.inner_txn_fields",),
     "ssa.models": ("repr.ssa.canonical",),

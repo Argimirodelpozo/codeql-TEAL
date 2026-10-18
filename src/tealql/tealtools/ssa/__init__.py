@@ -4,10 +4,8 @@ from importlib import import_module
 
 _LAZY_EXPORTS = {
     # AVM classification metadata historically re-exported here.
-    "_CONST_BLOCK_REF_NAMES": ("..language.avm", "_CONST_BLOCK_REF_NAMES"),
     "_OP_RANGE_SEEDS": ("..language.avm", "_OP_RANGE_SEEDS"),
     "_STACK_SHUFFLE_OPS": ("..language.avm", "_STACK_SHUFFLE_OPS"),
-    "_TERMINATOR_OPS": ("..language.avm", "_TERMINATOR_OPS"),
     # Models.
     "Assignment": (".models", "Assignment"),
     "BasicBlock": (".models", "BasicBlock"),
@@ -25,7 +23,6 @@ _LAZY_EXPORTS = {
     "const_bytes": (".operands", "const_bytes"),
     "const_byte_length": (".operands", "const_byte_length"),
     "const_int": (".operands", "const_int"),
-    "imm0": (".operands", "imm0"),
     "source_operands": (".operands", "source_operands"),
     "is_const": (".operands", "is_const"),
     "operand_const": (".operands", "operand_const"),
@@ -33,17 +30,8 @@ _LAZY_EXPORTS = {
     "producing_op": (".producers", "producing_op"),
     # Program and builders.
     "SSAProgram": (".program", "SSAProgram"),
-    "FrameAnalysis": (".frame_slots", "FrameAnalysis"),
-    "FrameLayout": (".frame_slots", "FrameLayout"),
-    "ReturnSlots": (".frame_slots", "ReturnSlots"),
-    "SlotMerge": (".frame_slots", "SlotMerge"),
-    "ScratchInfluence": (".scratch_influence", "ScratchInfluence"),
-    "PyBlock": (".ssa", "PyBlock"),
-    "PyOp": (".ssa", "PyOp"),
     "PyPhi": (".ssa", "PyPhi"),
     "PySSA": (".ssa", "PySSA"),
-    "PyVar": (".ssa", "PyVar"),
-    "STACK_MAX": (".ssa", "STACK_MAX"),
 }
 
 __all__ = list(_LAZY_EXPORTS)
