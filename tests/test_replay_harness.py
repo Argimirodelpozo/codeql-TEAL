@@ -203,3 +203,33 @@ def test_a_divergence_the_deployed_program_reproduces_when_made_as_costly_is_a_c
     controls = {(1, 0, 9): {**got}, (2, 0, 5): {"reproduced": False}}
     out = [(r["round"], r["app"], r["status"], r.get("culprit")) for r in apply_controls(rows, controls)]
     assert out == [(1, 5, "CO_DIVERGED", 9), (1, 9, "COST_ARTIFACT", None), (2, 5, "DIVERGES", None)]
+
+
+def test_rows_store_each_app_pc_once_and_are_read_streamed(tmp_path):
+    """A 30-day run's rows.jsonl reached 1 GB (86% per-row coverage lists) and
+    every summary loaded it whole: 3.5 GB RSS. Rows now carry only the pcs new
+    for their app (the union is unchanged, a fresh process re-seeds from disk),
+    and the readers stream, attribution and cost controls included."""
+    import json
+    from tests.replay_harness.stream import Run, iter_rows, summarize
+    run = Run(tmp_path)
+    err = "assert failed pc=9. Details: app=7, pc=9"
+    batch = [{"round": 1, "group": 0, "app": 5, "status": "FAITHFUL", "orig_pcs": [1, 2, 3]},
+             {"round": 2, "group": 0, "app": 5, "status": "DIVERGES", "detail": err, "orig_pcs": [2, 3]},
+             {"round": 2, "group": 0, "app": 7, "status": "DIVERGES", "detail": err, "orig_pcs": [4]},
+             {"round": 3, "group": 1, "app": 5, "status": "DIVERGES", "detail": "x", "orig_pcs": [3, 8]}]
+    run.thin_coverage(batch[:2])
+    run.append_rows(batch[:2])
+    fresh = Run(tmp_path)                       # restart: the seen set comes from the file
+    fresh.thin_coverage(batch[2:])
+    fresh.append_rows(batch[2:])
+    stored = [json.loads(line) for line in (tmp_path / "rows.jsonl").open()]
+    assert [r.get("orig_pcs") for r in stored] == [[1, 2, 3], None, [4], [8]]
+    (tmp_path / "controls.jsonl").write_text(json.dumps(
+        {"round": 3, "group": 1, "app": 5, "reproduced": True, "site": "entry", "pad": 2, "extra": 4}) + "\n")
+    got = [(r["round"], r["app"], r["status"]) for r in iter_rows(tmp_path)]
+    assert got == [(1, 5, "FAITHFUL"), (2, 5, "CO_DIVERGED"), (2, 7, "DIVERGES"), (3, 5, "COST_ARTIFACT")]
+    run.save("targets.json", [{"app": 5}, {"app": 7}])
+    table = summarize(run)
+    assert "4 judged (group, app) rows" in table
+    assert "| 5 | 3 | 3 | 1 | 0 | 1 / 0 | 0 / 1 | 0 | 0 | 4 |" in table      # pcs {1,2,3,8}

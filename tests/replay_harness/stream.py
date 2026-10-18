@@ -17,8 +17,8 @@ a run can be stopped and extended at will::
 Targets: the ``--top`` apps by call count (inner calls included) in a sample
 of the window's blocks, fixed in ``targets.json`` on the first run.
 
-Verdict rows (``rows.jsonl``) are per (group, target app): the statuses of
-``timetravel.classify``, plus LIFT_PENDING (the app's program at that block
+Verdict rows (``rows.jsonl``) are per (group, target app; ``orig_pcs`` holds
+only the app's pcs first covered there): the statuses of ``timetravel.classify``, plus LIFT_PENDING (the app's program at that block
 had no lift yet: it changed during the chunk, lifts happen between chunks) and
 LIFT_FAIL. Each target app also gets the entry-mutant oracle self-test once,
 on a block where it was judged (``selftest.json``). After each chunk, every
@@ -92,6 +92,24 @@ class Run:
         self.lock = threading.Lock()
         out.mkdir(parents=True, exist_ok=True)
         self.progress.mkdir(exist_ok=True)
+        self._cov: dict[int, set] | None = None
+
+    def thin_coverage(self, rows: list[dict]) -> None:
+        """Keep in each row's ``orig_pcs`` only the pcs not yet recorded for
+        its app: the summary needs their union, and full per-row lists made
+        rows.jsonl ~86% coverage (a GB per few days). Seeded once per process
+        by streaming the file."""
+        with self.lock:
+            if self._cov is None:
+                self._cov = defaultdict(set)
+                for r in _read_rows(self.out):
+                    self._cov[r["app"]].update(r.get("orig_pcs") or ())
+            for r in rows:
+                pcs = r.pop("orig_pcs", None) or ()
+                new = set(pcs) - self._cov[r["app"]]
+                if new:
+                    self._cov[r["app"]] |= new
+                    r["orig_pcs"] = sorted(new)
 
     def json(self, name: str, default=None):
         p = self.out / name
@@ -224,6 +242,7 @@ def stream_chunk(run: Run, lifts: Lifts, apps: list[int], chunk: tuple[int, int]
             new_programs.update({p: p for p in (blk.get("unlifted") or {}).values()})
             rows = block_rows(blk, lifts)
             if rows:
+                run.thin_coverage(rows)
                 run.append_rows(rows)
                 stats.update(r["status"] for r in rows)
             last = blk["round"]
@@ -245,7 +264,7 @@ def self_tests(run: Run, lifts: Lifts) -> dict:
     """Entry-mutant self-test per target app, on a block where it was judged."""
     done = run.json("selftest.json", {})
     first: dict[int, int] = {}
-    for r in load_rows(run.out):
+    for r in iter_rows(run.out):
         if r["status"] == "FAITHFUL" and str(r["app"]) not in done:
             first.setdefault(r["app"], r["round"])
     for app, rnd in sorted(first.items()):
@@ -268,28 +287,29 @@ def self_tests(run: Run, lifts: Lifts) -> dict:
 _FAILING_APP = re.compile(r"Details: app=(\d+)")
 
 
-def attribute(rows: list[dict]) -> list[dict]:
+def attribute(rows, by_group: dict[tuple, set] | None = None):
     """A group calling several target apps is judged once, and a divergence is
     recorded against each of them. When the failure names the app whose
     program failed (``Details: app=N``) and N is one of the group's targets,
-    the others are CO_DIVERGED: their own lift is not what failed."""
-    by_group: dict[tuple, set] = defaultdict(set)
-    for r in rows:
-        by_group[(r["round"], r["group"])].add(r["app"])
-    out = []
+    the others are CO_DIVERGED: their own lift is not what failed.
+    ``by_group`` (the target apps of each (round, group)) is computed from
+    ``rows`` when not given; it needs only the groups that diverged."""
+    if by_group is None:
+        rows = list(rows)
+        by_group = defaultdict(set)
+        for r in rows:
+            by_group[(r["round"], r["group"])].add(r["app"])
     for r in rows:
         m = _FAILING_APP.search(r.get("detail") or "") if r["status"] == "DIVERGES" else None
-        if m and int(m.group(1)) != r["app"] and int(m.group(1)) in by_group[(r["round"], r["group"])]:
+        if m and int(m.group(1)) != r["app"] and int(m.group(1)) in by_group.get((r["round"], r["group"]), ()):
             r = {**r, "status": "CO_DIVERGED", "culprit": int(m.group(1))}
-        out.append(r)
-    return out
+        yield r
 
 
-def apply_controls(rows: list[dict], controls: dict[tuple, dict]) -> list[dict]:
+def apply_controls(rows, controls: dict[tuple, dict]):
     """A DIVERGES row whose cost control reproduced it (``timetravel.cost_control``)
     is COST_ARTIFACT; the group's other DIVERGES targets are CO_DIVERGED with it."""
     culprit = {(k[0], k[1]): k[2] for k, c in controls.items() if c.get("reproduced")}
-    out = []
     for r in rows:
         k = (r["round"], r["group"])
         if r["status"] == "DIVERGES" and k in culprit:
@@ -298,8 +318,7 @@ def apply_controls(rows: list[dict], controls: dict[tuple, dict]) -> list[dict]:
                 r = {**r, "status": "COST_ARTIFACT", "control": {f: c[f] for f in ("site", "pad", "extra")}}
             else:
                 r = {**r, "status": "CO_DIVERGED", "culprit": culprit[k]}
-        out.append(r)
-    return out
+        yield r
 
 
 def load_controls(out: Path) -> dict[tuple, dict]:
@@ -314,7 +333,7 @@ def run_controls(run: Run) -> Counter:
     until one reproduces. Each try is recorded, so a rerun skips it."""
     done = load_controls(run.out)
     pending: dict[tuple, list[dict]] = defaultdict(list)
-    for r in load_rows(run.out):
+    for r in iter_rows(run.out):
         if r["status"] == "DIVERGES":
             pending[(r["round"], r["group"])].append(r)
     stats: Counter = Counter()
@@ -334,14 +353,33 @@ def run_controls(run: Run) -> Counter:
     return stats
 
 
-def load_rows(out: Path) -> list[dict]:
+def _read_rows(out: Path):
     p = out / "rows.jsonl"
-    rows = [json.loads(line) for line in p.open()] if p.exists() else []
-    return attribute(apply_controls(rows, load_controls(out)))
+    if p.exists():
+        with p.open() as fh:
+            for line in fh:
+                yield json.loads(line)
+
+
+def iter_rows(out: Path):
+    """The verdict rows, controls and attribution applied, STREAMED: the file
+    grows to gigabytes over a long run, and every reader only aggregates."""
+    controls = load_controls(out)
+    diverged = {(r["round"], r["group"]) for r in apply_controls(_read_rows(out), controls)
+                if r["status"] == "DIVERGES"}
+    by_group: dict[tuple, set] = defaultdict(set)
+    if diverged:
+        for r in _read_rows(out):
+            if (r["round"], r["group"]) in diverged:
+                by_group[(r["round"], r["group"])].add(r["app"])
+    yield from attribute(apply_controls(_read_rows(out), controls), by_group)
+
+
+def load_rows(out: Path) -> list[dict]:
+    return list(iter_rows(out))
 
 
 def summarize(run: Run) -> str:
-    rows = load_rows(run.out)
     meta = run.json("meta.json", {})
     targets = run.json("targets.json", [])
     selftest = run.json("selftest.json", {})
@@ -350,17 +388,26 @@ def summarize(run: Run) -> str:
     by_app: dict[int, Counter] = defaultdict(Counter)
     cov: dict[int, set] = defaultdict(set)
     rounds: dict[int, set] = defaultdict(set)
-    for r in rows:
+    bad: list[dict] = []
+    seen_bad: set = set()
+    for r in iter_rows(run.out):
         by_app[r["app"]][r["status"]] += 1
         cov[r["app"]].update(r.get("orig_pcs") or [])
         rounds[r["app"]].add(r["round"])
-    total = Counter(r["status"] for r in rows)
+        if r["status"] in ("DIVERGES", "BUDGET", "VERSION_ARTIFACT", "COST_ARTIFACT") \
+                and (r["app"], r["status"]) not in seen_bad:
+            seen_bad.add((r["app"], r["status"]))
+            bad.append(r)
+    total = Counter()
+    for c in by_app.values():
+        total.update(c)
+    n_rows = sum(total.values())
     lines = [
         "# Full-window historical replay",
         "",
         f"Window end round {meta.get('end')}; {done_blocks:,} blocks streamed "
         f"(every block, state carried forward). Targets: top {len(targets)} apps by calls. "
-        f"{len(rows):,} judged (group, app) rows: "
+        f"{n_rows:,} judged (group, app) rows: "
         + ", ".join(f"{k} {v:,}" for k, v in total.most_common()) + ".",
         "",
         "DIVERGES counts only the app whose program failed when the error names it; the other target apps "
@@ -381,15 +428,9 @@ def summarize(run: Run) -> str:
             f"{c['CO_DIVERGED']:,} / {c['AFTER_DIVERGENCE']:,} | {c['BUDGET']:,} / {c['COST_ARTIFACT']:,} | {c['LIFT_PENDING'] + c['LIFT_FAIL'] + c['LIFT_TIMEOUT'] + c['ASM_FAIL']:,} | "
             f"{c['REPLAY_MISS'] + c['REPLAY_ERROR']:,} | {len(cov[a]):,} | "
             f"{'—' if st is None else ('ok' if st['ok'] else 'BROKEN')} |")
-    bad = [r for r in rows if r["status"] in ("DIVERGES", "BUDGET", "VERSION_ARTIFACT", "COST_ARTIFACT")]
     if bad:
         lines += ["", "## Non-faithful rows (first per app/status)", ""]
-        seen = set()
         for r in bad:
-            k = (r["app"], r["status"])
-            if k in seen:
-                continue
-            seen.add(k)
             ctl = r.get("control")
             lines.append(f"- **{r['status']}** app {r['app']} round {r['round']} group {r['group']}: "
                          f"`{(r.get('detail') or '')[:300]}`"
@@ -476,7 +517,7 @@ def main(argv=None) -> int:
     text = summarize(run)
     (run.out / "SUMMARY.md").write_text(text)
     print(text)
-    return 1 if any(r["status"] == "DIVERGES" for r in load_rows(run.out)) else 0
+    return 1 if any(r["status"] == "DIVERGES" for r in iter_rows(run.out)) else 0
 
 
 if __name__ == "__main__":
