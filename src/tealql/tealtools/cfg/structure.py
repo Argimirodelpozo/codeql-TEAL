@@ -106,12 +106,6 @@ class ProgramStructure:
             return "subroutine"
         return "handler"
 
-    def subroutine_of(self, bb: BasicBlock) -> Optional[Subroutine]:
-        for s in self.subroutines:
-            if bb in s.body:
-                return s
-        return None
-
     def assignments_in(self, bbs) -> list[Assignment]:
         """All assignments in ``bbs``, sorted by source position."""
         bb_set = set(bbs)

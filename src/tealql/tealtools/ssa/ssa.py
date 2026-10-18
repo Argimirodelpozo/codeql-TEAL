@@ -671,18 +671,6 @@ class PySSA:
                 for e in b.exit_stack
             ]
 
-    # ----- helper: bb-by-key lookup --------------------------------------
-
-    @property
-    def _bb_by_key(self) -> dict:
-        # Cacheable because `self.blocks` is fixed before first use. Keep the
-        # single-underscore cache name: a `__` attribute is name-mangled, so the
-        # hasattr check misses and the dict is rebuilt on every call.
-        cache = getattr(self, "_bb_by_key_cache", None)
-        if cache is None:
-            cache = self._bb_by_key_cache = {b.key: b for b in self.blocks}
-        return cache
-
     # ----- diagnostic render --------------------------------------------
 
     def render(self) -> str:
@@ -729,11 +717,6 @@ def _fold_spec_fixed(a):
 def _compute_inner_txn_fields(prog: SSAProgram) -> list:
     from .inner_txn_fields import compute_inner_txn_fields
     return compute_inner_txn_fields(prog)
-
-
-def _compute_scratch_influence(prog: SSAProgram) -> dict:
-    from .scratch_influence import compute_scratch_influence
-    return compute_scratch_influence(prog)
 
 
 def _to_ssaprogram(py: PySSA, source: SSAProgram) -> SSAProgram:
@@ -1086,8 +1069,7 @@ def _apply_pyssa_to(
     ``source`` is a separately-loaded program (:meth:`PySSA.build`) or ``None``
     for the in-place case (:meth:`SSAProgram.__init__`), where annotations are
     read back out of ``prog`` itself. Chain structure survives off the hot path
-    on ``prog._pyssa`` / ``_phi_to_pyphi`` / ``_pyphi_to_phi``, which
-    :meth:`SSAProgram.chain_predecessors` and friends query."""
+    on ``prog._pyssa`` / ``_phi_to_pyphi``."""
     # HAZARD: snapshot everything re-read from `src` BEFORE wiping `prog` — in
     # the in-place case `src.vars` IS `prog.vars`, so the wipe would clobber the
     # const/range/type annotations being copied over.
@@ -1235,10 +1217,9 @@ def _apply_pyssa_to(
     for bb in prog.blocks.values():
         bb.stack_assignments = tuple(bb.assignments)
 
-    # 8) Chain-structure refs (chain root, propagation graph), off the hot path.
+    # 8) Chain-structure refs (the PyPhi propagation graph), off the hot path.
     prog._pyssa = py
     prog._phi_to_pyphi = {p: pp for pp, p in phi_map.items()}
-    prog._pyphi_to_phi = dict(phi_map)
 
     return prog
 

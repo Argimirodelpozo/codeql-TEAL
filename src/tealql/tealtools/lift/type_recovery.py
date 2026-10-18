@@ -19,7 +19,6 @@ from ..ssa.operands import imm0 as _imm0
 from . import pre_ir
 from ..language.avm import (_BYTES_CONSUME, _BYTES_OPS, _U64_CONSUME, _U64_OPS,
                       _field_type, avm, txn_field_avm_type)
-from .teal_const import _const_bytes
 
 logger = logging.getLogger("tealql.tealtools.lift")
 
@@ -39,15 +38,6 @@ def _itxn_field_avm(field: str):
 def _itob_const(v: int) -> "pre_ir.BytesConstant":
     """A uint64 placeholder as bytes: empty for the dead 0 seed, else its itob form."""
     return pre_ir.BytesConstant("0x" if v == 0 else "0x" + v.to_bytes(8, "big").hex())
-
-
-def _to_u64_const(b) -> "pre_ir.UInt64Constant":
-    """A bytes placeholder as uint64: empty -> 0, else its btoi value."""
-    try:
-        raw, _ = _const_bytes(getattr(b, "value", "") or "0x")
-        return pre_ir.UInt64Constant(int.from_bytes(raw[-8:], "big") if raw else 0)
-    except Exception:
-        return pre_ir.UInt64Constant(0)
 
 
 def _is_dead_placeholder(value) -> bool:

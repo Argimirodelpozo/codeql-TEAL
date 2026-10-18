@@ -556,71 +556,6 @@ class SSAProgram:
             out.append(a)
         return out
 
-    # -- chain-structure queries (backend-agnostic) ------------------------
-    #
-    # Most analyses only need the *leaf-set* of a phi — what SSAVars can
-    # flow in — and read it directly from ``phi.args``. A few analyses
-    # need *chain structure*: which intermediate phis sit between a phi
-    # and its leaves (loop detection, chain-root coalescing, etc.).
-    #
-    # ``Phi.args`` is collapsed to SSAVar leaves for fast iteration, so the
-    # structure lives on the auxiliary back-reference to the PyPhi graph.
-    # These helpers cross through the exact-object bridge, so
-    # consumers get structural queries without paying the iteration cost when
-    # they don't need them. (The CodeQL extractor used to carry the same
-    # structure in an ``IndirectPhi``'s args; nothing produces one any more.)
-
-    def chain_predecessors(self, phi: "Phi") -> list["Phi"]:
-        """Phis whose values flow into ``phi`` via propagation. Empty
-        for chain roots (whose args are all :class:`SSAVar`)."""
-        # Walk via the PyPhi graph if present.
-        # Local import to avoid hard dep on the PySSA builder here.
-        try:
-            from .ssa import PyPhi  # type: ignore
-        except Exception:
-            return []
-        pyphi = self.pyphi_for_phi(phi)
-        if pyphi is None:
-            return []
-        out: list[Phi] = []
-        for arg in pyphi.args:
-            if isinstance(arg, PyPhi):
-                w = self.phi_for_pyphi(arg)
-                if w is not None:
-                    out.append(w)
-        return out
-
-    def chain_root(self, phi: "Phi") -> "Phi":
-        """Walk the chain back to the phi whose args are all SSAVars
-        (the ``DirectPhi``-equivalent at the start of the chain). For a
-        chain root, returns ``phi`` itself. Cycle-safe via ``seen`` set."""
-        seen: set = set()
-        cur = phi
-        while True:
-            if id(cur) in seen:
-                return cur
-            seen.add(id(cur))
-            preds = self.chain_predecessors(cur)
-            if not preds:
-                return cur
-            cur = preds[0]
-
-    def chain_reaches(self, src: "Phi", dst: "Phi") -> bool:
-        """True if ``src`` propagates to ``dst`` along the chain."""
-        if src is dst:
-            return True
-        seen: set = {id(dst)}
-        stack = [dst]
-        while stack:
-            cur = stack.pop()
-            for p in self.chain_predecessors(cur):
-                if p is src:
-                    return True
-                if id(p) not in seen:
-                    seen.add(id(p))
-                    stack.append(p)
-        return False
-
     # -- query-scoped analysis ----------------------------------------------
 
     def analysis_context(self):
@@ -861,9 +796,6 @@ class SSAProgram:
     def functional(self, **kwargs) -> str:
         from .render import functional as _impl
         return _impl(self, **kwargs)
-
-    def print_functional(self, **kwargs) -> None:
-        print(self.functional(**kwargs))
 
     def functional_by_block(self, **kwargs) -> str:
         from .render import functional_by_block as _impl
