@@ -8,7 +8,7 @@ from ..language.avm import STATE_WRITE_OPS
 from ..language.effects import STATE_EFFECTS
 from . import pre_ir
 from .taint_flow import (
-    UNKNOWN_SOURCE, value_sources, source_label, transfer_fixpoint, sub_local_scratch,
+    SINK_OPS, UNKNOWN_SOURCE, value_sources, source_label, transfer_fixpoint, sub_local_scratch,
     _trusted_apparg, _intr, _invoke as _invoke,
     _scratch_unknown_write as _scratch_unknown_write,
 )
@@ -455,32 +455,35 @@ def unresolved_taint(lifter) -> Mapping[int, frozenset[str]]:
     return result
 
 
-# Sensitive sinks: persistent-state writes, inner-txn fields (who gets paid, how
-# much) and logs. `assert` is a sink too (user-controlled control flow) but is not an
-# intrinsic, so each consumer below matches pre_ir.Assert separately.
-_SINKS = STATE_WRITE_OPS | {"log", "itxn_field"}
+_SINKS = SINK_OPS
 
 
-def tainted_sinks(lifter, taint=None) -> list:
-    """``(sources, sink_op, immediates)`` for every sink whose operands include a
-    tainted value; pass a precomputed ``taint`` map or one is built."""
-    taint = _merge_unresolved(lifter, taint)
-    out = []
-    for b in pre_ir.blocks(lifter.subs):
+def _tainted_sink_hits(subs, taint):
+    """``(op, intrinsic, hit)`` for every sink op of ``subs`` (in block order) whose
+    operands carry taint: a :data:`_SINKS` intrinsic, or an ``assert`` (then
+    ``intrinsic`` is None and the condition is the operand)."""
+    for b in pre_ir.blocks(subs):
         for o in b.ops:
             s = _intr(o)
             if s is not None and s.op in _SINKS:
-                args, op, imm = s.args, s.op, s.immediates
+                args, op = s.args, s.op
             elif isinstance(o, pre_ir.Assert):
-                args, op, imm = [o.condition], "assert", None
+                args, op, s = [o.condition], "assert", None
             else:
                 continue
             hit = set()
             for a in args:
                 hit |= value_sources(a, taint)
             if hit:
-                out.append((frozenset(hit), op, imm))
-    return out
+                yield op, s, hit
+
+
+def tainted_sinks(lifter, taint=None) -> list:
+    """``(sources, sink_op, immediates)`` for every sink whose operands include a
+    tainted value; pass a precomputed ``taint`` map or one is built."""
+    taint = _merge_unresolved(lifter, taint)
+    return [(frozenset(hit), op, s.immediates if s is not None else None)
+            for op, s, hit in _tainted_sink_hits(lifter.subs, taint)]
 
 
 # Sink categories, most-to-least security-relevant, for the report.
@@ -503,27 +506,17 @@ def taint_report(lifter, name: str = "<program>") -> str:
     groups: dict = defaultdict(lambda: {"lines": set(), "sources": set()})
     cat_of = {op: i for i, (_, ops) in enumerate(_CATEGORIES) for op in ops}
     nflows = 0
-    for sub in lifter.subs:
-        for b in sub.body:
-            for o in b.ops:
-                s = _intr(o)
-                if s is not None and s.op in _SINKS:
-                    op, fld, line, args = s.op, (str(s.immediates[0]) if s.immediates
-                                                 else ""), getattr(s, "line", 0), s.args
-                elif isinstance(o, pre_ir.Assert):
-                    op, fld, line, args = "assert", "", 0, [o.condition]
-                else:
-                    continue
-                hit = set()
-                for a in args:
-                    hit |= value_sources(a, taint)
-                if not hit:
-                    continue
-                present |= hit
-                nflows += 1
-                g = groups[(cat_of.get(op, 99), op, fld)]
-                g["lines"].add(line)
-                g["sources"] |= hit
+    for op, s, hit in _tainted_sink_hits(lifter.subs, taint):
+        if s is not None:
+            fld = str(s.immediates[0]) if s.immediates else ""
+            line = getattr(s, "line", 0)
+        else:
+            fld, line = "", 0
+        present |= hit
+        nflows += 1
+        g = groups[(cat_of.get(op, 99), op, fld)]
+        g["lines"].add(line)
+        g["sources"] |= hit
 
     out = ["=" * 70,
            f"  USER-INPUT TAINT REPORT  --  {name}",

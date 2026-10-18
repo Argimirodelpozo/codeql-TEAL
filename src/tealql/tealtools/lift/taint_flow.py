@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from ..ssa import Phi, SSAVar
 from ..language.avm import (
+    STATE_WRITE_OPS,
     attacker_input_label as _attacker_input_label,
 )
 from . import pre_ir
@@ -128,6 +129,12 @@ def _trusted_apparg(src, trusted_args) -> bool:
         return int(imm[1]) in trusted_args
     except ValueError:
         return False
+
+
+# Sensitive sink intrinsics: persistent-state writes, inner-txn fields (who gets
+# paid, how much) and logs. `assert` is a sink too (user-controlled control flow)
+# but is not an intrinsic, so each consumer matches pre_ir.Assert separately.
+SINK_OPS: frozenset[str] = STATE_WRITE_OPS | {"log", "itxn_field"}
 
 
 def _intr(o):
