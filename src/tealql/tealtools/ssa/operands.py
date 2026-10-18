@@ -14,6 +14,7 @@ from typing import Optional, TYPE_CHECKING
 if TYPE_CHECKING:
     from .models import Assignment, BasicBlock
 
+from ..language.avm import _TERMINATOR_OPS
 from .models import Const
 
 
@@ -118,13 +119,11 @@ def canonical_assignments(bb: "BasicBlock") -> tuple["Assignment", ...]:
 def terminator_op(bb) -> Optional[str]:
     """The control op ending ``bb``'s canonical stream, or ``None``.
 
-    The ONE spelling of the control-op set — `loop_bounds` and the cost model
-    each carried a verbatim copy, so a future control op would have to be
-    remembered twice or the loop graph and the cost model silently disagree."""
+    The control-op set is :data:`..language.avm._TERMINATOR_OPS` — `loop_bounds`
+    and the cost model each carried a verbatim copy, so a future control op
+    would have to be remembered twice or the loop graph and the cost model
+    silently disagree."""
     for assignment in reversed(canonical_assignments(bb)):
-        if assignment.op in {
-            "b", "bz", "bnz", "switch", "match", "callsub",
-            "retsub", "return", "err",
-        }:
+        if assignment.op in _TERMINATOR_OPS:
             return assignment.op
     return None
