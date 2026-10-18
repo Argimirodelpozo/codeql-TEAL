@@ -97,9 +97,7 @@ def propagate_ranges(prog: SSAProgram) -> None:
                 arg_ranges.append(r)
             if not ok:
                 continue
-            lo = min(r.lo for r in arg_ranges)
-            hi = max(r.hi for r in arg_ranges)
-            ph.range = IntRange(lo, hi)
+            ph.range = IntRange.hull(arg_ranges)
             arg_types = [getattr(arg, "type", None) for arg in ph.args]
             if all(t is not None and t.kind == "uint64" for t in arg_types):
                 ph.type = UINT64

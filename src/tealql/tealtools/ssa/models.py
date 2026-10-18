@@ -185,6 +185,12 @@ class IntRange:
         if self.lo > self.hi:
             raise ValueError(f"IntRange lo>hi: {self.lo}..{self.hi}")
 
+    @staticmethod
+    def hull(ranges) -> "IntRange":
+        """The smallest range covering every range in the (re-iterable)
+        ``ranges``. An empty sequence raises ``ValueError`` from ``min``."""
+        return IntRange(min(r.lo for r in ranges), max(r.hi for r in ranges))
+
     def annotate(self, var_id: str) -> str:
         if self.lo == self.hi:
             return f"[{var_id}={self.lo}]"

@@ -433,9 +433,8 @@ def propagate_byte_lengths(prog: SSAProgram) -> int:
         ranges = [_operand_byte_length_range(a) for a in ph.args]
         if any(r is None for r in ranges):
             return
-        lo = min(r.lo for r in ranges)  # type: ignore[union-attr]
-        hi = max(r.hi for r in ranges)  # type: ignore[union-attr]
-        if _set_byte_length_range(ph, lo, hi):
+        hull = IntRange.hull(ranges)
+        if _set_byte_length_range(ph, hull.lo, hull.hi):
             tagged += 1
             fan_out(ph)
 

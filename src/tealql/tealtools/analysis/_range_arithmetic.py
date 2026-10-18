@@ -207,9 +207,8 @@ def propagate_range_arithmetic(prog: SSAProgram) -> int:
             arg_ranges = [_operand_range(arg) for arg in ph.args]
             if any(r is None for r in arg_ranges):
                 continue
-            lo = min(r.lo for r in arg_ranges)
-            hi = max(r.hi for r in arg_ranges)
-            if _set_range(ph, lo, hi):
+            hull = IntRange.hull(arg_ranges)
+            if _set_range(ph, hull.lo, hull.hi):
                 # Type unifies to uint64 only when every arg agrees.
                 arg_types = [getattr(arg, "type", None) for arg in ph.args]
                 if all(t is not None and t.kind == "uint64" for t in arg_types):

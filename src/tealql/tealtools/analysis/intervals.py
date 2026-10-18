@@ -177,7 +177,7 @@ class IntervalQuery:
             if isinstance(value, Phi) and value.args:
                 arms = [self._query(a, file, line, active) for a in value.args]
                 if all(a is not None for a in arms):
-                    derived = IntRange(min(a.lo for a in arms), max(a.hi for a in arms))
+                    derived = IntRange.hull(arms)
             elif isinstance(value, SSAVar) and value.defined_by is not None:
                 assignment = value.defined_by
                 location = assignment.location
