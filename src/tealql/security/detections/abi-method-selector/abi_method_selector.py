@@ -24,6 +24,7 @@ from tealql.security._action_guards import (ONC_NOOP, _is_app_creation_path,
 from tealql.security._approval_exit import _ApprovalExitViolation
 from tealql.security._field_protection import approval_exit_protected_for_arg_reads
 from tealql.security._program_shape import (_txna_reads, approving_exits,
+                                            ssavar_outputs,
                                             unguarded_entry_path_exists)
 from tealql.security._value_flow import (cached_path_predicates,
                                          resolve_through_copies)
@@ -49,10 +50,7 @@ class AbiMethodSelectorDetector:
         self.prog = prog
         self.file = file
         self._pp = path_predicates
-        self._selector_vars = {
-            out for a in _txna_reads(prog, _SELECTOR, file=file)
-            for out in a.outputs if isinstance(out, SSAVar)
-        }
+        self._selector_vars = ssavar_outputs(_txna_reads(prog, _SELECTOR, file=file))
 
     @property
     def pp(self) -> PathPredicateAnalysis:
@@ -181,7 +179,7 @@ class AbiMethodSelectorDetector:
         for a in self.prog.assignments:
             if (a.op == "btoi" and a.inputs and a.outputs
                     and resolve_through_copies(self.prog, a.inputs[0]) in self._selector_vars):
-                sel.update(o for o in a.outputs if isinstance(o, SSAVar))
+                sel.update(ssavar_outputs((a,)))
         for a in self.prog.assignments:
             if self.file is not None and a.location.file != self.file:
                 continue

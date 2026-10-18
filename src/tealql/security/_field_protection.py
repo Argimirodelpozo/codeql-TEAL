@@ -388,7 +388,7 @@ def field_validated_on_all_paths(
     reads = (_signed_txn_field_reads(prog, field, file=file) if signed_txn_only
              else txn_field_reads(prog, field, file=file)
              + gtxn_field_reads(prog, field, file=file))
-    field_vars = {out for a in reads for out in a.outputs if isinstance(out, SSAVar)}
+    field_vars = ssavar_outputs(reads)
     if not field_vars:
         return False
     gates = _field_enforcement_bbs(prog, field_vars, file=file, safe=safe)
@@ -481,10 +481,7 @@ def approval_exit_protected_for_arg_reads(
     """
     if file is None:
         file = exit_bb.file
-    seeds = {
-        out for assignment in _txna_reads(prog, immediates, file=file)
-        for out in assignment.outputs if isinstance(out, SSAVar)
-    }
+    seeds = ssavar_outputs(_txna_reads(prog, immediates, file=file))
     return _approval_exit_protected_for_seeds(
         prog, exit_bb, seeds, file=file, allow_unary_cmp=True,
         trusted_other=_non_caller_value_seeds(prog, file=file),
