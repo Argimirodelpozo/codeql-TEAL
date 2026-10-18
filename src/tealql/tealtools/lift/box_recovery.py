@@ -248,16 +248,14 @@ class _BoxFlow:
         """Whether the program compares an ApplicationArgs-derived value against a
         Sender-derived one ANYWHERE (``eq``/``neq``) — evidence it validates a
         caller-supplied identity, which suppresses the access-control finding."""
+        from ._ir_walk import walk_sources
         M, AVMOp = self.M, self.AVMOp
-        for s in self.subs_all:
-            for bb in s.body:
-                for o in bb.ops:
-                    src = o.source if isinstance(o, M.Assignment) else o
-                    if isinstance(src, M.Intrinsic) and src.op in (AVMOp.eq, AVMOp.neq) \
-                            and len(src.args) == 2:
-                        r = self.roots(src.args[0], s) | self.roots(src.args[1], s)
-                        if "Sender" in r and "AppArgs" in r:
-                            return True
+        for s, o, src in walk_sources(self.subs_all):
+            if isinstance(src, M.Intrinsic) and src.op in (AVMOp.eq, AVMOp.neq) \
+                    and len(src.args) == 2:
+                r = self.roots(src.args[0], s) | self.roots(src.args[1], s)
+                if "Sender" in r and "AppArgs" in r:
+                    return True
         return False
 
 
@@ -270,6 +268,7 @@ def recover_storage_schema(main, subs, guesses=None, confident=None) -> list:
     from puya.ir.types_ import PrimitiveIRType as PT
 
     from . import to_puya_ir
+    from ._ir_walk import walk_sources
     if guesses is None:
         guesses, confident = to_puya_ir.guess_encoded_types_scored(main, subs)
     confident = confident or {}
@@ -341,47 +340,44 @@ def recover_storage_schema(main, subs, guesses=None, confident=None) -> list:
     # Full-value observations, retained until all sites have been seen. Writes
     # outrank reads; conflicting/unknown writes poison an exact recovered type.
     value_observations: dict = {}
-    for s in flow.subs_all:
-        for bb in s.body:
-            for o in bb.ops:
-                src = o.source if isinstance(o, M.Assignment) else o
-                if not isinstance(src, M.Intrinsic):
-                    continue
-                meta = _STORAGE_OPS.get(src.op.name)
-                if meta is None or len(src.args) <= meta[1]:
-                    continue
-                kind, kidx, vidx, v_is_result = meta
-                app_idx = (0 if src.op is AVMOp.app_global_get_ex
-                           else 1 if src.op is AVMOp.app_local_get_ex else None)
-                if app_idx is not None and not _is_current_app(src.args[app_idx], s):
-                    continue
-                is_map, kp, kt = _classify_key(src.args[kidx], s)
-                gk = (kind, is_map, kp, kt or "")
-                e = groups.get(gk)
-                if e is None:
-                    e = groups[gk] = StorageEntry(
-                        kind=kind, is_map=is_map, key_or_prefix=kp,
-                        arc56_key_type=kt,
-                        storage_type="bytes" if kind == "box" else "unknown")
-                e.ops.add(src.op.name)
-                # recover the value type (resolving a value passed in as a param)
-                vv = None
-                if v_is_result and isinstance(o, M.Assignment) and o.targets:
-                    vv = o.targets[0]
-                elif vidx is not None and len(src.args) > vidx:
-                    vv, _ = flow.deref(src.args[vidx], s)
-                if vv is not None:
-                    vt, vc, st = _type_of(vv)
-                    # Puya must concretise a residual `?` before lowering and
-                    # uses uint64 as the fallback. A discarded polymorphic state
-                    # read has no evidence for that family, so do not publish the
-                    # lowering default as a confident recovered schema type.
-                    if (v_is_result and kind in ("global", "local")
-                            and isinstance(vv, M.Register)
-                            and (s.id, vv.name, vv.version) not in used_registers):
-                        vt, vc, st = None, False, "unknown"
-                    value_observations.setdefault(gk, []).append(
-                        (vidx is not None, vt, vc, st))
+    for s, o, src in walk_sources(flow.subs_all):
+        if not isinstance(src, M.Intrinsic):
+            continue
+        meta = _STORAGE_OPS.get(src.op.name)
+        if meta is None or len(src.args) <= meta[1]:
+            continue
+        kind, kidx, vidx, v_is_result = meta
+        app_idx = (0 if src.op is AVMOp.app_global_get_ex
+                   else 1 if src.op is AVMOp.app_local_get_ex else None)
+        if app_idx is not None and not _is_current_app(src.args[app_idx], s):
+            continue
+        is_map, kp, kt = _classify_key(src.args[kidx], s)
+        gk = (kind, is_map, kp, kt or "")
+        e = groups.get(gk)
+        if e is None:
+            e = groups[gk] = StorageEntry(
+                kind=kind, is_map=is_map, key_or_prefix=kp,
+                arc56_key_type=kt,
+                storage_type="bytes" if kind == "box" else "unknown")
+        e.ops.add(src.op.name)
+        # recover the value type (resolving a value passed in as a param)
+        vv = None
+        if v_is_result and isinstance(o, M.Assignment) and o.targets:
+            vv = o.targets[0]
+        elif vidx is not None and len(src.args) > vidx:
+            vv, _ = flow.deref(src.args[vidx], s)
+        if vv is not None:
+            vt, vc, st = _type_of(vv)
+            # Puya must concretise a residual `?` before lowering and
+            # uses uint64 as the fallback. A discarded polymorphic state
+            # read has no evidence for that family, so do not publish the
+            # lowering default as a confident recovered schema type.
+            if (v_is_result and kind in ("global", "local")
+                    and isinstance(vv, M.Register)
+                    and (s.id, vv.name, vv.version) not in used_registers):
+                vt, vc, st = None, False, "unknown"
+            value_observations.setdefault(gk, []).append(
+                (vidx is not None, vt, vc, st))
 
     for gk, observations in value_observations.items():
         # A complete write says more about stored values than any read. In
@@ -431,6 +427,7 @@ def box_access_control(main, subs, guesses=None, confident=None) -> list:
     from puya.ir.avm_ops import AVMOp
 
     from . import to_puya_ir
+    from ._ir_walk import walk_sources
     if guesses is None:
         guesses, confident = to_puya_ir.guess_encoded_types_scored(main, subs)
 
@@ -460,32 +457,29 @@ def box_access_control(main, subs, guesses=None, confident=None) -> list:
         return None
 
     found: dict = {}
-    for s in flow.subs_all:
-        for bb in s.body:
-            for o in bb.ops:
-                src = o.source if isinstance(o, M.Assignment) else o
-                if not (isinstance(src, M.Intrinsic)
-                        and src.op.name.startswith("box_") and src.args):
-                    continue
-                kv, ksub = flow.deref(src.args[0], s)
-                kd = (flow.reg_def.get((ksub.id, kv.name, kv.version))
-                      if isinstance(kv, M.Register) else None)
-                if not (isinstance(kd, M.Intrinsic) and kd.op is AVMOp.concat
-                        and len(kd.args) == 2):
-                    continue
-                p, _ = flow.deref(kd.args[0], ksub)
-                if not isinstance(p, M.BytesConstant):
-                    continue
-                label = _addr_label(kd.args[1])
-                if label is None:
-                    continue
-                rr = flow.roots(kd.args[1], ksub)
-                if not ("AppArgs" in rr and "Sender" not in rr):
-                    continue
-                f = found.get(p.value)
-                if f is None:
-                    f = found[p.value] = BoxAccessFinding(p.value, label)
-                f.ops.add(src.op.name)
-                if src.op.name in _WRITE_OPS:
-                    f.written = True
+    for s, o, src in walk_sources(flow.subs_all):
+        if not (isinstance(src, M.Intrinsic)
+                and src.op.name.startswith("box_") and src.args):
+            continue
+        kv, ksub = flow.deref(src.args[0], s)
+        kd = (flow.reg_def.get((ksub.id, kv.name, kv.version))
+              if isinstance(kv, M.Register) else None)
+        if not (isinstance(kd, M.Intrinsic) and kd.op is AVMOp.concat
+                and len(kd.args) == 2):
+            continue
+        p, _ = flow.deref(kd.args[0], ksub)
+        if not isinstance(p, M.BytesConstant):
+            continue
+        label = _addr_label(kd.args[1])
+        if label is None:
+            continue
+        rr = flow.roots(kd.args[1], ksub)
+        if not ("AppArgs" in rr and "Sender" not in rr):
+            continue
+        f = found.get(p.value)
+        if f is None:
+            f = found[p.value] = BoxAccessFinding(p.value, label)
+        f.ops.add(src.op.name)
+        if src.op.name in _WRITE_OPS:
+            f.written = True
     return sorted(found.values(), key=lambda x: x.prefix)

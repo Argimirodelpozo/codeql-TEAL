@@ -21,6 +21,7 @@ from puya.parse import SourceLocation
 
 from . import pre_ir, transforms
 from . import _puya_compat as _compat
+from ._ir_walk import walk_ops, walk_sources
 from .lift import _Lifter
 from .teal_const import _const_bytes, _load_src, _tmpl_name
 from ..ast.literals import is_template_variable, tokenize_operands as _tokenize_operands
@@ -683,21 +684,18 @@ def _address_operand_identities(main, subs) -> set:
     must stay scoped by owning subroutine (``id(s)``): names like ``l%3`` / ``p%0``
     are unique only WITHIN a sub, so a global set retypes unrelated registers."""
     out: set = set()
-    for s in (main, *subs):
-        for bb in s.body:
-            for o in bb.ops:
-                src = o.source if isinstance(o, M.Assignment) else o
-                if not isinstance(src, M.Intrinsic) or not src.args:
-                    continue
-                r = None
-                if src.op is AVMOp.itxn_field and src.immediates \
-                        and str(src.immediates[0]).strip() in _ACCOUNT_TXN_FIELDS:
-                    r = src.args[0]
-                elif src.op in _ACCOUNT_OPERAND_OPS:
-                    r = src.args[0]
-                if isinstance(r, M.Register) \
-                        and r.ir_type.avm_type == PT.account.avm_type:
-                    out.add((id(s), r.name, r.version))
+    for s, o, src in walk_sources((main, *subs)):
+        if not isinstance(src, M.Intrinsic) or not src.args:
+            continue
+        r = None
+        if src.op is AVMOp.itxn_field and src.immediates \
+                and str(src.immediates[0]).strip() in _ACCOUNT_TXN_FIELDS:
+            r = src.args[0]
+        elif src.op in _ACCOUNT_OPERAND_OPS:
+            r = src.args[0]
+        if isinstance(r, M.Register) \
+                and r.ir_type.avm_type == PT.account.avm_type:
+            out.add((id(s), r.name, r.version))
     return out
 
 
@@ -712,32 +710,30 @@ def _recover_ir_types(main, subs, allow=_is_refinable, byte_lengths=None) -> int
     from puya.ir.types_ import SizedBytesType
     byte_lengths = byte_lengths or {}
     n = 0
-    for s in (main, *subs):
-        for bb in s.body:
-            for o in bb.ops:
-                if not (isinstance(o, M.Assignment)
-                        and isinstance(o.source, M.Intrinsic)):
-                    continue
-                changed = False
-                rets = _langspec_returns(o.source)
-                if rets is not None:
-                    for tgt, rt in zip(o.targets, rets):
-                        cur = tgt.ir_type
-                        if (allow(rt) and cur in _COARSE_BASE
-                                and rt.avm_type == cur.avm_type):
-                            _compat.set_ir_type(tgt, rt)
-                            changed = True
-                            n += 1
-                # Refine a target the langspec left as plain `bytes` when the
-                # byte-length pass knows its exact length.
-                for tgt in o.targets:
-                    if tgt.ir_type is PT.bytes and id(tgt) in byte_lengths:
-                        _compat.set_ir_type(tgt, SizedBytesType(byte_lengths[id(tgt)]))
-                        changed = True
-                        n += 1
-                if changed:
-                    _compat.set_intrinsic_types(
-                        o.source, (t.ir_type for t in o.targets))
+    for s, o in walk_ops((main, *subs)):
+        if not (isinstance(o, M.Assignment)
+                and isinstance(o.source, M.Intrinsic)):
+            continue
+        changed = False
+        rets = _langspec_returns(o.source)
+        if rets is not None:
+            for tgt, rt in zip(o.targets, rets):
+                cur = tgt.ir_type
+                if (allow(rt) and cur in _COARSE_BASE
+                        and rt.avm_type == cur.avm_type):
+                    _compat.set_ir_type(tgt, rt)
+                    changed = True
+                    n += 1
+        # Refine a target the langspec left as plain `bytes` when the
+        # byte-length pass knows its exact length.
+        for tgt in o.targets:
+            if tgt.ir_type is PT.bytes and id(tgt) in byte_lengths:
+                _compat.set_ir_type(tgt, SizedBytesType(byte_lengths[id(tgt)]))
+                changed = True
+                n += 1
+        if changed:
+            _compat.set_intrinsic_types(
+                o.source, (t.ir_type for t in o.targets))
 
     # USAGE-BACKWARD account recovery: the langspec pass above types addresses
     # FORWARD from producer ops, this one from CONSUMPTION -- a value fed to an
@@ -745,22 +741,20 @@ def _recover_ir_types(main, subs, allow=_is_refinable, byte_lengths=None) -> int
     # still a pure annotation.
     addr_ids = _address_operand_identities(main, subs)
     if addr_ids:
-        for s in (main, *subs):
-            for bb in s.body:
-                for o in bb.ops:
-                    if not (isinstance(o, M.Assignment)
-                            and isinstance(o.source, M.Intrinsic)):
-                        continue
-                    hit = False
-                    for tgt in o.targets:
-                        if tgt.ir_type is PT.bytes \
-                                and (id(s), tgt.name, tgt.version) in addr_ids:
-                            _compat.set_ir_type(tgt, PT.account)
-                            n += 1
-                            hit = True
-                    if hit:
-                        _compat.set_intrinsic_types(
-                            o.source, (t.ir_type for t in o.targets))
+        for s, o in walk_ops((main, *subs)):
+            if not (isinstance(o, M.Assignment)
+                    and isinstance(o.source, M.Intrinsic)):
+                continue
+            hit = False
+            for tgt in o.targets:
+                if tgt.ir_type is PT.bytes \
+                        and (id(s), tgt.name, tgt.version) in addr_ids:
+                    _compat.set_ir_type(tgt, PT.account)
+                    n += 1
+                    hit = True
+            if hit:
+                _compat.set_intrinsic_types(
+                    o.source, (t.ir_type for t in o.targets))
     return n
 
 
