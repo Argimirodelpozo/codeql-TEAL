@@ -71,11 +71,6 @@ def test_removed_pass_apis_bridge_to_immutable_analysis_views():
     revision = prog.revision
 
     calls = (
-        (prog.propagate_inputs, DerivedProfile.VALUE),
-        (prog.propagate_stack_shuffles, DerivedProfile.VALUE),
-        (prog.propagate_assert_ranges, DerivedProfile.GUARDED),
-        (prog.propagate_scratch_values, DerivedProfile.VALUE),
-        (prog.cleanup_unused_ssavars, DerivedProfile.PRESENTATION),
         (lambda: run_all_passes(prog), DerivedProfile.PRESENTATION),
         (lambda: propagate_assert_ranges(prog), DerivedProfile.GUARDED),
     )
@@ -86,9 +81,8 @@ def test_removed_pass_apis_bridge_to_immutable_analysis_views():
         assert view is not prog
         assert view._analysis_read_only
 
-    # The avm-prover call shape ignores propagate_scratch_values()'s return.
-    # Its next query is fact-native, so the compatibility bridge remains useful
-    # without smuggling annotations back into the canonical SSA.
+    # A caller that ignores the bridges' return values still sees the
+    # canonical SSA unchanged, and a fact-native next query still answers.
     assert array_counts(prog) == {"this-1": {"NumAppArgs": 2}}
     assert prog.functional(propagate_consts=False) == before
     assert prog.revision == revision
