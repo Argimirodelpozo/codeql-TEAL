@@ -1,5 +1,5 @@
 """Cross-contract *super*-CFG: one basic-block graph spanning a caller plus every
-transitively-reachable callee, so reachability / dominance / path queries span
+transitively-reachable callee, so reachability / dominance queries span
 the whole call graph (e.g. "does a caller guard dominate a callee sink?").
 
 Blocks are qualified by the contract they live in (:class:`SuperBlock`,
@@ -176,55 +176,6 @@ class SuperCFG:
                     queue.append(s)
         return seen
 
-    def reachable_to(self, dst: SuperBlock) -> set[SuperBlock]:
-        seen: set[SuperBlock] = {dst}
-        queue: deque[SuperBlock] = deque([dst])
-        while queue:
-            for p in self.predecessors(queue.popleft()):
-                if p not in seen:
-                    seen.add(p)
-                    queue.append(p)
-        return seen
-
-    def reaches(self, src: SuperBlock, dst: SuperBlock) -> bool:
-        return src is dst or dst in self.reachable_from(src)
-
-    # --- path enumeration ---------------------------------------------
-
-    def paths(
-        self,
-        src: SuperBlock,
-        dst: SuperBlock,
-        *,
-        max_paths: int = 100,
-        max_length: Optional[int] = None,
-    ) -> list[list[SuperBlock]]:
-        """All simple (cycle-free) paths ``src`` -> ``dst`` across the boundary,
-        shortest first; the caps and their hazard mirror :meth:`CFG.paths`."""
-        if src == dst:
-            return [[src]]
-        out: list[list[SuperBlock]] = []
-
-        def dfs(node: SuperBlock, path: list[SuperBlock], visited: set[SuperBlock]) -> None:
-            if len(out) >= max_paths:
-                return
-            if max_length is not None and len(path) > max_length:
-                return
-            for s in self.successors(node):
-                if s in visited:
-                    continue
-                new_path = path + [s]
-                if s == dst:
-                    out.append(new_path)
-                    if len(out) >= max_paths:
-                        return
-                    continue
-                dfs(s, new_path, visited | {s})
-
-        dfs(src, [src], {src})
-        out.sort(key=len)
-        return out
-
     # --- dominance ----------------------------------------------------
 
     def dominators(self, target: SuperBlock) -> set[SuperBlock]:
@@ -234,9 +185,6 @@ class SuperCFG:
 
     def dominates(self, a: SuperBlock, b: SuperBlock) -> bool:
         return a in self.dominators(b)
-
-    def strictly_dominates(self, a: SuperBlock, b: SuperBlock) -> bool:
-        return a is not b and self.dominates(a, b)
 
     def _all_dominators(self) -> dict[SuperBlock, set[SuperBlock]]:
         cached = getattr(self, "_dom_cache", None)
