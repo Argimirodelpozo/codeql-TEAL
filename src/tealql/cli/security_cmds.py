@@ -145,11 +145,7 @@ def _cmd_audit(args) -> int:
             "findings": {name: {"severity": group_sev[name],
                                 "findings": [finding_to_dict(v, name) for v in own[name]]}
                          for name in ordered},               # severity-ordered
-            "cross_contract_findings": [
-                {"app_id": f.app_id, "detector": f.detector_name,
-                 "message": f.violation.pretty(),
-                 "finding": normalize_violation(f.violation, f.detector_name).to_dict()}
-                for f in cross],
+            "cross_contract_findings": [f.to_dict() for f in cross],
         }, indent=2))
         return 2 if not health.complete else 1 if (n_own or cross) else 0
 
@@ -236,13 +232,7 @@ def _cmd_xcontract(args) -> int:
             "cross_auth_findings": [finding_to_dict(f) for f in auth],
         }
         if args.detections or args.detector:
-            from tealql.security.findings import normalize_violation
-            payload["cross_detection_findings"] = [
-                {"app_id": f.app_id, "detector": f.detector_name,
-                 "message": f.violation.pretty(),
-                 "finding": normalize_violation(f.violation, f.detector_name).to_dict()}
-                for f in sg_findings
-            ]
+            payload["cross_detection_findings"] = [f.to_dict() for f in sg_findings]
         print(_json.dumps(payload, indent=2))
     else:
         print(render_xcontract(graph.sites, graph.analyses))

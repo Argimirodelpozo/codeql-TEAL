@@ -94,3 +94,22 @@ def test_cached_audit_retains_detector_degradation(tmp_path, capsys, monkeypatch
     result = json.loads(capsys.readouterr().out)
     assert not result['complete']
     assert any(n['detector'] == 'rekey-to' for n in result['notifications'])
+
+
+def test_cross_contract_json_grades_a_finding_by_its_detector_not_the_display_name():
+    """`audit --json` / `xcontract --json` normalized cross-contract findings under
+    the display name "sec-guide/<kebab>", which DETECTORS is not keyed by: every
+    such finding came out medium/high with a prefixed rule_id."""
+    from tealql.security import confidence_of, severity_of
+    from tealql.security.xcontract import CrossSecGuideFinding
+
+    class V:
+        line, file = 16, "callee.teal"
+
+        def pretty(self):
+            return "Application is deletable at exit callee.teal:16"
+    d = CrossSecGuideFinding(7, "sec-guide/is-deletable", V()).to_dict()
+    assert severity_of("is-deletable") == "informational"           # control: not the default
+    assert (d["finding"]["rule_id"], d["finding"]["severity"], d["finding"]["confidence"]) == (
+        "is-deletable", "informational", confidence_of("is-deletable"))
+    assert (d["app_id"], d["detector"], d["finding"]["line"]) == (7, "sec-guide/is-deletable", 16)

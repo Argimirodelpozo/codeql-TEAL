@@ -32,6 +32,18 @@ class CrossSecGuideFinding:
     detector_name: str   # e.g. "sec-guide/is-deletable"
     violation: object    # any Finding (with .pretty())
 
+    @property
+    def detector(self) -> str:
+        """The bare detector name (``DETECTORS`` key): ``detector_name`` is
+        display-prefixed, and severity/confidence/rule_id are looked up by this."""
+        return self.detector_name.removeprefix("sec-guide/")
+
+    def to_dict(self) -> dict:
+        from .findings import normalize_violation
+        return {"app_id": self.app_id, "detector": self.detector_name,
+                "message": self.violation.pretty(),  # type: ignore[attr-defined]
+                "finding": normalize_violation(self.violation, self.detector).to_dict()}
+
     def render(
         self,
         callee_source: Optional[Path] = None,
