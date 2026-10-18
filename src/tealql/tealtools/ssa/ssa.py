@@ -40,6 +40,7 @@ from .models import (
 )
 from .program import SSAProgram
 from ..language.avm import op_arity
+from .operands import first_immediate_int
 
 
 #: The AVM's stack limit. No longer a construction bound — the old whole-program
@@ -48,12 +49,7 @@ from ..language.avm import op_arity
 STACK_MAX = 1000
 
 
-def _frame_imm(op):
-    """The N of a frame_dig/frame_bury, or None."""
-    try:
-        return int(op.immediates.strip().split()[0])
-    except (ValueError, IndexError, AttributeError):
-        return None
+_frame_imm = first_immediate_int   # the N of a frame_dig/frame_bury, or None
 
 
 # A reconstructed-SSA operand. ``None`` marks a slot the builder could not
@@ -505,10 +501,7 @@ class PySSA:
         height-conflicted join. Unsafety is
         transitive over ``callsub`` (a clean wrapper inherits its callee's)."""
         def net(op):
-            if op.op == "frame_dig":
-                return 1
-            if op.op == "frame_bury":
-                return -1
+            # frame_dig / frame_bury are recorded as op_arity's (0, 1) / (1, 0).
             return op.n_out - op.n_in
 
         # Reverse reachability to a retsub over local edges (callsub -> its

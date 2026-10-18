@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .models import Const, Phi, SSAVar
+from .operands import first_immediate_int
 from .program import SSAProgram
 
 
@@ -155,9 +156,8 @@ def compute_scratch_facts(prog: SSAProgram) -> dict[tuple[str, int], ScratchInfl
         for i, assignment in enumerate(instructions):
             op = assignment.op
             if op == "store":
-                try:
-                    slot = int(assignment.immediates.strip().split()[0])
-                except (ValueError, IndexError, AttributeError):
+                slot = first_immediate_int(assignment)
+                if slot is None:
                     continue
                 domain = frozenset({slot}) if 0 <= slot <= 255 else frozenset()
                 value = assignment.inputs[0] if assignment.inputs else None
@@ -180,9 +180,8 @@ def compute_scratch_facts(prog: SSAProgram) -> dict[tuple[str, int], ScratchInfl
                 if domain is not None:
                     universe.update(domain)
             elif op == "load":
-                try:
-                    slot = int(assignment.immediates.strip().split()[0])
-                except (ValueError, IndexError, AttributeError):
+                slot = first_immediate_int(assignment)
+                if slot is None:
                     continue
                 domain = frozenset({slot}) if 0 <= slot <= 255 else frozenset()
                 events.append((i, "load", domain, None, set()))

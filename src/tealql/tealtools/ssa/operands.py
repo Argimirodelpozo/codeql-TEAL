@@ -29,6 +29,17 @@ def imm0(a) -> Optional[int]:
         return None
 
 
+def first_immediate_int(op) -> Optional[int]:
+    """First immediate token of ``op`` as an int, or ``None`` -- the lenient
+    sibling of :func:`imm0` the SSA builder uses: ANY failure (no
+    ``immediates`` attribute, a non-string value, no token, a non-numeric
+    token) is ``None``, where :func:`imm0` lets a non-string raise."""
+    try:
+        return int(op.immediates.strip().split()[0])
+    except (ValueError, IndexError, AttributeError):
+        return None
+
+
 def operand_const(op) -> Optional[Const]:
     """The :class:`Const` ``op`` resolves to, or ``None`` when not statically known."""
     if isinstance(op, Const):

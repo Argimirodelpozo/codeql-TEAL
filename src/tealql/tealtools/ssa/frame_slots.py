@@ -66,6 +66,7 @@ import logging
 
 from ..language.avm import op_arity
 from .models import SSAVar
+from .operands import first_immediate_int as _imm_int
 
 # Compatibility logger name: users may filter this established diagnostic.
 logger = logging.getLogger("tealql.tealtools.ssa.relations")
@@ -117,11 +118,6 @@ class FrameAnalysis:
                 if isinstance(value, ReturnSlots)}
 
 
-def _imm_int(op):
-    try:
-        return int(op.immediates.strip().split()[0])
-    except (ValueError, IndexError, AttributeError):
-        return None
 
 
 def _op_net(o, arity):
@@ -129,10 +125,7 @@ def _op_net(o, arity):
     if o.op == "callsub":
         a, r = arity
         return r - a
-    if o.op == "frame_dig":
-        return 1
-    if o.op == "frame_bury":
-        return -1
+    # frame_dig / frame_bury: op_arity's (0, 1) / (1, 0) overrides -> +1 / -1.
     n_in, n_out = op_arity(o.op, o.immediates)
     return n_out - n_in
 
@@ -141,10 +134,7 @@ def _op_dip(o, arity):
     """How far below the running height this op reaches (pops before pushes)."""
     if o.op == "callsub":
         return arity[0]
-    if o.op == "frame_dig":
-        return 0
-    if o.op == "frame_bury":
-        return 1
+    # frame_dig / frame_bury: op_arity's (0, 1) / (1, 0) overrides -> 0 / 1.
     n_in, _ = op_arity(o.op, o.immediates)
     return n_in
 

@@ -52,6 +52,7 @@ from __future__ import annotations
 
 from ..language.avm import op_arity
 from .models import _canon_shuffle
+from .operands import first_immediate_int as _imm_int
 
 _SHUFFLES = frozenset({"swap", "dup", "dup2", "dupn", "cover", "uncover",
                        "dig", "bury"})
@@ -90,11 +91,6 @@ class Summary:
         self.paths = paths
 
 
-def _imm_int(op):
-    try:
-        return int(op.immediates.strip().split()[0])
-    except (ValueError, IndexError, AttributeError):
-        return None
 
 
 def _succs_in(b, body):
@@ -116,11 +112,8 @@ def _tree_shaped(callee, body) -> bool:
 
 
 def _op_effect(o):
-    """``(n_in, n_out)`` with the frame overrides the walk needs."""
-    if o.op == "frame_dig":
-        return (0, 1)
-    if o.op == "frame_bury":
-        return (1, 0)
+    """``(n_in, n_out)``; ``op_arity`` already carries the frame overrides the
+    walk needs (``frame_dig`` (0, 1), ``frame_bury`` (1, 0))."""
     return op_arity(o.op, o.immediates)
 
 
