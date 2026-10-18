@@ -132,6 +132,22 @@ class TestExtract:
         named = {m.name: (s, e) for s, e, m in method_line_ranges(src)}
         assert named == {"add_one": (8, 10), "get_address": (11, 13)}
 
+    def test_tealscript_star_labels(self):
+        # TEALScript names its labels `*abi_route_<m>`; the label pattern refused the `*`, so no
+        # TEALScript router (Reti's registry and pools) was attributed at all.
+        src = (
+            "#pragma version 10\n"
+            "*call_NoOp:\n"
+            '\tpushbytes 0x03b5c0af // method "add_one(uint64)uint64"\n'
+            '\tpushbytes 0x00000000 // method "get_address()address"\n'
+            "\ttxna ApplicationArgs 0\n"
+            "\tmatch *abi_route_add_one *abi_route_get_address\n"
+            "\terr\n"
+            "*abi_route_add_one:\n\tint 1\n\treturn\n"
+            "*abi_route_get_address:\n\tint 1\n\treturn\n")
+        named = {m.name: (s, e) for s, e, m in method_line_ranges(src)}
+        assert named == {"add_one": (8, 10), "get_address": (11, 13)}
+
     def test_empty_on_raw_bytecode(self):
         # no `method "..."` text -> optional layer contributes nothing
         assert extract_method_table("#pragma version 8\npushbytes 0x03b5c0af\nint 1\nreturn\n") == {}

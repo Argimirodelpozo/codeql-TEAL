@@ -196,8 +196,9 @@ def extract_method_table(source: str) -> dict:
 
 # --- source-line attribution: which ABI method a finding sits in -------------
 
-# A label definition line: ``foo:`` / ``main_get_address_route@14:`` at col 0.
-_LABEL_DEF_RE = re.compile(r"^([A-Za-z_][\w@]*):\s*$")
+# A label definition line: ``foo:`` / ``main_get_address_route@14:`` at col 0, or TEALScript's
+# ``*abi_route_gas:`` (its labels start with ``*``; without it no TEALScript router was attributed).
+_LABEL_DEF_RE = re.compile(r"^(\*?[A-Za-z_][\w@]*):\s*$")
 #: Ops whose operands are a POSITIONAL list of branch targets, paired 1:1 with the
 #: selectors of the immediately-preceding ``pushbytess ... // method ...`` line.
 _DISPATCH_OPS = ("match", "switch")
