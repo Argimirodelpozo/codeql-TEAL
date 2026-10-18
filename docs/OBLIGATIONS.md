@@ -72,16 +72,6 @@ The result names the owner responsible for balance obligations; it does not
 prove resource availability or sufficient balance. The protocol rules are pinned
 to AVM 13; see the official [box specification](https://dev.algorand.co/concepts/smart-contracts/storage/box/).
 
-`trace_box_permissions(programs, apps, root, application_refs=...)` derives the
-call frames and family marks from straight-line program bodies. `programs` maps
-application IDs to SSA programs; `application_refs` maps each executing app's
-reference operands to actual owner IDs. The root is an outer approval with no
-active caller frames. Constant inner NoOp calls are followed,
-and matched returns propagate marks only to callers with the same creator.
-Missing targets, recursion, mutable permission flags and conditional control
-flow make the trace incomplete. Access results are conditional on reaching the
-site; a known permission denial terminates that path without claiming approval.
-
 `resource_requirements(program)` adds explicit availability, box, fee, opcode
 budget, balance, and recoverability obligations to the existing resource-demand
 certificate. Environmental closure and recovery remain unknown. Syntax
