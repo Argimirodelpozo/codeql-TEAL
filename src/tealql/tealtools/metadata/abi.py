@@ -185,9 +185,10 @@ def abi_type_byte_length(t: str) -> Optional[int]:
 def extract_method_table(source: str) -> dict:
     """``{selector_hex: AbiMethod}`` for every ``method "sig"`` in ``source``, keyed
     by ``0x``-selector so a ``pushbytes 0x..`` operand maps straight to its method;
-    ``{}`` when the source carries no high-level ABI info."""
+    ``{}`` when the source carries no high-level ABI info. Source order (a set
+    here made every overload listing vary with the process's hash seed)."""
     table: dict = {}
-    for sig in set(_METHOD_RE.findall(source)):
+    for sig in dict.fromkeys(_METHOD_RE.findall(source)):
         m = parse_signature(sig)
         if m is not None:
             table[m.selector_hex] = m

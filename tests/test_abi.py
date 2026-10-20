@@ -119,6 +119,20 @@ class TestExtract:
         # no `method "..."` text -> optional layer contributes nothing
         assert extract_method_table("#pragma version 8\npushbytes 0x03b5c0af\nint 1\nreturn\n") == {}
 
+    def test_overloads_list_in_source_order_whatever_the_hash_seed(self):
+        """The table was built from a set, so `tealql brief` listed folks-consensus's
+        two `subscribe_xgov` overloads in an order that changed run to run."""
+        import os
+        import subprocess
+        import sys
+        sigs = [f"m{i}(uint{8 * (i + 1)})void" for i in range(6)] + ["m0(address)void", "m0(pay)void"]
+        src = "#pragma version 10\n" + "".join(f'    method "{s}"\n' for s in sigs + sigs[:2])
+        code = ("import sys; from tealql.tealtools.metadata.abi import extract_method_table as t; "
+                "print([m.signature for m in t(sys.stdin.read()).values()])")
+        got = {subprocess.run([sys.executable, "-c", code], input=src, capture_output=True, text=True, check=True,
+                              env={**os.environ, "PYTHONHASHSEED": seed}).stdout for seed in ("1", "2", "3")}
+        assert got == {f"{sigs}\n"}
+
 class TestLineAttribution:
     # a minimal `match`-router: two selectors -> two handler labels.
     _ROUTER = (
