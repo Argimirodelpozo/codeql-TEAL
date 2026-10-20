@@ -462,13 +462,28 @@ def loop_heads(teal: str) -> list[str]:
     return sorted(heads, key=defined.get)
 
 
+def budget_reads(teal: str) -> list[str]:
+    """A site before each ``global OpcodeBudget`` read: padding there lowers
+    exactly the budget that read sees (entry padding can be refilled by an
+    earlier ensure-budget loop before it gets there)."""
+    n = sum("global OpcodeBudget" in ln.split("//")[0] for ln in teal.splitlines())
+    return [f"{_BUDGET_SITE}{k}" for k in range(n)]
+
+
+_BUDGET_SITE = "before OpcodeBudget read #"
+
+
 def pad_program(teal: str, site: str | None, ops: int) -> str:
     """``teal`` with ``ops`` cost-1 opcodes (``pushint 1; pop`` pairs) at the
-    program entry (``site`` None: after ``#pragma``) or right after label
-    ``site`` (and after its ``proto``, which must stay first)."""
+    program entry (``site`` None: after ``#pragma``), before the k-th
+    ``global OpcodeBudget`` read (a ``budget_reads`` site), or right after
+    label ``site`` (and after its ``proto``, which must stay first)."""
     lines = teal.splitlines()
     if site is None:
         i = next((k + 1 for k, ln in enumerate(lines) if ln.strip().startswith("#pragma")), 0)
+    elif site.startswith(_BUDGET_SITE):
+        reads = [k for k, ln in enumerate(lines) if "global OpcodeBudget" in ln.split("//")[0]]
+        i = reads[int(site[len(_BUDGET_SITE):])]
     else:
         i = lines.index(f"{site}:") + 1
         if i < len(lines) and lines[i].strip().startswith("proto"):
@@ -476,29 +491,40 @@ def pad_program(teal: str, site: str | None, ops: int) -> str:
     return "\n".join(lines[:i] + ["pushint 1", "pop"] * max(1, ops // 2) + lines[i:]) + "\n"
 
 
+CONTROL_VERSION = 2       # 2: a cheaper lift is padded too; sites before OpcodeBudget reads
+
+
+def lifted_teal(lift: dict, lifts: Path) -> str:
+    return (lifts / f"{lift['sha']}.lifted.teal").read_text()
+
+
 def cost_control(app_id: int, rnd: int, group: int, detail: str, out: Path) -> dict:
-    """Does the deployed program, made at most as much costlier as its lift,
-    diverge in ``group`` of block ``rnd`` exactly as the lift did? Returns
-    ``{"reproduced": True, "site", "pad", "extra"}`` or ``{"reproduced": False, ...}``."""
+    """Is the divergence in ``group`` of block ``rnd`` the lift's cost difference?
+    The CHEAPER side is padded with at most that many no-ops: a costlier lift
+    holds if the padded deployed program diverges exactly as the lift did; a
+    cheaper lift holds if the padded lift replays faithfully. Returns
+    ``{"reproduced": True, "padded", "site", "pad", "extra", ...}`` or
+    ``{"reproduced": False, ...}``."""
     progs = programs_at(app_id, rnd - 1)
     if progs is None:
-        return {"reproduced": False, "why": "no program"}
+        return {"reproduced": False, "why": "no program", "v": CONTROL_VERSION}
     cache_dir, lifts = out / "httpcache", out / "lifts"
     lift = lift_program(progs[0], lifts)
     if lift.get("status") != "OK":
-        return {"reproduced": False, "why": f"lift {lift.get('status')}"}
+        return {"reproduced": False, "why": f"lift {lift.get('status')}", "v": CONTROL_VERSION}
     resp = replay_block(app_id, rnd, lift, cache_dir, lifts)
     v = {x["name"]: x for x in resp.get("variants") or []}
     cost = {name: next(((g.get("app_cost") or {}).get(str(app_id), 0) for g in x.get("groups") or []
                         if g["group"] == group), 0) for name, x in v.items()}
     extra = cost.get("lifted", 0) - cost.get("orig", 0)
-    if extra < 2:
-        return {"reproduced": False, "why": f"lift costs {extra:+d} here", "extra": extra}
+    if abs(extra) < 2:
+        return {"reproduced": False, "why": f"lift costs {extra:+d} here", "extra": extra, "v": CONTROL_VERSION}
     want = divergence_signature(detail)
-    teal = disassemble(progs[0])
+    padded = "deployed" if extra > 0 else "lifted"
+    teal = disassemble(progs[0]) if extra > 0 else lifted_teal(lift, lifts)
     tried = 0
-    for site in [None, *loop_heads(teal)]:
-        for pad in sorted({p for p in (2, 6, 16, extra) if p <= extra}):
+    for site in [None, *budget_reads(teal), *loop_heads(teal)]:
+        for pad in sorted({p for p in (2, 6, 16, abs(extra)) if p <= abs(extra)}):
             program, err = assemble(pad_program(teal, site, pad))
             if program is None:
                 continue
@@ -508,9 +534,11 @@ def cost_control(app_id: int, rnd: int, group: int, detail: str, out: Path) -> d
             if "orig" not in rv:
                 continue
             g = next((x for x in judge(rv, app_id)[0] if x["group"] == group), None)
-            if g and g["status"] == "DIVERGES" and divergence_signature(g.get("detail")) == want:
-                return {"reproduced": True, "site": site or "entry", "pad": pad, "extra": extra, "tried": tried}
-    return {"reproduced": False, "extra": extra, "tried": tried}
+            if g and (g["status"] == "FAITHFUL" if extra < 0 else
+                      g["status"] == "DIVERGES" and divergence_signature(g.get("detail")) == want):
+                return {"reproduced": True, "padded": padded, "site": site or "entry", "pad": pad,
+                        "extra": extra, "tried": tried, "v": CONTROL_VERSION}
+    return {"reproduced": False, "padded": padded, "extra": extra, "tried": tried, "v": CONTROL_VERSION}
 
 
 def run_app(app_id: int, samples: int, seed: int, out: Path) -> list[dict]:

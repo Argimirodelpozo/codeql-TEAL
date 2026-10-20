@@ -23,8 +23,8 @@ had no lift yet: it changed during the chunk, lifts happen between chunks) and
 LIFT_FAIL. Each target app also gets the entry-mutant oracle self-test once,
 on a block where it was judged (``selftest.json``). After each chunk, every
 DIVERGES group gets the cost control (``timetravel.cost_control``, recorded in
-``controls.jsonl``): reproduced by the deployed program made as much costlier,
-it reads COST_ARTIFACT.
+``controls.jsonl``): explained by padding the cheaper side up to the other's
+cost, it reads COST_ARTIFACT.
 """
 from __future__ import annotations
 
@@ -315,7 +315,8 @@ def apply_controls(rows, controls: dict[tuple, dict]):
         if r["status"] == "DIVERGES" and k in culprit:
             if culprit[k] == r["app"]:
                 c = controls[(*k, r["app"])]
-                r = {**r, "status": "COST_ARTIFACT", "control": {f: c[f] for f in ("site", "pad", "extra")}}
+                r = {**r, "status": "COST_ARTIFACT",
+                     "control": {f: c[f] for f in ("padded", "site", "pad", "extra") if f in c}}
             else:
                 r = {**r, "status": "CO_DIVERGED", "culprit": culprit[k]}
         yield r
@@ -330,7 +331,8 @@ def load_controls(out: Path) -> dict[tuple, dict]:
 def run_controls(run: Run) -> Counter:
     """Cost control for every DIVERGES (round, group) not yet controlled: the
     app the failure names first, then the group's other diverging targets,
-    until one reproduces. Each try is recorded, so a rerun skips it."""
+    until one reproduces. Each try is recorded, so a rerun skips it (unless an
+    older control version left it unexplained)."""
     done = load_controls(run.out)
     pending: dict[tuple, list[dict]] = defaultdict(list)
     for r in iter_rows(run.out):
@@ -341,7 +343,8 @@ def run_controls(run: Run) -> Counter:
         named = _FAILING_APP.search(rows[0].get("detail") or "")
         rows.sort(key=lambda r: (not named or r["app"] != int(named.group(1)), r["app"]))
         for r in rows:
-            if (rnd, grp, r["app"]) in done:
+            prev = done.get((rnd, grp, r["app"]))      # an explained row is no longer DIVERGES
+            if prev and prev.get("v", 1) >= tt.CONTROL_VERSION:
                 continue
             c = {"round": rnd, "group": grp, "app": r["app"],
                  **tt.cost_control(r["app"], rnd, grp, r.get("detail") or "", run.out)}
@@ -434,9 +437,14 @@ def summarize(run: Run) -> str:
             ctl = r.get("control")
             lines.append(f"- **{r['status']}** app {r['app']} round {r['round']} group {r['group']}: "
                          f"`{(r.get('detail') or '')[:300]}`"
-                         + (f" (deployed + {ctl['pad']} no-ops at {ctl['site']} reproduces it; lift "
-                            f"{ctl['extra']:+d} opcodes)" if ctl else ""))
+                         + (_control_note(ctl) if ctl else ""))
     return "\n".join(lines) + "\n"
+
+
+def _control_note(ctl: dict) -> str:
+    if ctl.get("padded", "deployed") == "deployed":
+        return f" (deployed + {ctl['pad']} no-ops at {ctl['site']} reproduces it; lift {ctl['extra']:+d} opcodes)"
+    return f" (lift + {ctl['pad']} no-ops at {ctl['site']} replays faithfully; lift {ctl['extra']:+d} opcodes)"
 
 
 # ------------------------------------------------------------------ main

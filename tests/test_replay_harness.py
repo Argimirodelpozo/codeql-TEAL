@@ -4,6 +4,8 @@ a built ``ttreplay``; what decides FAITHFUL vs DIVERGES is pure and pinned here.
 """
 from __future__ import annotations
 
+import pytest
+
 from tests.replay_harness.timetravel import _entry_mutant, classify, first_diff, instruction_count
 
 
@@ -193,16 +195,64 @@ def test_a_divergence_the_deployed_program_reproduces_when_made_as_costly_is_a_c
     monkeypatch.setattr(tt, "replay_block", fake_replay)
     extra = 6
     got = tt.cost_control(9, 100, 0, want, tt.Path("/nonexistent"))
-    assert got == {"reproduced": True, "site": "loop", "pad": 6, "extra": 6, "tried": 4}
+    assert got == {"reproduced": True, "padded": "deployed", "site": "loop", "pad": 6, "extra": 6, "tried": 4,
+                   "v": tt.CONTROL_VERSION}
     extra = 1                      # the lift is not costlier here: nothing to control for
     assert tt.cost_control(9, 100, 0, want, tt.Path("/nonexistent")) == {
-        "reproduced": False, "why": "lift costs +1 here", "extra": 1}
+        "reproduced": False, "why": "lift costs +1 here", "extra": 1, "v": tt.CONTROL_VERSION}
 
     rows = [{"round": 1, "group": 0, "app": a, "status": "DIVERGES", "detail": "txn 0: $.dt.itx[7]"} for a in (5, 9)]
     rows.append({"round": 2, "group": 0, "app": 5, "status": "DIVERGES", "detail": "x"})
     controls = {(1, 0, 9): {**got}, (2, 0, 5): {"reproduced": False}}
     out = [(r["round"], r["app"], r["status"], r.get("culprit")) for r in apply_controls(rows, controls)]
     assert out == [(1, 5, "CO_DIVERGED", 9), (1, 9, "COST_ARTIFACT", None), (2, 5, "DIVERGES", None)]
+
+
+def test_a_cheaper_lift_that_skips_an_opup_call_is_padded_before_the_budget_read(monkeypatch, tmp_path):
+    """Router 2714516089 tops its budget up (`global OpcodeBudget; pushint 500; <;
+    bz`) after an inner call; its lift, 182 opcodes cheaper, stayed above 500 and
+    sent 2 inner txns where the chain has 3. The control only padded a COSTLIER
+    lift's deployed side, and at entry an earlier ensure-budget loop refills the
+    padding. Now the cheaper side is padded, also right before each budget read,
+    and a padded lift must replay faithfully; unexplained v1 controls rerun (v2 ones do not)."""
+    import json
+    import tests.replay_harness.timetravel as tt
+    from tests.replay_harness.stream import Run, run_controls
+    lifted = ("#pragma version 10\nensure:\nglobal OpcodeBudget\npushint 300\n<\nbnz ensure\n"
+              "itxn_submit\nglobal OpcodeBudget // after the call\npushint 500\n<\nbz done\nitxn_submit\n"
+              "done:\nint 1\nreturn")
+    assert tt.budget_reads(lifted) == [tt._BUDGET_SITE + "0", tt._BUDGET_SITE + "1"]
+    assert tt.pad_program(lifted, tt._BUDGET_SITE + "1", 2).split("\n")[7:10] == [
+        "pushint 1", "pop", "global OpcodeBudget // after the call"]
+    want = "txn 3: $.dt.itx: length 2 != 3"
+
+    def fake_replay(app, rnd, lift, cache, lifts=None):
+        prog, orig = lift["lifted"], {**_group(0), "app_cost": {"9": 300}}
+        if prog == "REAL":
+            return {"variants": [{"name": "orig", "groups": [orig]}, {"name": "lifted", "groups": [
+                {**_group(0, match=False, error=want), "app_cost": {"9": 280}}]}]}
+        lines = prog.split("\n")
+        before = lines[lines.index("global OpcodeBudget // after the call") - 1] == "pop"
+        ok = before and prog.count("pushint 1") * 2 >= 16
+        got = _group(0) if ok else _group(0, match=False, error=want)
+        return {"variants": [{"name": "orig", "groups": [orig]}, {"name": "lifted", "groups": [got]}]}
+    monkeypatch.setattr(tt, "programs_at", lambda app, rnd: ("b64", "clear"))
+    monkeypatch.setattr(tt, "lift_program", lambda prog, cache: {"status": "OK", "lifted": "REAL", "sha": "s"})
+    monkeypatch.setattr(tt, "disassemble", lambda prog: pytest.fail("the deployed side is the costlier one"))
+    monkeypatch.setattr(tt, "lifted_teal", lambda lift, lifts: lifted)
+    monkeypatch.setattr(tt, "assemble", lambda src: (src, None))
+    monkeypatch.setattr(tt, "replay_block", fake_replay)
+
+    run = Run(tmp_path)
+    run.append_rows([{"round": r, "group": 0, "app": 9, "status": "DIVERGES", "detail": want} for r in (7, 8)])
+    (tmp_path / "controls.jsonl").write_text("".join(json.dumps(c) + "\n" for c in (
+        {"round": 7, "group": 0, "app": 9, "reproduced": False, "why": "lift costs -20 here", "extra": -20},
+        {"round": 8, "group": 0, "app": 9, "reproduced": False, "extra": -20, "v": tt.CONTROL_VERSION})))
+    assert run_controls(run) == {"reproduced": 1}
+    got = [json.loads(line) for line in (tmp_path / "controls.jsonl").open()][-1]
+    assert got == {"round": 7, "group": 0, "app": 9, "reproduced": True, "padded": "lifted",
+                   "site": tt._BUDGET_SITE + "1", "pad": 16, "extra": -20, "tried": 11, "v": tt.CONTROL_VERSION}
+    assert run_controls(run) == {}                       # explained: never rerun
 
 
 def test_rows_store_each_app_pc_once_and_are_read_streamed(tmp_path):
