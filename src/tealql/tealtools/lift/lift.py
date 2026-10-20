@@ -812,6 +812,23 @@ class _Lifter:
             for ph in jblk.phis:
                 ph.args = [a for a in ph.args if a.through != pid]
 
+    def _label_block(self, label):
+        """The block a branch to ``label`` lands in: the first block starting at or after the
+        label's line. A label followed only by other labels (TEALScript's ``*if19_end:`` then
+        ``*for_3_continue:``) starts no block of its own, so the exact-line lookup found nothing;
+        a ``bz`` to it then fell back to successor order, and where that order was
+        [fallthrough, target] the branch came out INVERTED (reti_pool's getStakerInfo returned the
+        first staker that was NOT the caller). Lines in between are labels, blanks and comments
+        only, so the next block start is the label's block."""
+        ln = self.label2line.get(label)
+        if ln is None:
+            return None
+        blk = self.line2block.get(ln)
+        if blk is not None:
+            return blk
+        after = [fl for fl in self.line2block if fl >= ln]
+        return self.line2block[min(after)] if after else None
+
     def _site_target(self, bb, blk):
         """A label-resolved block as seen from ``bb``: label targets resolve via
         ``line2block`` to ORIGINALS, so inside a spliced copy they must map to
@@ -1219,7 +1236,7 @@ class _Lifter:
             return None, set()
         cases, targets = [], set()
         for i, lbl in enumerate(labels):
-            blk = self._site_target(bb, self.line2block.get(self.label2line.get(lbl)))
+            blk = self._site_target(bb, self._label_block(lbl))
             if blk is None or blk not in self.bid:
                 return None, set()
             if push is not None and push.op == "pushints":
@@ -1280,8 +1297,7 @@ class _Lifter:
             return pre_ir.Goto(self.bid[succ[0]])
         if len(succ) == 2 and op in COND_BRANCH_OPS and t is not None:
             cond = self._sel_value(t)
-            taken = self._site_target(bb, self.line2block.get(
-                self.label2line.get((t.immediates or "").strip())))
+            taken = self._site_target(bb, self._label_block((t.immediates or "").strip()))
             if taken in succ:
                 other = succ[0] if succ[1] is taken else succ[1]
             else:
@@ -1359,7 +1375,7 @@ class _Lifter:
         order = list(range(n))[::-1]           # label[i] -> ins[n - i]
         cases, targets = [], set()
         for i, lbl in enumerate(labels):
-            blk = self._site_target(bb, self.line2block.get(self.label2line.get(lbl)))
+            blk = self._site_target(bb, self._label_block(lbl))
             ki = 1 + order[i]
             ci = ins[ki] if 0 <= ki < len(ins) else None
             if isinstance(ci, pre_ir.BytesConstant):
@@ -1394,7 +1410,7 @@ class _Lifter:
         labels = (t.immediates or "").split()
         arms, ok = [], True
         for lbl in labels:
-            blk = self._site_target(bb, self.line2block.get(self.label2line.get(lbl)))
+            blk = self._site_target(bb, self._label_block(lbl))
             if blk is None or blk not in self.bid:
                 ok = False
                 break
@@ -1405,7 +1421,7 @@ class _Lifter:
         if ok and ft is not None and ft in self.bid:
             return pre_ir.GotoNth(self._sel_value(t), arms, self.bid[ft])
         if ok and succ:                       # robustness: best-effort default
-            labeled = {self._site_target(bb, self.line2block.get(self.label2line.get(lbl)))
+            labeled = {self._site_target(bb, self._label_block(lbl))
                        for lbl in labels}
             dft = next((s for s in succ if s not in labeled), succ[-1])
             return pre_ir.GotoNth(self._sel_value(t), arms, self.bid[dft])
