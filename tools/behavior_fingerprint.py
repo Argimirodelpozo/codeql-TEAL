@@ -17,7 +17,8 @@ commit and on the refactor, then compare::
 
 Each program runs in a fresh worker process (``--jobs``, default 2) so no cache
 crosses programs. Run ``run`` twice on one tree first: the two files must agree,
-or the fingerprint itself is not deterministic.
+or the fingerprint itself is not deterministic (``diff`` sorts frozenset reprs
+in the summaries; any other run-to-run difference is a real nondeterminism bug).
 """
 from __future__ import annotations
 
@@ -93,6 +94,50 @@ def run(out: Path, jobs: int) -> None:
                 print(f"{i + 1}/{len(paths)}", file=sys.stderr, flush=True)
 
 
+_SET = "frozenset({"
+
+
+def _scan(s: str, i: int, stop: str) -> int:
+    """Index of the first ``stop`` char at bracket depth 0 from ``i`` (quotes skipped)."""
+    depth, quote = 0, None
+    while i < len(s):
+        c = s[i]
+        if quote:
+            quote = None if c == quote and s[i - 1] != "\\" else quote
+        elif c in "'\"":
+            quote = c
+        elif depth == 0 and c in stop:
+            return i
+        elif c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        i += 1
+    return i
+
+
+def canonical_sets(s: str) -> str:
+    """``s`` with each ``frozenset({...})``'s elements sorted: a set's repr order
+    follows the process's hash seed, which is no behaviour."""
+    out, i = [], 0
+    while (j := s.find(_SET, i)) != -1:
+        end = _scan(s, j + len(_SET), "}")
+        elems, k = [], j + len(_SET)
+        while k < end:
+            e = _scan(s, k, ",}")
+            elems.append(canonical_sets(s[k:e].strip()))
+            k = e + 1
+        out += [s[i:j], _SET, ", ".join(sorted(elems)), "})"]
+        i = end + 2
+    return "".join(out) + s[i:]
+
+
+def _comparable(key: str, value):
+    if key == "summaries" and isinstance(value, dict):
+        return {k: canonical_sets(v) for k, v in value.items()}
+    return value
+
+
 def diff(a: Path, b: Path) -> int:
     ra = {json.loads(line)["program"]: json.loads(line) for line in a.open()}
     rb = {json.loads(line)["program"]: json.loads(line) for line in b.open()}
@@ -103,7 +148,7 @@ def diff(a: Path, b: Path) -> int:
             bad += 1
             continue
         for key in sorted(set(ra[prog]) | set(rb[prog])):
-            x, y = ra[prog].get(key), rb[prog].get(key)
+            x, y = _comparable(key, ra[prog].get(key)), _comparable(key, rb[prog].get(key))
             if x != y:
                 bad += 1
                 xs, ys = json.dumps(x, sort_keys=True), json.dumps(y, sort_keys=True)
