@@ -17,6 +17,11 @@ a run can be stopped and extended at will::
 Targets: the ``--top`` apps by call count (inner calls included) in a sample
 of the window's blocks, fixed in ``targets.json`` on the first run.
 
+``--from-teal APP ...`` (opt-in, fixed in ``meta.json`` on the first run): those
+apps are replayed with their own TEAL reassembled instead of their lift, rows
+marked ``from_teal``. The swap is by program bytes, so a target running the
+same bytes as a listed app is replayed from TEAL too.
+
 Verdict rows (``rows.jsonl``) are per (group, target app; ``orig_pcs`` holds
 only the app's pcs first covered there): the statuses of ``timetravel.classify``, plus LIFT_PENDING (the app's program at that block
 had no lift yet: it changed during the chunk, lifts happen between chunks) and
@@ -137,27 +142,45 @@ class Run:
 class Lifts:
     """Lifted programs by sha256 of the deployed approval program."""
 
-    def __init__(self, run: Run):
+    def __init__(self, run: Run, from_teal: set[int] = frozenset()):
         self.run = run
+        self.from_teal = set(from_teal)          # apps replayed from their own TEAL
+        self.teal_shas: set[str] = set()         # the programs those apps run
         self.lock = threading.Lock()
         self.by_sha: dict[str, dict] = {}        # sha256 -> lift_program meta
         for meta_path in run.lifts.glob("*.json") if run.lifts.exists() else []:
             meta = json.loads(meta_path.read_text())
-            if "sha256" in meta:
+            if "sha256" in meta and (meta.get("from_teal") or meta["sha256"] not in self.teal_shas):
                 self.by_sha[meta["sha256"]] = meta
+                if meta.get("from_teal"):          # this run's from_teal set put it there
+                    self.teal_shas.add(meta["sha256"])
 
-    def lift(self, program_b64: str) -> dict:
+    def lift(self, program_b64: str, app: int | None = None) -> dict:
+        """The program's lift, or its TEAL reassembled once a ``from_teal`` app
+        runs these bytes (the swap is by bytes: every app running them)."""
         sha = _sha(program_b64)
         with self.lock:
-            if sha in self.by_sha:
+            if app in self.from_teal:
+                self.teal_shas.add(sha)
+            want = sha in self.teal_shas
+            if sha in self.by_sha and self.by_sha[sha].get("from_teal", False) == want:
                 return self.by_sha[sha]
-        meta = tt.lift_program(program_b64, self.run.lifts)
+        meta = tt.lift_program(program_b64, self.run.lifts, from_teal=want)
         if "sha256" not in meta:
             meta["sha256"] = sha
             (self.run.lifts / f"{meta['sha']}.json").write_text(json.dumps(meta))
         with self.lock:
             self.by_sha[sha] = meta
         return meta
+
+    def widen(self, programs: dict[int, str]) -> set[int]:
+        """Before lifting ``{app: program}``: mark as ``from_teal`` every app
+        running the bytes of one that is; returns the apps added."""
+        with self.lock:
+            self.teal_shas |= {_sha(p) for a, p in programs.items() if a in self.from_teal}
+            added = {a for a, p in programs.items() if _sha(p) in self.teal_shas} - self.from_teal
+            self.from_teal |= added
+        return added
 
     def swap_map(self) -> dict[str, str]:
         with self.lock:
@@ -193,6 +216,8 @@ def block_rows(blk: dict, lifts: Lifts) -> list[dict]:
             og = next((x for x in variants["orig"]["groups"] if x["group"] == int(g)), {})
             row = {**base, "app": a, "group": int(g),
                    "orig_pcs": (og.get("coverage") or {}).get(str(a), [])}
+            if a in lifts.from_teal:
+                row["from_teal"] = True
             prog = unlifted.get(str(a))
             if prog is not None:
                 meta = lifts.status(prog)
@@ -229,7 +254,7 @@ def stream_chunk(run: Run, lifts: Lifts, apps: list[int], chunk: tuple[int, int]
         proc.stdin.write(json.dumps(req))
         proc.stdin.close()
         last = start - 1
-        new_programs: dict[str, str] = {}
+        new_programs: dict[str, int] = {}      # program -> the app that installed it
         for line in proc.stdout:
             blk = json.loads(line)
             if blk.get("done"):
@@ -239,7 +264,7 @@ def stream_chunk(run: Run, lifts: Lifts, apps: list[int], chunk: tuple[int, int]
                 stats["chain_miss"] += 1
             stats["blocks"] += 1
             stats["rebased"] += bool(blk.get("rebased"))
-            new_programs.update({p: p for p in (blk.get("unlifted") or {}).values()})
+            new_programs.update({p: int(a) for a, p in (blk.get("unlifted") or {}).items()})
             rows = block_rows(blk, lifts)
             if rows:
                 run.thin_coverage(rows)
@@ -249,8 +274,8 @@ def stream_chunk(run: Run, lifts: Lifts, apps: list[int], chunk: tuple[int, int]
             run.mark(chunk, last)
         proc.wait()
         # Lift what the chunk met; LIFT_PENDING rows stay (re-judge per block later).
-        for prog in new_programs:
-            lifts.lift(prog)
+        for prog, app in new_programs.items():
+            lifts.lift(prog, app)
         if last < start:              # the process produced nothing: do not spin
             stats["stalled"] += 1
             break
@@ -271,7 +296,7 @@ def self_tests(run: Run, lifts: Lifts) -> dict:
         progs = tt.programs_at(app, rnd - 1)
         if progs is None:
             continue
-        meta = lifts.lift(progs[0])
+        meta = lifts.lift(progs[0], app)
         if meta.get("status") != "OK":
             continue
         problem = tt.oracle_self_test(app, rnd, meta, run.out)
@@ -334,6 +359,7 @@ def run_controls(run: Run) -> Counter:
     until one reproduces. Each try is recorded, so a rerun skips it (unless an
     older control version left it unexplained)."""
     done = load_controls(run.out)
+    from_teal = set(run.json("meta.json", {}).get("from_teal", []))
     pending: dict[tuple, list[dict]] = defaultdict(list)
     for r in iter_rows(run.out):
         if r["status"] == "DIVERGES":
@@ -347,7 +373,8 @@ def run_controls(run: Run) -> Counter:
             if prev and prev.get("v", 1) >= tt.CONTROL_VERSION:
                 continue
             c = {"round": rnd, "group": grp, "app": r["app"],
-                 **tt.cost_control(r["app"], rnd, grp, r.get("detail") or "", run.out)}
+                 **tt.cost_control(r["app"], rnd, grp, r.get("detail") or "", run.out,
+                                  from_teal=r["app"] in from_teal)}
             with run.lock, (run.out / "controls.jsonl").open("a") as fh:
                 fh.write(json.dumps(c) + "\n")
             stats["reproduced" if c["reproduced"] else "not_reproduced"] += 1
@@ -393,8 +420,11 @@ def summarize(run: Run) -> str:
     rounds: dict[int, set] = defaultdict(set)
     bad: list[dict] = []
     seen_bad: set = set()
+    teal_apps: set[int] = set()
     for r in iter_rows(run.out):
         by_app[r["app"]][r["status"]] += 1
+        if r.get("from_teal"):
+            teal_apps.add(r["app"])
         cov[r["app"]].update(r.get("orig_pcs") or [])
         rounds[r["app"]].add(r["round"])
         if r["status"] in ("DIVERGES", "BUDGET", "VERSION_ARTIFACT", "COST_ARTIFACT") \
@@ -415,9 +445,11 @@ def summarize(run: Run) -> str:
         "",
         "DIVERGES counts only the app whose program failed when the error names it; the other target apps "
         "of that group are CO_DIVERGED. AFTER_DIVERGENCE rows follow a divergence in the same block "
-        "(state no longer comparable) and are not verdicts. COST_ARTIFACT: the deployed program, padded with "
-        "no-ops costing at most the lift's extra opcodes, diverges the same way (OpUp routers size their budget "
-        "calls, and pay their fees, from `global OpcodeBudget`).",
+        "(state no longer comparable) and are not verdicts. COST_ARTIFACT: padding the cheaper side with no-ops "
+        "up to the other's cost explains the divergence (OpUp routers size their budget calls, and pay their fees, "
+        "from `global OpcodeBudget`)."
+        + (f" Apps marked (TEAL) were replayed from their own TEAL reassembled (`--from-teal`), not lifted: "
+           f"{', '.join(map(str, sorted(teal_apps)))}." if teal_apps else ""),
         "",
         "| app | blocks | rows | FAITHFUL | DIVERGES | co-diverged / after | BUDGET / cost artifact | lift pending/fail | oracle miss | PCs hit | self-test |",
         "|---|---|---|---|---|---|---|---|---|---|---|",
@@ -427,7 +459,7 @@ def summarize(run: Run) -> str:
         c = by_app.get(a, Counter())
         st = selftest.get(str(a))
         lines.append(
-            f"| {a} | {len(rounds[a]):,} | {sum(c.values()):,} | {c['FAITHFUL']:,} | {c['DIVERGES']:,} | "
+            f"| {a}{' (TEAL)' if a in teal_apps else ''} | {len(rounds[a]):,} | {sum(c.values()):,} | {c['FAITHFUL']:,} | {c['DIVERGES']:,} | "
             f"{c['CO_DIVERGED']:,} / {c['AFTER_DIVERGENCE']:,} | {c['BUDGET']:,} / {c['COST_ARTIFACT']:,} | {c['LIFT_PENDING'] + c['LIFT_FAIL'] + c['LIFT_TIMEOUT'] + c['ASM_FAIL']:,} | "
             f"{c['REPLAY_MISS'] + c['REPLAY_ERROR']:,} | {len(cov[a]):,} | "
             f"{'—' if st is None else ('ok' if st['ok'] else 'BROKEN')} |")
@@ -464,8 +496,15 @@ def main(argv=None) -> int:
     ap.add_argument("--lift-jobs", type=int, default=1)
     ap.add_argument("--summarize", action="store_true")
     ap.add_argument("--controls", action="store_true", help="run the cost control on uncontrolled DIVERGES rows")
+    ap.add_argument("--from-teal", nargs="+", type=int, metavar="APP_ID",
+                    help="replay these apps' own TEAL reassembled instead of their lift (opt-in; fixed on the first run)")
     args = ap.parse_args(argv)
     run = Run(Path(args.out))
+    meta = run.json("meta.json")
+    if meta is not None and args.from_teal is not None and sorted(args.from_teal) != meta.get("from_teal", []):
+        print(f"{run.out} was started with --from-teal {meta.get('from_teal', [])}; use a new --out",
+              file=sys.stderr)
+        return 2
     if args.summarize:
         text = summarize(run)
         (run.out / "SUMMARY.md").write_text(text)
@@ -483,13 +522,12 @@ def main(argv=None) -> int:
         return 2
     log = lambda *a: print(time.strftime("%H:%M:%S"), *a, flush=True)  # noqa: E731
 
-    meta = run.json("meta.json")
     if meta is None:
         commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=tt.REPO, capture_output=True,
                                 text=True).stdout.strip()
         # Lifts are cached by program, not by tealql version: the run validates THIS commit's lift.
         meta = {"end": args.end or tt._get_json(f"{tt.NODE}/v2/status")["last-round"], "node": tt.NODE,
-                "tealql_commit": commit}
+                "tealql_commit": commit, "from_teal": sorted(args.from_teal or [])}
         run.save("meta.json", meta)
     end = meta["end"]
     plan = chunks(end, args.days, args.chunk)
@@ -502,11 +540,14 @@ def main(argv=None) -> int:
         run.save("targets.json", targets)
     apps = [t["app"] for t in targets]
 
-    lifts = Lifts(run)
+    lifts = Lifts(run, set(meta.get("from_teal", [])))
     log(f"lifting the {len(apps)} targets' programs at round {end}")
     with cf.ThreadPoolExecutor(args.lift_jobs) as ex:
         progs = list(ex.map(lambda a: tt.programs_at(a, end), apps))
-        metas = list(ex.map(lambda p: lifts.lift(p[0]) if p else None, progs))
+        same = lifts.widen({a: p[0] for a, p in zip(apps, progs) if p})
+        if lifts.from_teal:
+            log("from TEAL (no lift):", sorted(lifts.from_teal), *(["; same bytes:", sorted(same)] if same else []))
+        metas = list(ex.map(lambda ap: lifts.lift(ap[1][0], ap[0]) if ap[1] else None, zip(apps, progs)))
     log("lifts:", dict(Counter((m or {}).get("status", "NO_PROGRAM") for m in metas)))
 
     todo = [c for c in plan if run.done_upto(c) < c[1]]

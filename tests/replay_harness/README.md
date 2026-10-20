@@ -65,6 +65,18 @@ GOMAXPROCS=1 GOMEMLIMIT=1GiB nice -n 19 ionice -c3 \
   python -m tests.replay_harness.stream --out full --days 30 --top 100              # every block (days; gentle defaults)
 ```
 
+**`--from-teal APP_ID ...`** (both drivers, opt-in, off by default): the listed
+apps skip the IR lift. Their "lifted" variant is their own TEAL, disassembled
+and reassembled (the lift cache marks it `from_teal`, and `identical` when that
+gives back the deployed bytes). It is for when the lift is not what you are
+asking about for an app, e.g. an OpUp router whose cost `global OpcodeBudget`
+makes observable. Reading `OpcodeBudget` never turns it on by itself: every
+OpUp helper reads it, and most analyses of those apps still want the lift.
+Rows are marked `from_teal` and the summary tags the app `(TEAL)`. The swap is
+by program bytes, so a target running the same bytes as a listed app follows
+it. A `stream` run keeps the set it was started with (`meta.json`); a different
+one needs a new `--out`.
+
 `TEALQL_TT_NODE` (default `https://mainnet-api-dt.d13.co`), `TEALQL_INDEXER`
 and `TEALQL_TTREPLAY` configure the harness. The public node has
 `EnableDeveloperAPI` off and serves one simulate group at a time. Neither

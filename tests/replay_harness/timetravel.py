@@ -20,7 +20,12 @@ group of a block are AFTER_DIVERGENCE (their state may already differ) and
 are not counted.
 
   python -m tests.replay_harness.timetravel APP_ID [APP_ID ...] \
-      [--samples N] [--seed S] [--out DIR] [--jobs J]
+      [--samples N] [--seed S] [--out DIR] [--jobs J] [--from-teal APP_ID ...]
+
+``--from-teal`` (opt-in, never implied): the listed apps' ``lifted`` variant is
+their own TEAL, disassembled and reassembled, with no IR lift. For a user whose
+question about an app is not the lift's (an OpUp router's cost is observable
+through ``global OpcodeBudget``, and a lift changes it).
 
 Environment: TEALQL_TT_NODE (default https://mainnet-api-dt.d13.co),
 TEALQL_INDEXER (default https://mainnet-idx.algonode.cloud), TEALQL_TTREPLAY
@@ -175,12 +180,14 @@ def instruction_count(teal: str) -> int:
 
 # ------------------------------------------------------------------ lift
 
-def lift_program(program_b64: str, cache: Path) -> dict:
+def lift_program(program_b64: str, cache: Path, *, from_teal: bool = False) -> dict:
     """Lift + recompile + assemble one program, cached by content hash.
 
     Returns {"sha", "status": OK|LIFT_FAIL|LIFT_TIMEOUT|ASM_FAIL, "lifted": b64?,
-    "error"?, "orig_instructions", "lifted_instructions"?}."""
-    sha = hashlib.sha256(base64.b64decode(program_b64)).hexdigest()[:16]
+    "error"?, "orig_instructions", "lifted_instructions"?}. ``from_teal``: no
+    lift, the "lifted" program is the disassembled TEAL reassembled (cached
+    apart, ``"from_teal": True``; ``"identical"``: it is the deployed bytes)."""
+    sha = hashlib.sha256(base64.b64decode(program_b64)).hexdigest()[:16] + ("-teal" if from_teal else "")
     meta_path = cache / f"{sha}.json"
     if meta_path.exists():
         return json.loads(meta_path.read_text())
@@ -190,6 +197,16 @@ def lift_program(program_b64: str, cache: Path) -> dict:
     src.write_text(teal)
     out = cache / f"{sha}.lifted.teal"
     meta = {"sha": sha, "orig_instructions": instruction_count(teal)}
+    if from_teal:
+        out.write_text(teal)
+        program, err = assemble(teal)
+        meta.update(from_teal=True, lifted_instructions=meta["orig_instructions"])
+        if program is None:
+            meta.update(status="ASM_FAIL", error=(err or "?")[:500])
+        else:
+            meta.update(status="OK", lifted=program, identical=program == program_b64)
+        meta_path.write_text(json.dumps(meta))
+        return meta
     t0 = time.time()
     try:
         proc = subprocess.run(
@@ -326,7 +343,7 @@ def install_map(app_id: int, rnd: int, lift: dict, lifts: Path) -> tuple[dict, s
     progs = programs_at(app_id, rnd)
     if progs is None:
         return {}, "app has no programs after the block"
-    new = lift_program(progs[0], lifts)
+    new = lift_program(progs[0], lifts, from_teal=lift.get("from_teal", False))
     if new.get("status") != "OK":
         return {}, f"installed program {new['sha']}: {new.get('status')} {new.get('error', '')}"[:300]
     version = max(program_version(new["lifted"]), program_version(lift["lifted"]))
@@ -498,7 +515,7 @@ def lifted_teal(lift: dict, lifts: Path) -> str:
     return (lifts / f"{lift['sha']}.lifted.teal").read_text()
 
 
-def cost_control(app_id: int, rnd: int, group: int, detail: str, out: Path) -> dict:
+def cost_control(app_id: int, rnd: int, group: int, detail: str, out: Path, *, from_teal: bool = False) -> dict:
     """Is the divergence in ``group`` of block ``rnd`` the lift's cost difference?
     The CHEAPER side is padded with at most that many no-ops: a costlier lift
     holds if the padded deployed program diverges exactly as the lift did; a
@@ -509,7 +526,7 @@ def cost_control(app_id: int, rnd: int, group: int, detail: str, out: Path) -> d
     if progs is None:
         return {"reproduced": False, "why": "no program", "v": CONTROL_VERSION}
     cache_dir, lifts = out / "httpcache", out / "lifts"
-    lift = lift_program(progs[0], lifts)
+    lift = lift_program(progs[0], lifts, from_teal=from_teal)
     if lift.get("status") != "OK":
         return {"reproduced": False, "why": f"lift {lift.get('status')}", "v": CONTROL_VERSION}
     resp = replay_block(app_id, rnd, lift, cache_dir, lifts)
@@ -541,7 +558,7 @@ def cost_control(app_id: int, rnd: int, group: int, detail: str, out: Path) -> d
     return {"reproduced": False, "padded": padded, "extra": extra, "tried": tried, "v": CONTROL_VERSION}
 
 
-def run_app(app_id: int, samples: int, seed: int, out: Path) -> list[dict]:
+def run_app(app_id: int, samples: int, seed: int, out: Path, from_teal: bool = False) -> list[dict]:
     log = lambda *a: print(f"[{app_id}]", *a, flush=True)  # noqa: E731
     rounds = sample_rounds(app_id, samples, seed)
     log(f"{len(rounds)} blocks sampled")
@@ -549,11 +566,11 @@ def run_app(app_id: int, samples: int, seed: int, out: Path) -> list[dict]:
     self_tested = False
     for rnd in rounds:
         progs = programs_at(app_id, rnd - 1)
-        base = {"app": app_id, "round": rnd}
+        base = {"app": app_id, "round": rnd, **({"from_teal": True} if from_teal else {})}
         if progs is None:          # created in this very block
             rows.append({**base, "status": "SKIP", "detail": "app created in this block"})
             continue
-        lift = lift_program(progs[0], out / "lifts")
+        lift = lift_program(progs[0], out / "lifts", from_teal=from_teal)
         base["program"] = lift["sha"]
         t0 = time.time()
         resp = replay_block(app_id, rnd, lift, out / "httpcache", out / "lifts")
@@ -718,6 +735,8 @@ def main(argv=None) -> int:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", default="tt_results")
     ap.add_argument("--jobs", type=int, default=2, help="apps replayed concurrently (be polite)")
+    ap.add_argument("--from-teal", nargs="+", type=int, default=[], metavar="APP_ID",
+                    help="replay these apps' own TEAL reassembled instead of their lift (opt-in)")
     args = ap.parse_args(argv)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -727,7 +746,8 @@ def main(argv=None) -> int:
         return 2
     rows: list[dict] = []
     with cf.ThreadPoolExecutor(args.jobs) as ex:
-        futures = {ex.submit(run_app, a, args.samples, args.seed, out): a for a in args.apps}
+        futures = {ex.submit(run_app, a, args.samples, args.seed, out, a in args.from_teal): a
+                   for a in args.apps}
         for fut in cf.as_completed(futures):
             app = futures[fut]
             try:

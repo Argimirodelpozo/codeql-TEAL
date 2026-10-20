@@ -101,6 +101,8 @@ def test_stream_window_grows_backwards_and_unlifted_programs_are_pending_not_jud
     assert long[:2] == short[:2] and long[-1] == (981, 984) and len(long) == 5
 
     class NoLifts:
+        from_teal: set = set()
+
         def status(self, prog):
             return None
     prog = base64.b64encode(b"\x0a\x81\x01\x43").decode()
@@ -189,7 +191,7 @@ def test_a_divergence_the_deployed_program_reproduces_when_made_as_costly_is_a_c
                 lifted = _group(0)
         return {"variants": [{"name": "orig", "groups": [orig]}, {"name": "lifted", "groups": [lifted]}]}
     monkeypatch.setattr(tt, "programs_at", lambda app, rnd: ("b64", "clear"))
-    monkeypatch.setattr(tt, "lift_program", lambda prog, cache: {"status": "OK", "lifted": "REAL"})
+    monkeypatch.setattr(tt, "lift_program", lambda prog, cache, from_teal=False: {"status": "OK", "lifted": "REAL"})
     monkeypatch.setattr(tt, "disassemble", lambda prog: teal)
     monkeypatch.setattr(tt, "assemble", lambda src: (src, None))
     monkeypatch.setattr(tt, "replay_block", fake_replay)
@@ -237,7 +239,7 @@ def test_a_cheaper_lift_that_skips_an_opup_call_is_padded_before_the_budget_read
         got = _group(0) if ok else _group(0, match=False, error=want)
         return {"variants": [{"name": "orig", "groups": [orig]}, {"name": "lifted", "groups": [got]}]}
     monkeypatch.setattr(tt, "programs_at", lambda app, rnd: ("b64", "clear"))
-    monkeypatch.setattr(tt, "lift_program", lambda prog, cache: {"status": "OK", "lifted": "REAL", "sha": "s"})
+    monkeypatch.setattr(tt, "lift_program", lambda prog, cache, from_teal=False: {"status": "OK", "lifted": "REAL", "sha": "s"})
     monkeypatch.setattr(tt, "disassemble", lambda prog: pytest.fail("the deployed side is the costlier one"))
     monkeypatch.setattr(tt, "lifted_teal", lambda lift, lifts: lifted)
     monkeypatch.setattr(tt, "assemble", lambda src: (src, None))
@@ -253,6 +255,72 @@ def test_a_cheaper_lift_that_skips_an_opup_call_is_padded_before_the_budget_read
     assert got == {"round": 7, "group": 0, "app": 9, "reproduced": True, "padded": "lifted",
                    "site": tt._BUDGET_SITE + "1", "pad": 16, "extra": -20, "tried": 11, "v": tt.CONTROL_VERSION}
     assert run_controls(run) == {}                       # explained: never rerun
+
+
+def test_from_teal_replays_an_apps_own_teal_only_when_asked(monkeypatch, tmp_path):
+    """`--from-teal APP` (opt-in, never implied by `global OpcodeBudget`): the
+    app's "lifted" variant is its TEAL reassembled, no IR lift. The swap is by
+    program bytes, so an app running the same bytes follows; everything else is
+    still lifted; a run keeps the set it started with."""
+    import base64
+    import tests.replay_harness.stream as stream
+    import tests.replay_harness.timetravel as tt
+    a, b = (base64.b64encode(x).decode() for x in (b"\x0a\x81\x01\x43", b"\x0a\x81\x02\x43"))
+    lifted_calls = []
+
+    def fake_run(cmd, **kw):
+        lifted_calls.append(cmd[-2])
+        tt.Path(cmd[-1]).write_text("#pragma version 10\nLIFTED")
+        return type("P", (), {"returncode": 0, "stderr": ""})()
+    monkeypatch.setattr(tt.subprocess, "run", fake_run)
+    monkeypatch.setattr(tt, "disassemble", lambda prog: f"#pragma version 10\nTEAL {prog}")
+    monkeypatch.setattr(tt, "assemble", lambda src: (src.split()[-1] if "TEAL" in src else "LIFTED_B64", None))
+
+    meta = tt.lift_program(a, tmp_path)
+    assert meta["status"] == "OK" and meta["lifted"] == "LIFTED_B64" and "from_teal" not in meta
+    teal = tt.lift_program(a, tmp_path, from_teal=True)
+    assert teal == {"sha": meta["sha"] + "-teal", "orig_instructions": 1, "from_teal": True,
+                    "lifted_instructions": 1, "status": "OK", "lifted": a, "identical": True}
+    assert len(lifted_calls) == 1                    # the TEAL mode never lifts
+    monkeypatch.setattr(tt, "assemble", lambda src: ("OTHER", None))
+    assert tt.lift_program(b, tmp_path, from_teal=True)["identical"] is False
+    monkeypatch.setattr(tt, "programs_at", lambda app, rnd: (b, "clear"))
+    seen = []
+    monkeypatch.setattr(tt, "lift_program", lambda prog, cache, from_teal=False: seen.append(from_teal) or
+                        {"status": "ASM_FAIL", "sha": "x"})
+    tt.install_map(5, 1, teal, tmp_path)             # an update installs bytes the same mode handles
+    tt.install_map(5, 1, meta, tmp_path)
+    assert seen == [True, False]
+    monkeypatch.undo()
+
+    monkeypatch.setattr(tt, "disassemble", lambda prog: f"#pragma version 10\nTEAL {prog}")
+    monkeypatch.setattr(tt, "assemble", lambda src: (src.split()[-1] if "TEAL" in src else "LIFTED_B64", None))
+    monkeypatch.setattr(tt.subprocess, "run", fake_run)
+    run = stream.Run(tmp_path / "run")
+    assert stream.Lifts(run).lift(a, 11)["lifted"] == "LIFTED_B64"     # no flag: lifted (cached on disk)
+    lifts = stream.Lifts(run, {11})
+    assert lifts.widen({11: a, 12: a, 13: b}) == {12}         # 12 runs 11's bytes
+    assert [lifts.lift(p, app).get("from_teal", False) for app, p in ((11, a), (12, a), (13, b))] == [
+        True, True, False]
+    assert lifts.swap_map() == {stream._sha(a): a, stream._sha(b): "LIFTED_B64"}
+    c = base64.b64encode(b"\x0a\x81\x03\x43").decode()
+    assert lifts.lift(c, 11)["from_teal"] is True     # a program 11 installs mid-run
+    glob = type(run.lifts).glob
+    for order in (sorted, lambda x: sorted(x, reverse=True)):           # a restart keeps the modes
+        monkeypatch.setattr(type(run.lifts), "glob", lambda self, pat, _o=order: iter(_o(glob(self, pat))))
+        assert stream.Lifts(run, {11}).swap_map() == lifts.swap_map()
+    monkeypatch.setattr(type(run.lifts), "glob", glob)
+    blk = {"round": 7, "targets": {"0": [12, 13]},
+           "variants": [{"name": "orig", "groups": [_group(0)]}, {"name": "lifted", "groups": [_group(0)]}]}
+    rows = stream.block_rows(blk, lifts)
+    assert [r.get("from_teal") for r in rows] == [True, None]
+    run.append_rows(rows)
+    run.save("targets.json", [{"app": 12}, {"app": 13}])
+    table = stream.summarize(run)
+    assert "| 12 (TEAL) |" in table and "| 13 |" in table
+
+    run.save("meta.json", {"end": 9, "from_teal": [11]})
+    assert stream.main(["--out", str(run.out), "--from-teal", "13"]) == 2
 
 
 def test_rows_store_each_app_pc_once_and_are_read_streamed(tmp_path):
