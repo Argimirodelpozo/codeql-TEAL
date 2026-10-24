@@ -31,12 +31,6 @@ test dependency, and the extractor floor underneath is pure Python
 ```bash
 # Render a contract as real Puya IR (add --optimize to run Puya's optimiser first)
 PYTHONPATH=src python -m tealql.tealtools.lift <contract.teal> [--optimize]
-
-# User-input taint report (which attacker-controlled values reach sensitive sinks)
-PYTHONPATH=src python -m tealql.tealtools.lift.taint <contract.teal>
-
-# …the same, annotated inline on the rendered IR
-PYTHONPATH=src python -m tealql.tealtools.lift.taint --render <contract.teal>
 ```
 
 ## Python API
@@ -116,14 +110,13 @@ it).
 from tealql.tealtools.ssa import SSAProgram
 from tealql.tealtools.lift import build_lifter
 from tealql.tealtools.lift.taint import (
-    user_input_taint, tainted_sinks, taint_report, render_with_taint)
+    user_input_taint, tainted_sinks, taint_report)
 
 lf = build_lifter(SSAProgram("path/to/contract.teal"))  # need the lifter, for
                                                 # load_stores + the reg map
 taint = user_input_taint(lf)        # {id(Register): frozenset(sources)}
 flows = tainted_sinks(lf)           # [(sources, sink_op, immediates), …]
 print(taint_report(lf, "name"))     # grouped, human-readable, with TEAL lines
-print(render_with_taint(lf, "name"))# the IR with <== SOURCE/tainted/SINK inline
 ```
 
 See `tests/behavioral_lift/taint_example.txt` for a sample report. Two honest

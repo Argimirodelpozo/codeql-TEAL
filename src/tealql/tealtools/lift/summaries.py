@@ -12,10 +12,9 @@ from dataclasses import dataclass
 from types import MappingProxyType
 
 from ..diagnostics.evidence import GuardEvidence
-from ..language.effects import STATE_EFFECTS
 from . import pre_ir
 from .taint_flow import (
-    UNKNOWN_SOURCE, _intr, _invoke, _trusted_apparg, source_label, transfer_fixpoint,
+    SINK_OPS, UNKNOWN_SOURCE, _intr, _invoke, _trusted_apparg, source_label, transfer_fixpoint,
     value_sources, sub_local_scratch,
 )
 
@@ -173,7 +172,7 @@ def compute_summaries(lifter, trusted_args=frozenset(),
                     assertions.update(GuardEvidence(str(i), "influences-assertion", scope=(sub.id,))
                                       for i in dep.passthrough)
                 intr = _intr(op)
-                if intr is not None and intr.op in STATE_EFFECTS.keys() | {"log", "itxn_field"}:
+                if intr is not None and intr.op in SINK_OPS:
                     effects.append(EffectDependency(intr.op, intr.line,
                         tuple(_dependency(value_sources(a, taint), sub.id) for a in intr.args),
                         sub.id, tuple(intr.immediates)))

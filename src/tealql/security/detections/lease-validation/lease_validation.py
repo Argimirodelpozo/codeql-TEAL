@@ -22,6 +22,6 @@ class LeaseValidationDetector(_ApprovalExitProtectedDetector):
     applies_to = frozenset({"logicsig"})  # apps have state-based replay protection
     field = "Lease"
     # A lease is scoped to (Sender, Lease) of the txn carrying it, so only the
-    # SIGNED txn's own Lease gives this LogicSig replay protection.
-    signed_txn = True
+    # SIGNED txn's own Lease gives this LogicSig replay protection (the base's
+    # default seeds).
     violation_cls = LeaseValidationViolation

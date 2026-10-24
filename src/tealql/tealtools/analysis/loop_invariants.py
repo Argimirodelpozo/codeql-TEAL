@@ -19,7 +19,7 @@ def _join(values):
         return BOTTOM
     if any(v is None for v in values):
         return None
-    return IntRange(min(v.lo for v in values), max(v.hi for v in values))
+    return IntRange.hull(values)
 
 
 def _contains(outer, inner):

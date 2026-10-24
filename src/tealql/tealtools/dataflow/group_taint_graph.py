@@ -48,7 +48,7 @@ class GroupTaintGraph(NxGraphView):
         members = [TaintGraph.of(p) for p in member_progs]
         big: nx.DiGraph = nx.DiGraph()
         for idx, tg in enumerate(members):
-            _copy_into(big, tg, index=idx)
+            copy_into(big, tg, lambda n, idx=idx: GroupNode(idx, n))
         _add_scratch_bridges(big, members)
         _add_log_bridges(big, members)
         return cls(g=big, members=members)
@@ -70,10 +70,6 @@ class GroupTaintGraph(NxGraphView):
 
 
 # --- construction -------------------------------------------------------
-
-
-def _copy_into(big: nx.DiGraph, tg: TaintGraph, *, index: int) -> None:
-    copy_into(big, tg, lambda n: GroupNode(index, n))
 
 
 def _add_scratch_bridges(big: nx.DiGraph, members: list[TaintGraph]) -> None:
@@ -172,10 +168,6 @@ class GroupTaintFinding:
         }
 
 
-def _sensitive_sinks(gtg: GroupTaintGraph) -> list[tuple[GroupNode, str]]:
-    return sensitive_sinks(gtg)
-
-
 def _attacker_sources(gtg: GroupTaintGraph) -> list[GroupNode]:
     """Arg reads in any member — the whole group is attacker-assembled, so a
     sibling's args are as controlled as the member's own."""
@@ -201,7 +193,7 @@ def _attacker_sources(gtg: GroupTaintGraph) -> list[GroupNode]:
 def group_taint_findings(gtg: GroupTaintGraph) -> list[GroupTaintFinding]:
     """Report inputs reaching a sensitive sink in a DIFFERENT member — intra-member
     flows belong to the single-program detectors and are excluded here."""
-    sinks = _sensitive_sinks(gtg)
+    sinks = sensitive_sinks(gtg)
     findings: list[GroupTaintFinding] = []
     for src in _attacker_sources(gtg):
         reach = gtg.reachable_from(src)

@@ -8,10 +8,7 @@ from dataclasses import dataclass
 from typing import ClassVar, Optional
 
 from tealql.tealtools.ssa import BasicBlock, SSAProgram
-from ._field_protection import (
-    approval_exit_protected_for_field,
-    approval_exit_protected_for_signed_txn_field,
-)
+from ._field_protection import approval_exit_protected_for_field
 from ._program_shape import approving_exits
 
 
@@ -57,9 +54,6 @@ class _ApprovalExitProtectedDetector:
     # Set when the field is checked on a SIBLING group txn, so a `gtxn N FIELD`
     # guard counts; the default keeps app-call scope.
     seed_gtxn: ClassVar[bool] = False
-    # Delegated-LOGICSIG drain fields: the check must read the SIGNED txn's OWN
-    # field, since a bare sibling `gtxn N` protects the signer from nothing.
-    signed_txn: ClassVar[bool] = False
     # A ``_field_protection.SAFE_RULES`` key: the check must constrain the
     # field to a SAFE value, not merely compare it. ``None`` = any comparison.
     safe_value: ClassVar[Optional[str]] = None
@@ -80,14 +74,11 @@ class _ApprovalExitProtectedDetector:
             approving_exits(self.prog, file=self.file),
             key=lambda b: (b.file, b.first_line),
         ):
-            if self.signed_txn:
-                protected = approval_exit_protected_for_signed_txn_field(
-                    self.prog, exit_bb, self.field, file=self.file,
-                    safe=self.safe_value)
-            else:
-                protected = approval_exit_protected_for_field(
-                    self.prog, exit_bb, self.field, file=self.file,
-                    include_gtxn=self.seed_gtxn, safe=self.safe_value)
+            # Seeds are the SIGNED txn's own field reads (`_txn_field_seeds`):
+            # an unpinned sibling `gtxn N` never counts unless `seed_gtxn`.
+            protected = approval_exit_protected_for_field(
+                self.prog, exit_bb, self.field, file=self.file,
+                include_gtxn=self.seed_gtxn, safe=self.safe_value)
             if not protected:
                 out.append(self.violation_cls(exit_bb))
         return out

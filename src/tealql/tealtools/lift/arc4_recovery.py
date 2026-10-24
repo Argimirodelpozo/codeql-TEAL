@@ -25,6 +25,7 @@ from puya.ir.avm_ops import AVMOp
 from puya.ir.types_ import PrimitiveIRType as PT
 
 from . import _puya_compat as _compat
+from ._ir_walk import reg_defs, walk_ops, walk_sources
 
 logger = logging.getLogger("tealql.tealtools.lift")
 
@@ -260,33 +261,31 @@ def _guess_decoded_dynamic(main, subs) -> dict:
     elem_bits: dict = {}         # id(base): 64/32 from extract_uint64/32 chunking
     u16_elem: dict = {}          # id(base): [result id] for extract_uint16 at offset != 0
     slice_starts: set = set()    # id(reg) used as a slice START of extract3/substring3
-    for s in (main, *subs):
-        for bb in s.body:
-            for o in bb.ops:
-                if not (isinstance(o, M.Assignment)
-                        and isinstance(o.source, M.Intrinsic)):
-                    continue
-                src = o.source
-                a = src.args
-                if src.op is AVMOp.extract_uint16 and len(a) == 2 \
-                        and isinstance(a[0], M.Register):
-                    if isinstance(a[1], M.UInt64Constant) and a[1].value == 0:
-                        len_read.add(id(a[0]))             # the count / length prefix
-                    elif o.targets:                        # an element / offset read
-                        u16_elem.setdefault(id(a[0]), []).append(id(o.targets[0]))
-                elif (src.op is AVMOp.extract and a and isinstance(a[0], M.Register)
-                        and len(src.immediates) >= 2 and src.immediates[0] == 2
-                        and src.immediates[1] == 0 and o.targets):
-                    payload_of[id(a[0])] = o.targets[0]
-                elif (src.op is AVMOp.extract_uint64 and a
-                        and isinstance(a[0], M.Register)):
-                    elem_bits[id(a[0])] = 64
-                elif (src.op is AVMOp.extract_uint32 and a
-                        and isinstance(a[0], M.Register)):
-                    elem_bits.setdefault(id(a[0]), 32)
-                if src.op in (AVMOp.extract3, AVMOp.substring3) and len(a) >= 2 \
-                        and isinstance(a[1], M.Register):
-                    slice_starts.add(id(a[1]))
+    for s, o in walk_ops((main, *subs)):
+        if not (isinstance(o, M.Assignment)
+                and isinstance(o.source, M.Intrinsic)):
+            continue
+        src = o.source
+        a = src.args
+        if src.op is AVMOp.extract_uint16 and len(a) == 2 \
+                and isinstance(a[0], M.Register):
+            if isinstance(a[1], M.UInt64Constant) and a[1].value == 0:
+                len_read.add(id(a[0]))             # the count / length prefix
+            elif o.targets:                        # an element / offset read
+                u16_elem.setdefault(id(a[0]), []).append(id(o.targets[0]))
+        elif (src.op is AVMOp.extract and a and isinstance(a[0], M.Register)
+                and len(src.immediates) >= 2 and src.immediates[0] == 2
+                and src.immediates[1] == 0 and o.targets):
+            payload_of[id(a[0])] = o.targets[0]
+        elif (src.op is AVMOp.extract_uint64 and a
+                and isinstance(a[0], M.Register)):
+            elem_bits[id(a[0])] = 64
+        elif (src.op is AVMOp.extract_uint32 and a
+                and isinstance(a[0], M.Register)):
+            elem_bits.setdefault(id(a[0]), 32)
+        if src.op in (AVMOp.extract3, AVMOp.substring3) and len(a) >= 2 \
+                and isinstance(a[1], M.Register):
+            slice_starts.add(id(a[1]))
     def _dyn(element):
         return EncodedType(
             ArrayEncoding(element=element, size=None, length_header=True))
@@ -334,33 +333,31 @@ def _guess_struct_encodings(main, subs, dynamic_guesses) -> dict:
     u16res: dict = {}            # id(result) -> (id(base), const pos or None)
     field_of: dict = {}          # id(offset result) -> field slice register
     slice_starts: set = set()
-    for s in (main, *subs):
-        for bb in s.body:
-            for o in bb.ops:
-                if not (isinstance(o, M.Assignment)
-                        and isinstance(o.source, M.Intrinsic)):
-                    continue
-                src = o.source
-                a = src.args
-                if src.op is AVMOp.extract_uint16 and len(a) == 2 \
-                        and isinstance(a[0], M.Register) and o.targets:
-                    pos = a[1].value if isinstance(a[1], M.UInt64Constant) else None
-                    u16res[id(o.targets[0])] = (id(a[0]), pos)
-                elif src.op is AVMOp.extract_uint64 and len(a) >= 2 \
-                        and isinstance(a[0], M.Register) \
-                        and isinstance(a[1], M.UInt64Constant):
-                    slots.setdefault(id(a[0]), {}).setdefault(
-                        a[1].value, ("static", 8, UIntEncoding(64)))
-                elif src.op is AVMOp.extract_uint32 and len(a) >= 2 \
-                        and isinstance(a[0], M.Register) \
-                        and isinstance(a[1], M.UInt64Constant):
-                    slots.setdefault(id(a[0]), {}).setdefault(
-                        a[1].value, ("static", 4, UIntEncoding(32)))
-                if src.op in (AVMOp.substring3, AVMOp.extract3) and len(a) >= 2 \
-                        and isinstance(a[1], M.Register):
-                    slice_starts.add(id(a[1]))
-                    if o.targets:
-                        field_of[id(a[1])] = o.targets[0]
+    for s, o in walk_ops((main, *subs)):
+        if not (isinstance(o, M.Assignment)
+                and isinstance(o.source, M.Intrinsic)):
+            continue
+        src = o.source
+        a = src.args
+        if src.op is AVMOp.extract_uint16 and len(a) == 2 \
+                and isinstance(a[0], M.Register) and o.targets:
+            pos = a[1].value if isinstance(a[1], M.UInt64Constant) else None
+            u16res[id(o.targets[0])] = (id(a[0]), pos)
+        elif src.op is AVMOp.extract_uint64 and len(a) >= 2 \
+                and isinstance(a[0], M.Register) \
+                and isinstance(a[1], M.UInt64Constant):
+            slots.setdefault(id(a[0]), {}).setdefault(
+                a[1].value, ("static", 8, UIntEncoding(64)))
+        elif src.op is AVMOp.extract_uint32 and len(a) >= 2 \
+                and isinstance(a[0], M.Register) \
+                and isinstance(a[1], M.UInt64Constant):
+            slots.setdefault(id(a[0]), {}).setdefault(
+                a[1].value, ("static", 4, UIntEncoding(32)))
+        if src.op in (AVMOp.substring3, AVMOp.extract3) and len(a) >= 2 \
+                and isinstance(a[1], M.Register):
+            slice_starts.add(id(a[1]))
+            if o.targets:
+                field_of[id(a[1])] = o.targets[0]
     for rid, (base, pos) in u16res.items():
         if pos is None:
             continue
@@ -441,33 +438,24 @@ def _guess_decoded_static_arrays(main, subs) -> dict:
     def kv(r):
         return (r.name, r.version)
 
-    reg_def: dict = {}      # (sub_id, name, version) -> defining assignment
-    for s in (main, *subs):
-        for bb in s.body:
-            for o in bb.ops:
-                if isinstance(o, M.Assignment):
-                    for t in o.targets:
-                        reg_def[id(t)] = o
+    reg_def: dict = reg_defs((main, *subs))      # id(target) -> defining assignment
 
     width = {AVMOp.extract_uint64: 8, AVMOp.extract_uint32: 4}
     reads: dict = {}                 # (name,version) -> set[(pos, w)]
     len_prefixed: set = set()        # (name,version) with an offset-0 uint16 read
     obj: dict = {}                   # (name,version) -> a representative Register
-    for s in (main, *subs):
-        for bb in s.body:
-            for o in bb.ops:
-                src = o.source if isinstance(o, M.Assignment) else o
-                if not isinstance(src, M.Intrinsic):
-                    continue
-                a = src.args
-                if not (len(a) >= 2 and isinstance(a[0], M.Register)
-                        and isinstance(a[1], M.UInt64Constant)):
-                    continue
-                if src.op is AVMOp.extract_uint16 and a[1].value == 0:
-                    len_prefixed.add(kv(a[0]))
-                elif src.op in width:
-                    reads.setdefault(kv(a[0]), set()).add((a[1].value, width[src.op]))
-                    obj.setdefault(kv(a[0]), a[0])
+    for s, o, src in walk_sources((main, *subs)):
+        if not isinstance(src, M.Intrinsic):
+            continue
+        a = src.args
+        if not (len(a) >= 2 and isinstance(a[0], M.Register)
+                and isinstance(a[1], M.UInt64Constant)):
+            continue
+        if src.op is AVMOp.extract_uint16 and a[1].value == 0:
+            len_prefixed.add(kv(a[0]))
+        elif src.op in width:
+            reads.setdefault(kv(a[0]), set()).add((a[1].value, width[src.op]))
+            obj.setdefault(kv(a[0]), a[0])
 
     out: dict = {}
     for k, rs in reads.items():
@@ -510,37 +498,32 @@ def _guess_static_arrays(main, subs) -> dict:
         return (r.name, r.version)
 
     fed_to_concat: set = set()
-    for s in (main, *subs):
-        for bb in s.body:
-            for o in bb.ops:
-                src = o.source if isinstance(o, M.Assignment) else o
-                if isinstance(src, M.Intrinsic) and src.op is AVMOp.concat:
-                    for a in src.args:
-                        if isinstance(a, M.Register):
-                            fed_to_concat.add(kv(a))
+    for s, o, src in walk_sources((main, *subs)):
+        if isinstance(src, M.Intrinsic) and src.op is AVMOp.concat:
+            for a in src.args:
+                if isinstance(a, M.Register):
+                    fed_to_concat.add(kv(a))
 
     out: dict = {}
-    for s in (main, *subs):
-        for bb in s.body:
-            for o in bb.ops:
-                if not (isinstance(o, M.Assignment)
-                        and isinstance(o.source, M.Intrinsic)
-                        and o.source.op is AVMOp.concat
-                        and len(o.source.args) == 2):
-                    continue
-                le = _static_encoding_elements(o.source.args[0])
-                re = _static_encoding_elements(o.source.args[1])
-                if le is None or re is None:
-                    continue
-                elems = le + re
-                if len(elems) < 2 or len({str(e) for e in elems}) != 1:
-                    continue
-                et = EncodedType(ArrayEncoding(
-                    element=elems[0], size=len(elems), length_header=False))
-                for t in o.targets:
-                    if isinstance(t, M.Register) and kv(t) not in fed_to_concat \
-                            and t.ir_type.avm_type == et.avm_type:
-                        out[id(t)] = et
+    for s, o in walk_ops((main, *subs)):
+        if not (isinstance(o, M.Assignment)
+                and isinstance(o.source, M.Intrinsic)
+                and o.source.op is AVMOp.concat
+                and len(o.source.args) == 2):
+            continue
+        le = _static_encoding_elements(o.source.args[0])
+        re = _static_encoding_elements(o.source.args[1])
+        if le is None or re is None:
+            continue
+        elems = le + re
+        if len(elems) < 2 or len({str(e) for e in elems}) != 1:
+            continue
+        et = EncodedType(ArrayEncoding(
+            element=elems[0], size=len(elems), length_header=False))
+        for t in o.targets:
+            if isinstance(t, M.Register) and kv(t) not in fed_to_concat \
+                    and t.ir_type.avm_type == et.avm_type:
+                out[id(t)] = et
     return out
 
 
@@ -586,22 +569,19 @@ def _guess_address_usage(main, subs) -> dict:
         if isinstance(a, M.Register) and a.ir_type.avm_type == address.avm_type:
             out.setdefault(id(a), address)
 
-    for s in (main, *subs):
-        for bb in s.body:
-            for o in bb.ops:
-                src = o.source if isinstance(o, M.Assignment) else o
-                if not isinstance(src, M.Intrinsic) or not src.args:
-                    continue
-                op = src.op
-                if op is AVMOp.itxn_field and src.immediates:
-                    if str(src.immediates[0]).strip() in _ACCOUNT_TXN_FIELDS:
-                        mark(src.args[0])
-                elif op in _ACCOUNT_OPERAND_OPS:
-                    mark(src.args[0])
-                elif op in (AVMOp.eq, AVMOp.neq) \
-                        and any(_is_zero_address(a) for a in src.args):
-                    for a in src.args:
-                        mark(a)
+    for s, o, src in walk_sources((main, *subs)):
+        if not isinstance(src, M.Intrinsic) or not src.args:
+            continue
+        op = src.op
+        if op is AVMOp.itxn_field and src.immediates:
+            if str(src.immediates[0]).strip() in _ACCOUNT_TXN_FIELDS:
+                mark(src.args[0])
+        elif op in _ACCOUNT_OPERAND_OPS:
+            mark(src.args[0])
+        elif op in (AVMOp.eq, AVMOp.neq) \
+                and any(_is_zero_address(a) for a in src.args):
+            for a in src.args:
+                mark(a)
     return out
 
 
@@ -626,13 +606,7 @@ def guess_encoded_types_scored(main, subs):
     :func:`_propagate_guesses` then flows each guess along identity-preserving
     relations; a derived guess stays confident only if the whole path preserves
     it."""
-    reg_def: dict = {}
-    for s in (main, *subs):
-        for bb in s.body:
-            for o in bb.ops:
-                if isinstance(o, M.Assignment):
-                    for t in o.targets:
-                        reg_def[id(t)] = o
+    reg_def: dict = reg_defs((main, *subs))
 
     guesses: dict = {}
     confident: dict = {}
@@ -651,38 +625,33 @@ def guess_encoded_types_scored(main, subs):
     bulk(_guess_decoded_dynamic(main, subs), False)
     bulk(_guess_struct_encodings(main, subs, guesses), False)
     bulk(_guess_decoded_static_arrays(main, subs), False)
-    for s in (main, *subs):
-        for bb in s.body:
-            for o in bb.ops:
-                if not isinstance(o, M.Assignment):
-                    continue
-                src = o.source
-                if isinstance(src, M.Intrinsic):
-                    et, sure = _guess_encoding_for(src, reg_def), False
-                elif isinstance(src, M.BytesConstant):
-                    et, sure = _guess_const_encoding(src.value), True
-                else:
-                    et = None
-                if et is None:
-                    continue
-                for tgt in o.targets:
-                    if tgt.ir_type.avm_type == et.avm_type:
-                        guesses[id(tgt)] = et       # producer wins over decode
-                        confident[id(tgt)] = sure
+    for s, o in walk_ops((main, *subs)):
+        if not isinstance(o, M.Assignment):
+            continue
+        src = o.source
+        if isinstance(src, M.Intrinsic):
+            et, sure = _guess_encoding_for(src, reg_def), False
+        elif isinstance(src, M.BytesConstant):
+            et, sure = _guess_const_encoding(src.value), True
+        else:
+            et = None
+        if et is None:
+            continue
+        for tgt in o.targets:
+            if tgt.ir_type.avm_type == et.avm_type:
+                guesses[id(tgt)] = et       # producer wins over decode
+                confident[id(tgt)] = sure
     # Inline constants: the lift const-inlines aggressively, so a literal usually
     # appears as an INTRINSIC ARG, never as an assignment source.
-    for s_ in (main, *subs):
-        for bb in s_.body:
-            for o in bb.ops:
-                src = o.source if isinstance(o, M.Assignment) else o
-                if not isinstance(src, M.Intrinsic):
-                    continue
-                for a in src.args:
-                    if isinstance(a, M.BytesConstant) and id(a) not in guesses:
-                        et = _guess_const_encoding(a.value)
-                        if et is not None:
-                            guesses[id(a)] = et
-                            confident[id(a)] = True
+    for s_, o, src in walk_sources((main, *subs)):
+        if not isinstance(src, M.Intrinsic):
+            continue
+        for a in src.args:
+            if isinstance(a, M.BytesConstant) and id(a) not in guesses:
+                et = _guess_const_encoding(a.value)
+                if et is not None:
+                    guesses[id(a)] = et
+                    confident[id(a)] = True
     # Producer-side homogeneous static arrays: shape fits but array-vs-struct is
     # unforced -> somewhat.
     bulk(_guess_static_arrays(main, subs), False)
@@ -699,15 +668,19 @@ def guess_encoded_types_scored(main, subs):
 # HAZARD: selecting the first constant as the key or the first register as the
 # value confuses app_local_put's ACCOUNT with its VALUE, recovering a later
 # ``itob(uint64)`` read as arc4.Address.
+# Derived from box_recovery._STORAGE_OPS (the one storage operand table): the
+# app-state WHOLE-value puts -> (scope, key_idx, value_idx) and the app-state
+# whole-value reads -> (scope, key_idx). Box ops are out of scope here.
+from .box_recovery import _STORAGE_OPS  # noqa: E402
 _STATE_PUT_LAYOUT = {
-    AVMOp.app_global_put: ("global", 0, 1),
-    AVMOp.app_local_put: ("local", 1, 2),
+    AVMOp[name]: (kind, kidx, vidx)
+    for name, (kind, kidx, vidx, _res) in _STORAGE_OPS.items()
+    if kind != "box" and vidx is not None
 }
 _STATE_GET_KEY_IDX = {
-    AVMOp.app_global_get: ("global", 0),
-    AVMOp.app_local_get: ("local", 1),
-    AVMOp.app_global_get_ex: ("global", 1),
-    AVMOp.app_local_get_ex: ("local", 2),
+    AVMOp[name]: (kind, kidx)
+    for name, (kind, kidx, _vidx, is_result) in _STORAGE_OPS.items()
+    if kind != "box" and is_result
 }
 
 
@@ -820,28 +793,25 @@ def _propagate_guesses(main, subs, guesses: dict, confident: dict = None) -> Non
 
     def _run_state():
         writes: dict = {}       # (scope, keybytes) -> set(encodings) | None(poisoned)
-        for s in (main, *subs):
-            for bb in s.body:
-                for o in bb.ops:
-                    src = o.source if isinstance(o, M.Assignment) else o
-                    if not (isinstance(src, M.Intrinsic)
-                            and src.op in _STATE_PUT_LAYOUT):
-                        continue
-                    kb = _state_key(src)
-                    if kb is None or writes.get(kb, "unset") is None:
-                        continue                     # unknown key or already poisoned
-                    value_idx = _STATE_PUT_LAYOUT[src.op][2]
-                    val = src.args[value_idx] if value_idx < len(src.args) else None
-                    if isinstance(val, M.Register):
-                        e = enc.get(key(val))
-                        if e is None and isinstance(val.ir_type, EncodedType):
-                            e = val.ir_type       # confident tier -> state side-channel
-                    else:
-                        e = guesses.get(id(val)) if val is not None else None
-                    if e is None:
-                        writes[kb] = None            # an unencoded write poisons the key
-                    else:
-                        writes.setdefault(kb, set()).add(e)
+        for s, o, src in walk_sources((main, *subs)):
+            if not (isinstance(src, M.Intrinsic)
+                    and src.op in _STATE_PUT_LAYOUT):
+                continue
+            kb = _state_key(src)
+            if kb is None or writes.get(kb, "unset") is None:
+                continue                     # unknown key or already poisoned
+            value_idx = _STATE_PUT_LAYOUT[src.op][2]
+            val = src.args[value_idx] if value_idx < len(src.args) else None
+            if isinstance(val, M.Register):
+                e = enc.get(key(val))
+                if e is None and isinstance(val.ir_type, EncodedType):
+                    e = val.ir_type       # confident tier -> state side-channel
+            else:
+                e = guesses.get(id(val)) if val is not None else None
+            if e is None:
+                writes[kb] = None            # an unencoded write poisons the key
+            else:
+                writes.setdefault(kb, set()).add(e)
         se = {kb: next(iter(es)) for kb, es in writes.items()
               if isinstance(es, set) and len(es) == 1}
         # A state round-trip is an all-writes-agree ASSUMPTION, not a proof ->
@@ -1069,32 +1039,29 @@ def abi_address_fund_flows(main, subs, guesses=None) -> list:
         return False
 
     leads: list = []
-    for s in groups:
-        for bb in s.body:
-            for o in bb.ops:
-                src = o.source if isinstance(o, M.Assignment) else o
-                if not (isinstance(src, M.Intrinsic) and src.op is AVMOp.itxn_field
-                        and src.immediates and src.args):
-                    continue
-                field = str(src.immediates[0]).strip()
-                if field not in _FUND_SINK_FIELDS:
-                    continue
-                a = src.args[0]
-                if not (isinstance(a, M.Register) and id(a) in guesses
-                        and is_address_encoding(guesses[id(a)])):
-                    continue
-                start = kv(s, a)
-                sl = bslice(start)
-                caller_supplied = bool(sl & is_arg)
-                leads.append({
-                    "field": field,
-                    "subroutine": s.id,
-                    "encoding": str(guesses[id(a)]),
-                    "confident": bool(confident.get(id(a), False)),
-                    "caller_supplied": caller_supplied,
-                    "guarded": (caller_supplied
-                                and not _has_unguarded_arg_path(start)),
-                })
+    for s, o, src in walk_sources(groups):
+        if not (isinstance(src, M.Intrinsic) and src.op is AVMOp.itxn_field
+                and src.immediates and src.args):
+            continue
+        field = str(src.immediates[0]).strip()
+        if field not in _FUND_SINK_FIELDS:
+            continue
+        a = src.args[0]
+        if not (isinstance(a, M.Register) and id(a) in guesses
+                and is_address_encoding(guesses[id(a)])):
+            continue
+        start = kv(s, a)
+        sl = bslice(start)
+        caller_supplied = bool(sl & is_arg)
+        leads.append({
+            "field": field,
+            "subroutine": s.id,
+            "encoding": str(guesses[id(a)]),
+            "confident": bool(confident.get(id(a), False)),
+            "caller_supplied": caller_supplied,
+            "guarded": (caller_supplied
+                        and not _has_unguarded_arg_path(start)),
+        })
     return leads
 
 
@@ -1111,13 +1078,7 @@ def _recover_encoded_types(main, subs) -> int:
     :func:`to_puya`'s default IR; the SPECULATIVE tier
     (:func:`guess_encoded_types_scored`) is side-channelled so it can never reach
     this IR."""
-    reg_def: dict = {}
-    for s in (main, *subs):
-        for bb in s.body:
-            for o in bb.ops:
-                if isinstance(o, M.Assignment):
-                    for t in o.targets:
-                        reg_def[id(t)] = o
+    reg_def: dict = reg_defs((main, *subs))
     # Iterate to a fixpoint: `concat` reads its operands' recovered types, so a
     # nested `concat(concat(a, b), c)` resolves over successive rounds. Monotonic
     # (coarse -> richer encoding of the same avm_type), so it terminates.
@@ -1125,22 +1086,20 @@ def _recover_encoded_types(main, subs) -> int:
     changed = True
     while changed:
         changed = False
-        for s in (main, *subs):
-            for bb in s.body:
-                for o in bb.ops:
-                    if not (isinstance(o, M.Assignment)
-                            and isinstance(o.source, M.Intrinsic)):
-                        continue
-                    et = _confident_encoding_for(o.source, reg_def)
-                    if et is None:
-                        continue
-                    touched = False
-                    for tgt in o.targets:
-                        if tgt.ir_type.avm_type == et.avm_type and tgt.ir_type != et:
-                            _compat.set_ir_type(tgt, et)
-                            touched = changed = True
-                            n += 1
-                    if touched:
-                        _compat.set_intrinsic_types(
-                            o.source, (t.ir_type for t in o.targets))
+        for s, o in walk_ops((main, *subs)):
+            if not (isinstance(o, M.Assignment)
+                    and isinstance(o.source, M.Intrinsic)):
+                continue
+            et = _confident_encoding_for(o.source, reg_def)
+            if et is None:
+                continue
+            touched = False
+            for tgt in o.targets:
+                if tgt.ir_type.avm_type == et.avm_type and tgt.ir_type != et:
+                    _compat.set_ir_type(tgt, et)
+                    touched = changed = True
+                    n += 1
+            if touched:
+                _compat.set_intrinsic_types(
+                    o.source, (t.ir_type for t in o.targets))
     return n

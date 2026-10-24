@@ -14,6 +14,7 @@ from typing import Optional, TYPE_CHECKING
 if TYPE_CHECKING:
     from .models import Assignment, BasicBlock
 
+from ..language.avm import _TERMINATOR_OPS
 from .models import Const
 
 
@@ -26,6 +27,17 @@ def imm0(a) -> Optional[int]:
     try:
         return int(toks[0])
     except ValueError:
+        return None
+
+
+def first_immediate_int(op) -> Optional[int]:
+    """First immediate token of ``op`` as an int, or ``None`` -- the lenient
+    sibling of :func:`imm0` the SSA builder uses: ANY failure (no
+    ``immediates`` attribute, a non-string value, no token, a non-numeric
+    token) is ``None``, where :func:`imm0` lets a non-string raise."""
+    try:
+        return int(op.immediates.strip().split()[0])
+    except (ValueError, IndexError, AttributeError):
         return None
 
 
@@ -107,13 +119,11 @@ def canonical_assignments(bb: "BasicBlock") -> tuple["Assignment", ...]:
 def terminator_op(bb) -> Optional[str]:
     """The control op ending ``bb``'s canonical stream, or ``None``.
 
-    The ONE spelling of the control-op set — `loop_bounds` and the cost model
-    each carried a verbatim copy, so a future control op would have to be
-    remembered twice or the loop graph and the cost model silently disagree."""
+    The control-op set is :data:`..language.avm._TERMINATOR_OPS` — `loop_bounds`
+    and the cost model each carried a verbatim copy, so a future control op
+    would have to be remembered twice or the loop graph and the cost model
+    silently disagree."""
     for assignment in reversed(canonical_assignments(bb)):
-        if assignment.op in {
-            "b", "bz", "bnz", "switch", "match", "callsub",
-            "retsub", "return", "err",
-        }:
+        if assignment.op in _TERMINATOR_OPS:
             return assignment.op
     return None

@@ -19,7 +19,6 @@ from ..ssa.operands import imm0 as _imm0
 from . import pre_ir
 from ..language.avm import (_BYTES_CONSUME, _BYTES_OPS, _U64_CONSUME, _U64_OPS,
                       _field_type, avm, txn_field_avm_type)
-from .teal_const import _const_bytes
 
 logger = logging.getLogger("tealql.tealtools.lift")
 
@@ -39,15 +38,6 @@ def _itxn_field_avm(field: str):
 def _itob_const(v: int) -> "pre_ir.BytesConstant":
     """A uint64 placeholder as bytes: empty for the dead 0 seed, else its itob form."""
     return pre_ir.BytesConstant("0x" if v == 0 else "0x" + v.to_bytes(8, "big").hex())
-
-
-def _to_u64_const(b) -> "pre_ir.UInt64Constant":
-    """A bytes placeholder as uint64: empty -> 0, else its btoi value."""
-    try:
-        raw, _ = _const_bytes(getattr(b, "value", "") or "0x")
-        return pre_ir.UInt64Constant(int.from_bytes(raw[-8:], "big") if raw else 0)
-    except Exception:
-        return pre_ir.UInt64Constant(0)
 
 
 def _is_dead_placeholder(value) -> bool:
@@ -805,8 +795,7 @@ def _unify_params_from_call_args(subs) -> None:
         for o in b.ops:
             # A call with results is an Assignment source; a VOID call is wrapped
             # in an IntrinsicOp (`.intrinsic` holds the InvokeSubroutine).
-            src = (o.source if isinstance(o, pre_ir.Assignment)
-                   else o.intrinsic if isinstance(o, pre_ir.IntrinsicOp) else None)
+            src = pre_ir.value_provider(o)
             if not isinstance(src, pre_ir.InvokeSubroutine):
                 continue
             callee = sub_by_id.get(src.target)
@@ -834,8 +823,7 @@ def _infer_args_from_params(subs) -> None:
     sub_by_id = {s.id: s for s in subs}
     for b in pre_ir.blocks(subs):
         for o in b.ops:
-            src = (o.source if isinstance(o, pre_ir.Assignment)
-                   else o.intrinsic if isinstance(o, pre_ir.IntrinsicOp) else None)
+            src = pre_ir.value_provider(o)
             if not isinstance(src, pre_ir.InvokeSubroutine):
                 continue
             callee = sub_by_id.get(src.target)
@@ -960,15 +948,6 @@ def _propagate_copy_load_types(lifter):
     source register's type, a scratch ``(load N)`` the type stored to its slot
     (via the reaching-def ``load_stores``). Runs last, after param / return /
     state inference have typed the leaves."""
-    def _src_type(v):
-        if isinstance(v, pre_ir.Register):
-            return v.ir_type
-        if isinstance(v, pre_ir.UInt64Constant):
-            return "uint64"
-        if isinstance(v, pre_ir.BytesConstant):
-            return "bytes"
-        return None                          # Intrinsic / invoke: not a copy
-
     # Monotonic (every write is guarded by `== "?"`), so this cannot oscillate;
     # loop to the fixpoint so a long copy/load chain is never left half-typed.
     changed = True
@@ -978,7 +957,7 @@ def _propagate_copy_load_types(lifter):
             for op in bb.ops:
                 if (isinstance(op, pre_ir.Assignment) and len(op.targets) == 1
                         and op.targets[0].ir_type == "?"):
-                    st = _src_type(op.source)
+                    st = _arg_avm_type(op.source)   # "?" for a non-copy source
                     if st and st != "?":
                         op.targets[0].ir_type = st
                         changed = True
@@ -1028,14 +1007,6 @@ def _infer_select_types(subs) -> None:
     # `select C B A` returns B or A, so the result shares ONE AVM type with both
     # value operands. Args are top-first [C, B, A] — skip arg 0 (the uint64
     # condition) and join the value operands; a genuine clash joins to None.
-    def _vt(v):
-        if isinstance(v, pre_ir.Register):
-            return v.ir_type
-        if isinstance(v, pre_ir.UInt64Constant):
-            return "uint64"
-        if isinstance(v, pre_ir.BytesConstant):
-            return "bytes"
-        return "?"
     for b in pre_ir.blocks(subs):
         for o in b.ops:
             if (isinstance(o, pre_ir.Assignment) and len(o.targets) == 1
@@ -1043,7 +1014,7 @@ def _infer_select_types(subs) -> None:
                 s = o.source
                 if (isinstance(s, pre_ir.Intrinsic) and s.op == "select"
                         and len(s.args) == 3):
-                    j = _avm_join(_vt(v) for v in s.args[1:])
+                    j = _avm_join(_arg_avm_type(v) for v in s.args[1:])
                     if j is not None:
                         o.targets[0].ir_type = j
 
@@ -1054,11 +1025,6 @@ def _infer_setbit_types(subs) -> None:
     # A (value)], so A is args[2]. Unify a `?` result with A and vice versa, so an
     # ARC-4 bool-pack chain seeded by `0x00` stays `bytes` instead of each
     # intermediate defaulting to uint64.
-    def _vt(v):
-        if isinstance(v, pre_ir.Register):       return v.ir_type
-        if isinstance(v, pre_ir.UInt64Constant): return "uint64"
-        if isinstance(v, pre_ir.BytesConstant):  return "bytes"
-        return "?"
     for b in pre_ir.blocks(subs):
         for o in b.ops:
             if not (isinstance(o, pre_ir.Assignment) and len(o.targets) == 1):
@@ -1068,7 +1034,7 @@ def _infer_setbit_types(subs) -> None:
                     and len(s.args) == 3):
                 continue
             val, res = s.args[2], o.targets[0]
-            rt, vt = res.ir_type, _vt(val)
+            rt, vt = res.ir_type, _arg_avm_type(val)
             if rt == "?" and vt != "?":
                 res.ir_type = vt                              # value type -> ? result
             elif isinstance(val, pre_ir.Register) and val.ir_type == "?" and rt != "?":
@@ -1278,8 +1244,7 @@ def _coerce_constant_operands(prog) -> None:
     stats = getattr(prog, "pass_stats", None)
     for b in pre_ir.blocks(prog):
         for o in b.ops:
-            vp = (o.source if isinstance(o, pre_ir.Assignment)
-                  else o.intrinsic if isinstance(o, pre_ir.IntrinsicOp) else None)
+            vp = pre_ir.value_provider(o)
             if not isinstance(vp, pre_ir.Intrinsic):
                 continue
             for i, a in enumerate(vp.args):
@@ -1361,8 +1326,7 @@ def _fix_langspec_operand_types(prog) -> None:
     fixed: set = set()                     # registers the AVM already types
     for b in pre_ir.blocks(prog):
         for o in b.ops:
-            note(o.source if isinstance(o, pre_ir.Assignment)
-                 else o.intrinsic if isinstance(o, pre_ir.IntrinsicOp) else None)
+            note(pre_ir.value_provider(o))
             if isinstance(o, pre_ir.Assignment) and isinstance(o.source, pre_ir.Intrinsic):
                 if _avm_fixed_family(o.source) is not None:
                     fixed.update(id(t) for t in o.targets)

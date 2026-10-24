@@ -14,8 +14,9 @@ from __future__ import annotations
 import pytest
 
 from tealql.tealtools.ssa import SSAProgram
-from tealql.security._enforcement import def_forward_reaches_enforcement
+from tealql.security._enforcement import _label_to_bb_first_line
 from tealql.security._field_protection import (
+    _collect_field_enforcement_bbs,
     approval_exit_protected_for_field,
     field_validated_on_all_paths,
 )
@@ -193,7 +194,10 @@ def _reaches_enforcement(tmp_path, teal: str, cmp_op: str) -> bool:
     (tmp_path / "p.teal").write_text(teal)
     prog = SSAProgram(str(tmp_path))
     cmp = next(a for a in prog.assignments if a.op == cmp_op)
-    return def_forward_reaches_enforcement(prog, cmp.outputs[0])
+    sites: set = set()
+    _collect_field_enforcement_bbs(prog, cmp.outputs[0],
+                                   _label_to_bb_first_line(prog), sites, set())
+    return bool(sites)
 
 
 # `==; store 0; load 0; assert` — the comparison is enforced, just laundered

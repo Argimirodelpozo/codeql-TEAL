@@ -47,7 +47,7 @@ def _hull(values):
     values = list(values)
     if not values or any(v is None for v in values):
         raise _Refused('an entry, update or operand has unknown bounds')
-    return IntRange(min(v.lo for v in values), max(v.hi for v in values))
+    return IntRange.hull(values)
 
 
 class _Proof:

@@ -7,18 +7,31 @@ is still unchecked and the finding says exactly that.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Optional
 
-from tealql.security._field_validated import _FieldValidatedDetector, _FieldValidatedViolation
 from tealql.security._field_protection import field_validated_on_all_paths
+from tealql.security._program_shape import approving_exits, has_instructions
 from tealql.tealtools.ssa import SSAProgram
 
 
-class AssetCloseToViolation(_FieldValidatedViolation):
-    pass
+@dataclass
+class AssetCloseToViolation:
+    prog: SSAProgram
+    message: str = ""
+
+    # The violation is the ABSENCE of a validation, so there is no anchor line.
+    file = None
+    line = None
+
+    def pretty(self) -> str:
+        return self.message
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({self.message})"
 
 
-class AssetCloseToDetector(_FieldValidatedDetector):
+class AssetCloseToDetector:
     severity = "high"
     name = "sec-guide/asset-close-to"
     field = ("AssetCloseTo",)
@@ -36,7 +49,20 @@ class AssetCloseToDetector(_FieldValidatedDetector):
     violation_cls = AssetCloseToViolation
 
     def __init__(self, prog: SSAProgram, *, file: Optional[str] = None):
-        super().__init__(prog, file=file)
+        self.prog = prog
+        self.file = file
+
+    def in_scope(self) -> bool:
+        """The ABSENCE of a validation is a finding only for a program that
+        parsed to instructions AND can approve.
+
+        HAZARD: an empty / fully-unparsed program trivially "lacks" the
+        validation — unanalyzable input, not a finding. And the claim is "a
+        drain can be APPROVED without the check": a program with no approving
+        exit (`int 0; return`, `err`) approves nothing, so the absent check
+        protects nothing and is not a finding either."""
+        return (has_instructions(self.prog, file=self.file)
+                and bool(approving_exits(self.prog, file=self.file)))
 
     def detect(self) -> list:
         if not self.in_scope():

@@ -14,6 +14,7 @@ surface as :attr:`SSAProgram.parse_diagnostics`; strict callers raise
 """
 from __future__ import annotations
 
+import contextlib
 from dataclasses import dataclass
 
 
@@ -90,3 +91,17 @@ class LiftError(TealQLError):
     def __init__(self, message: str, *, stage: str = "lift"):
         self.stage = stage
         super().__init__(f"[{stage}] {message}")
+
+
+@contextlib.contextmanager
+def lift_stage(stage: str):
+    """Surface any non-:class:`LiftError` exception raised in the body as
+    ``LiftError(f"{type(e).__name__}: {e}", stage=stage)`` chained ``from e``; a
+    ``LiftError`` (and any ``BaseException`` that is not an ``Exception``)
+    passes through untouched."""
+    try:
+        yield
+    except LiftError:
+        raise
+    except Exception as e:
+        raise LiftError(f"{type(e).__name__}: {e}", stage=stage) from e

@@ -83,7 +83,7 @@ class Phi:
     ``IndirectPhi`` (a single chain-root phi), and a ``kind`` field carried the
     distinction into the identity key. Nothing has produced an ``IndirectPhi``
     since the builder moved to Python — chain structure lives on the ``PyPhi``
-    graph now (:meth:`SSAProgram.chain_predecessors`) — so the field was a
+    graph now (``SSAProgram.pyphi_for_phi``) — so the field was a
     constant and is gone."""
 
     __slots__ = (
@@ -184,6 +184,12 @@ class IntRange:
     def __post_init__(self):
         if self.lo > self.hi:
             raise ValueError(f"IntRange lo>hi: {self.lo}..{self.hi}")
+
+    @staticmethod
+    def hull(ranges) -> "IntRange":
+        """The smallest range covering every range in the (re-iterable)
+        ``ranges``. An empty sequence raises ``ValueError`` from ``min``."""
+        return IntRange(min(r.lo for r in ranges), max(r.hi for r in ranges))
 
     def annotate(self, var_id: str) -> str:
         if self.lo == self.hi:

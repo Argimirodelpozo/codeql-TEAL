@@ -258,9 +258,8 @@ def propagate_bytemath_ranges(prog: SSAProgram) -> int:
         ranges = [_operand_bigint_range(arg) for arg in ph.args]
         if any(r is None for r in ranges):
             return
-        lo = min(r.lo for r in ranges)  # type: ignore[union-attr]
-        hi = max(r.hi for r in ranges)  # type: ignore[union-attr]
-        if _set_int_value_range(ph, lo, hi):
+        hull = IntRange.hull(ranges)
+        if _set_int_value_range(ph, hull.lo, hull.hi):
             tagged += 1
             fan_out(ph)
 

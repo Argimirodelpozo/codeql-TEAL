@@ -18,7 +18,7 @@ from tealql.tealtools.diagnostics.errors import (
 )
 from tealql.tealtools.ssa import SSAProgram
 from tealql.tealtools.diagnostics.health import AnalysisDegradation, AnalysisHealth, AnalysisResult, health_for
-from . import DETECTORS
+from . import DETECTORS, SEVERITY_LEVELS
 from .config import ConfigError, DetectionConfig, glob_match
 
 logger = logging.getLogger("tealql.security.scan")
@@ -182,7 +182,7 @@ class _DetectorSelection:
 
 
 # Ascending. "informational" is reported but never fails by default (fail_on).
-SEVERITY_ORDER = ("informational", "low", "medium", "high", "critical")
+SEVERITY_ORDER = tuple(reversed(SEVERITY_LEVELS))
 
 
 @dataclass(frozen=True)
@@ -320,13 +320,9 @@ class ScanFinding:
         """Severity, in precedence order: the per-detector options override; else the
         VIOLATION's own ``severity`` when valid (the IR taint family grades per sink
         field); else the detector's declared class ``severity``."""
-        if self.severity_override is not None:
-            return self.severity_override
-        from . import SEVERITY_LEVELS, severity_of
-        v = getattr(self.violation, "severity", None)
-        if isinstance(v, str) and v.lower() in SEVERITY_LEVELS:
-            return v.lower()
-        return severity_of(self.detector_name)
+        from .findings import resolve_severity
+        return resolve_severity(self.violation, self.detector_name,
+                                self.severity_override)
 
     @property
     def confidence(self) -> str:
@@ -409,10 +405,6 @@ class ScanResults(AnalysisResult):
 
     def __getitem__(self, index):
         return self.findings[index]
-
-
-def _notifications_of(results: ScanResults) -> tuple[ScanNotification, ...]:
-    return results.notifications
 
 
 def scan(
@@ -617,7 +609,7 @@ def failures(
 
 
 def render_text(findings: ScanResults) -> str:
-    notes = _notifications_of(findings)
+    notes = findings.notifications
     body = "\n".join(f.format() for f in findings) if findings else "(no findings)"
     if not notes:
         return body
@@ -643,7 +635,7 @@ def render_json(findings: ScanResults) -> str:
         "tool": "tealql",
         "complete": findings.complete,
         "findings": [f.to_dict() for f in findings],
-        "notifications": [n.to_dict() for n in _notifications_of(findings)],
+        "notifications": [n.to_dict() for n in findings.notifications],
     }, indent=2)
 
 
@@ -720,7 +712,7 @@ def render_sarif(findings: ScanResults) -> str:
     # invocations[].toolExecutionNotifications — NOT a result. Emitting these as
     # results would put them in the dashboard's finding count and make a broken
     # analysis look like a vulnerable contract.
-    notes = _notifications_of(findings)
+    notes = findings.notifications
     invocation = {"executionSuccessful": not notes}
     if notes:
         invocation["toolExecutionNotifications"] = [

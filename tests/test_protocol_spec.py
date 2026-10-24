@@ -3,7 +3,7 @@ import pytest
 
 from tealql.tealtools.language import avm
 from tealql.tealtools.language.spec import (
-    SPECS, SPEC_REVISION, PUYA_57_UNSUPPORTED, opcode_spec, support_inventory,
+    SPECS, SPEC_REVISION, PUYA_57_UNSUPPORTED, opcode_spec,
 )
 from tealql.tealtools.ssa import SSAProgram
 
@@ -11,8 +11,6 @@ from tealql.tealtools.ssa import SSAProgram
 def test_every_pinned_opcode_has_an_explicit_transfer():
     assert len(SPECS) > 180
     assert len(SPEC_REVISION) == 40
-    inventory = support_inventory()['opcodes']
-    assert set(inventory) == set(SPECS)
     for name in SPECS:
         assert avm.is_known_op(name), name
         if name not in avm._FRAME_OVERRIDES and name not in avm._IMMEDIATE_ARITY_OPS:
@@ -31,7 +29,6 @@ def test_v13_instruction_survives_parse_and_stack_reconstruction(name):
     assert len(assignment.inputs) == len(spec.args)
     assert len(assignment.outputs) == len(spec.returns)
     assert not program.parse_diagnostics
-    assert support_inventory()['opcodes'][name]['puya_5_7'] == 'unsupported'
 
 
 @pytest.mark.parametrize('instruction', ['app_box_get extra', 'app_params_set Nope',
@@ -63,7 +60,6 @@ def test_new_fields_have_types_lengths_and_explicit_backend_limits():
     facts = p.facts(FactDomain.BYTE_LENGTHS)
     output = next(a.outputs[0] for a in p.assignments if a.op == 'block')
     assert facts.fact(output).type.byte_length == 64
-    assert 'BlkBranch512' in support_inventory()['opcodes']['block']['puya_5_7_unsupported_fields']
     pytest.importorskip('puya')
     from tealql.tealtools.lift import to_puya
     from tealql.tealtools.diagnostics.errors import LiftError

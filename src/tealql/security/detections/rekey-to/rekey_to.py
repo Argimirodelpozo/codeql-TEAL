@@ -20,7 +20,6 @@ class RekeyToDetector(_ApprovalExitProtectedDetector):
     # delegated-logicsig concern; on an app it is the CALLER's own signed txn,
     # which is why rekey was removed from the app fund-flow fields too.
     applies_to = frozenset({"logicsig"})
-    signed_txn = True   # only the SIGNED txn's own field protects the signer
     violation_cls = RekeyToViolation
     # `RekeyTo != Sender` compares the field and pins nothing.
     safe_value = "address-pin"

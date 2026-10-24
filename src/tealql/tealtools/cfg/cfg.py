@@ -1,4 +1,4 @@
-"""Basic-block CFG view of a TEAL program: reachability, dominance, loop
+"""Basic-block CFG view of a TEAL program: dominance, control dependence, loop
 membership, DOT rendering — a thin view over ``SSAProgram``'s BBs.
 
 HAZARD: results are cached lazily on the instance; rebuild via :meth:`CFG.of`
@@ -6,12 +6,11 @@ if the underlying ``SSAProgram`` changes.
 """
 from __future__ import annotations
 
-from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional
 
 from ..ssa import BasicBlock, SSAProgram
-from .._utils.dot import bb_label, escape, header, render, sanitize_id
+from .._utils.dot import bb_label, escape, header, sanitize_id
 from .dominance import (control_dependence, iterative_dominators,
                         program_entries)
 
@@ -65,81 +64,6 @@ class CFG:
         """The BB whose source range contains ``(file, line)``."""
         return self.prog.block_containing(file, line)
 
-    # --- reachability -------------------------------------------------
-
-    def reachable_from(self, src: BasicBlock) -> set[BasicBlock]:
-        """All BBs reachable from ``src``, including ``src`` itself."""
-        seen: set[BasicBlock] = {src}
-        queue: deque[BasicBlock] = deque([src])
-        while queue:
-            bb = queue.popleft()
-            for s in bb.successors:
-                if s not in seen:
-                    seen.add(s)
-                    queue.append(s)
-        return seen
-
-    def reachable_to(self, dst: BasicBlock) -> set[BasicBlock]:
-        """All BBs that can reach ``dst``, including ``dst`` itself."""
-        seen: set[BasicBlock] = {dst}
-        queue: deque[BasicBlock] = deque([dst])
-        while queue:
-            bb = queue.popleft()
-            for p in bb.predecessors:
-                if p not in seen:
-                    seen.add(p)
-                    queue.append(p)
-        return seen
-
-    def reaches(self, src: BasicBlock, dst: BasicBlock) -> bool:
-        """``True`` iff ``dst`` is reachable from ``src``."""
-        if src is dst:
-            return True
-        return dst in self.reachable_from(src)
-
-    # --- path enumeration ---------------------------------------------
-
-    def paths(
-        self,
-        src: BasicBlock,
-        dst: BasicBlock,
-        *,
-        max_paths: int = 100,
-        max_length: Optional[int] = None,
-    ) -> list[list[BasicBlock]]:
-        """All *simple* (cycle-free) paths from ``src`` to ``dst``, shortest first.
-
-        HAZARD: the result is TRUNCATED at ``max_paths`` (default 100) and pruned
-        past ``max_length`` BBs, so a short result is no proof no other path
-        exists. A BB never repeats, so loops need source-level unrolling.
-        """
-        if src is dst:
-            return [[src]]
-        out: list[list[BasicBlock]] = []
-
-        # Explicit stack, not recursion: with `max_length=None` the walk is bounded
-        # only by the block count, and ~1000-block programs overflow the limit.
-        work: list = [(src, [src], {src})]
-        while work:
-            node, path, visited = work.pop()
-            if len(out) >= max_paths:
-                break
-            if max_length is not None and len(path) > max_length:
-                continue
-            # Reversed so the pops preserve the original successor order.
-            for s in reversed(list(node.successors)):
-                if s in visited:
-                    continue
-                new_path = path + [s]
-                if s is dst:
-                    out.append(new_path)
-                    if len(out) >= max_paths:
-                        break
-                    continue
-                work.append((s, new_path, visited | {s}))
-        out.sort(key=len)
-        return out
-
     # --- dominance ----------------------------------------------------
 
     def dominators(self, target: BasicBlock) -> set[BasicBlock]:
@@ -154,15 +78,9 @@ class CFG:
         """``True`` iff every path from a CFG entry to ``b`` crosses ``a``."""
         return a in self.dominators(b)
 
-    def strictly_dominates(self, a: BasicBlock, b: BasicBlock) -> bool:
-        return a is not b and self.dominates(a, b)
-
     def post_dominates(self, a: BasicBlock, b: BasicBlock) -> bool:
         """``True`` iff every path from ``b`` to a CFG exit crosses ``a``."""
         return a in self.post_dominators(b)
-
-    def strictly_post_dominates(self, a: BasicBlock, b: BasicBlock) -> bool:
-        return a is not b and self.post_dominates(a, b)
 
     def immediate_dominator(self, bb: BasicBlock) -> Optional[BasicBlock]:
         """The closest strict dominator of ``bb``; ``None`` for entries."""
@@ -309,14 +227,6 @@ class CFG:
                            f'[color={colour}, fontcolor={colour}, label="{tag}"];')
         out.append("}")
         return "\n".join(out)
-
-    def draw_control_dependence(
-        self, *, file: Optional[str] = None, format: str = "svg",
-        engine: str = "dot", rankdir: str = "TB",
-    ):
-        """Render :meth:`control_dependence_dot` (Jupyter-renderable SVG)."""
-        return render(self.control_dependence_dot(file=file, rankdir=rankdir),
-                      format=format, engine=engine)
 
     # --- loop membership ----------------------------------------------
 

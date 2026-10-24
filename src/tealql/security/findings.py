@@ -118,6 +118,19 @@ def normalize(
     )
 
 
+def resolve_severity(violation, detector_name: str,
+                     severity_override: Optional[str] = None) -> str:
+    """The STANDARD severity resolution: an explicit override, else the
+    violation's own ``severity`` when valid (the lifted taint family grades per
+    sink field), else the detector's declared class severity."""
+    from . import SEVERITY_LEVELS, severity_of
+    if severity_override is not None:
+        return severity_override
+    own = getattr(violation, "severity", None)
+    return (own.lower() if isinstance(own, str) and own.lower() in SEVERITY_LEVELS
+            else severity_of(detector_name))
+
+
 def normalize_violation(
     violation,
     detector_name: str,
@@ -130,13 +143,8 @@ def normalize_violation(
     output path must agree on: an explicit override, else the violation's own
     ``severity`` when valid (the lifted taint family grades per sink field), else
     the detector's declared class severity; confidence is always class-level."""
-    from . import SEVERITY_LEVELS, confidence_of, severity_of
-    if severity_override is not None:
-        severity = severity_override
-    else:
-        own = getattr(violation, "severity", None)
-        severity = (own.lower() if isinstance(own, str) and own.lower() in SEVERITY_LEVELS
-                    else severity_of(detector_name))
+    from . import confidence_of
+    severity = resolve_severity(violation, detector_name, severity_override)
     return normalize(violation, rule_id=detector_name, rel_path=rel_path,
                      severity=severity, confidence=confidence_of(detector_name),
                      method=method)

@@ -22,8 +22,6 @@ HAZARD — slot model. Stack slots are 1-based TOP-FIRST, both for phi identity
 HAZARD — the ``PyPhi.args`` graph can be CYCLIC (constant-stack CFG loops), so
 every traversal needs a ``seen`` set. ``PyPhi`` is unified: the public
 Direct/Indirect kind distinction is collapsed here.
-
-CLI: ``python -m tealql.tealtools.ssa.ssa <teal-source>`` renders the build.
 """
 from __future__ import annotations
 
@@ -42,6 +40,7 @@ from .models import (
 )
 from .program import SSAProgram
 from ..language.avm import op_arity
+from .operands import first_immediate_int
 
 
 #: The AVM's stack limit. No longer a construction bound — the old whole-program
@@ -50,12 +49,7 @@ from ..language.avm import op_arity
 STACK_MAX = 1000
 
 
-def _frame_imm(op):
-    """The N of a frame_dig/frame_bury, or None."""
-    try:
-        return int(op.immediates.strip().split()[0])
-    except (ValueError, IndexError, AttributeError):
-        return None
+_frame_imm = first_immediate_int   # the N of a frame_dig/frame_bury, or None
 
 
 # A reconstructed-SSA operand. ``None`` marks a slot the builder could not
@@ -507,10 +501,7 @@ class PySSA:
         height-conflicted join. Unsafety is
         transitive over ``callsub`` (a clean wrapper inherits its callee's)."""
         def net(op):
-            if op.op == "frame_dig":
-                return 1
-            if op.op == "frame_bury":
-                return -1
+            # frame_dig / frame_bury are recorded as op_arity's (0, 1) / (1, 0).
             return op.n_out - op.n_in
 
         # Reverse reachability to a retsub over local edges (callsub -> its
@@ -671,18 +662,6 @@ class PySSA:
                 for e in b.exit_stack
             ]
 
-    # ----- helper: bb-by-key lookup --------------------------------------
-
-    @property
-    def _bb_by_key(self) -> dict:
-        # Cacheable because `self.blocks` is fixed before first use. Keep the
-        # single-underscore cache name: a `__` attribute is name-mangled, so the
-        # hasattr check misses and the dict is rebuilt on every call.
-        cache = getattr(self, "_bb_by_key_cache", None)
-        if cache is None:
-            cache = self._bb_by_key_cache = {b.key: b for b in self.blocks}
-        return cache
-
     # ----- diagnostic render --------------------------------------------
 
     def render(self) -> str:
@@ -729,11 +708,6 @@ def _fold_spec_fixed(a):
 def _compute_inner_txn_fields(prog: SSAProgram) -> list:
     from .inner_txn_fields import compute_inner_txn_fields
     return compute_inner_txn_fields(prog)
-
-
-def _compute_scratch_influence(prog: SSAProgram) -> dict:
-    from .scratch_influence import compute_scratch_influence
-    return compute_scratch_influence(prog)
 
 
 def _to_ssaprogram(py: PySSA, source: SSAProgram) -> SSAProgram:
@@ -1086,8 +1060,7 @@ def _apply_pyssa_to(
     ``source`` is a separately-loaded program (:meth:`PySSA.build`) or ``None``
     for the in-place case (:meth:`SSAProgram.__init__`), where annotations are
     read back out of ``prog`` itself. Chain structure survives off the hot path
-    on ``prog._pyssa`` / ``_phi_to_pyphi`` / ``_pyphi_to_phi``, which
-    :meth:`SSAProgram.chain_predecessors` and friends query."""
+    on ``prog._pyssa`` / ``_phi_to_pyphi``."""
     # HAZARD: snapshot everything re-read from `src` BEFORE wiping `prog` — in
     # the in-place case `src.vars` IS `prog.vars`, so the wipe would clobber the
     # const/range/type annotations being copied over.
@@ -1235,37 +1208,8 @@ def _apply_pyssa_to(
     for bb in prog.blocks.values():
         bb.stack_assignments = tuple(bb.assignments)
 
-    # 8) Chain-structure refs (chain root, propagation graph), off the hot path.
+    # 8) Chain-structure refs (the PyPhi propagation graph), off the hot path.
     prog._pyssa = py
     prog._phi_to_pyphi = {p: pp for pp, p in phi_map.items()}
-    prog._pyphi_to_phi = dict(phi_map)
 
     return prog
-
-
-def _demo(source: str) -> None:
-    """Render the PySSA-built SSA for a TEAL source (CLI diagnostic dump)."""
-    import time
-    t0 = time.perf_counter()
-    prog = SSAProgram(source)
-    t_graph = time.perf_counter() - t0
-    t0 = time.perf_counter()
-    py = PySSA._construct(prog)
-    t_py = time.perf_counter() - t0
-    if len(py.blocks) <= 30:
-        print(py.render())
-    else:
-        print(f"({len(py.blocks)} blocks — full render suppressed)")
-    print(
-        f"[ssa] graph load: {t_graph:.2f}s  build: {t_py * 1000:.1f}ms  "
-        f"blocks={len(py.blocks)}  vars={len(py.vars)}  phis={len(py.phis)}"
-    )
-
-
-if __name__ == "__main__":
-    import sys
-    if len(sys.argv) != 2:
-        print("usage: python -m tealql.tealtools.ssa <teal-source>",
-              file=sys.stderr)
-        raise SystemExit(2)
-    _demo(sys.argv[1])

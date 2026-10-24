@@ -8,7 +8,7 @@ from ..language.avm import STATE_WRITE_OPS
 from ..language.effects import STATE_EFFECTS
 from . import pre_ir
 from .taint_flow import (
-    UNKNOWN_SOURCE, value_sources, source_label, transfer_fixpoint, sub_local_scratch,
+    SINK_OPS, UNKNOWN_SOURCE, value_sources, source_label, transfer_fixpoint, sub_local_scratch,
     _trusted_apparg, _intr, _invoke as _invoke,
     _scratch_unknown_write as _scratch_unknown_write,
 )
@@ -455,32 +455,35 @@ def unresolved_taint(lifter) -> Mapping[int, frozenset[str]]:
     return result
 
 
-# Sensitive sinks: persistent-state writes, inner-txn fields (who gets paid, how
-# much) and logs. `assert` is a sink too (user-controlled control flow) but is not an
-# intrinsic, so each consumer below matches pre_ir.Assert separately.
-_SINKS = STATE_WRITE_OPS | {"log", "itxn_field"}
+_SINKS = SINK_OPS
 
 
-def tainted_sinks(lifter, taint=None) -> list:
-    """``(sources, sink_op, immediates)`` for every sink whose operands include a
-    tainted value; pass a precomputed ``taint`` map or one is built."""
-    taint = _merge_unresolved(lifter, taint)
-    out = []
-    for b in pre_ir.blocks(lifter.subs):
+def _tainted_sink_hits(subs, taint):
+    """``(op, intrinsic, hit)`` for every sink op of ``subs`` (in block order) whose
+    operands carry taint: a :data:`_SINKS` intrinsic, or an ``assert`` (then
+    ``intrinsic`` is None and the condition is the operand)."""
+    for b in pre_ir.blocks(subs):
         for o in b.ops:
             s = _intr(o)
             if s is not None and s.op in _SINKS:
-                args, op, imm = s.args, s.op, s.immediates
+                args, op = s.args, s.op
             elif isinstance(o, pre_ir.Assert):
-                args, op, imm = [o.condition], "assert", None
+                args, op, s = [o.condition], "assert", None
             else:
                 continue
             hit = set()
             for a in args:
                 hit |= value_sources(a, taint)
             if hit:
-                out.append((frozenset(hit), op, imm))
-    return out
+                yield op, s, hit
+
+
+def tainted_sinks(lifter, taint=None) -> list:
+    """``(sources, sink_op, immediates)`` for every sink whose operands include a
+    tainted value; pass a precomputed ``taint`` map or one is built."""
+    taint = _merge_unresolved(lifter, taint)
+    return [(frozenset(hit), op, s.immediates if s is not None else None)
+            for op, s, hit in _tainted_sink_hits(lifter.subs, taint)]
 
 
 # Sink categories, most-to-least security-relevant, for the report.
@@ -503,27 +506,17 @@ def taint_report(lifter, name: str = "<program>") -> str:
     groups: dict = defaultdict(lambda: {"lines": set(), "sources": set()})
     cat_of = {op: i for i, (_, ops) in enumerate(_CATEGORIES) for op in ops}
     nflows = 0
-    for sub in lifter.subs:
-        for b in sub.body:
-            for o in b.ops:
-                s = _intr(o)
-                if s is not None and s.op in _SINKS:
-                    op, fld, line, args = s.op, (str(s.immediates[0]) if s.immediates
-                                                 else ""), getattr(s, "line", 0), s.args
-                elif isinstance(o, pre_ir.Assert):
-                    op, fld, line, args = "assert", "", 0, [o.condition]
-                else:
-                    continue
-                hit = set()
-                for a in args:
-                    hit |= value_sources(a, taint)
-                if not hit:
-                    continue
-                present |= hit
-                nflows += 1
-                g = groups[(cat_of.get(op, 99), op, fld)]
-                g["lines"].add(line)
-                g["sources"] |= hit
+    for op, s, hit in _tainted_sink_hits(lifter.subs, taint):
+        if s is not None:
+            fld = str(s.immediates[0]) if s.immediates else ""
+            line = getattr(s, "line", 0)
+        else:
+            fld, line = "", 0
+        present |= hit
+        nflows += 1
+        g = groups[(cat_of.get(op, 99), op, fld)]
+        g["lines"].add(line)
+        g["sources"] |= hit
 
     out = ["=" * 70,
            f"  USER-INPUT TAINT REPORT  --  {name}",
@@ -552,61 +545,3 @@ def taint_report(lifter, name: str = "<program>") -> str:
             out.append(f"  {label:28s} <- {'+'.join(sorted(g['sources'])):16s}  {loc}")
         out.append("")
     return "\n".join(out)
-
-
-def render_with_taint(lifter, name: str = "<program>") -> str:
-    """Render the lifted IR with taint inline: ``<== SOURCE X`` where an attacker
-    input enters, ``<== tainted X`` downstream, ``<== SINK X`` at a sensitive op."""
-    taint = user_input_taint(lifter)
-
-    def note(o, is_phi=False):
-        marks = []
-        src = None if is_phi else _intr(o)
-        outs = [o.register] if is_phi else (getattr(o, "targets", ()) or [])
-        srclbl = source_label(src) if src is not None else None
-        tt = set()
-        for t in outs:
-            tt |= taint.get(id(t), set())
-        if srclbl:
-            marks.append(f"SOURCE {srclbl}")
-        elif tt:
-            marks.append("tainted " + "+".join(sorted(tt)))
-        sink_args = (src.args if src is not None and src.op in _SINKS
-                     else [o.condition] if isinstance(o, pre_ir.Assert) else None)
-        if sink_args is not None:
-            hit = set()
-            for a in sink_args:
-                hit |= value_sources(a, taint)
-            if hit:
-                op = src.op if src is not None else "assert"
-                marks.append(f"SINK {op} <- " + "+".join(sorted(hit)))
-        return ("    <== " + " ; ".join(marks)) if marks else ""
-
-    out = [f"; user-input taint on the lifted Puya IR  --  {name}",
-           "; <== SOURCE/tainted/SINK mark attacker-controlled flow", ""]
-    for sub in lifter.subs:
-        kind = "main" if sub.is_main else "subroutine"
-        out.append(f"{kind} {sub.id}:")
-        for b in sub.body:
-            out.append(f"  block@{b.id}:")
-            for ph in b.phis:
-                out.append(f"    {ph.render()}{note(ph, True)}")
-            for o in b.ops:
-                out.append(f"    {o.render()}{note(o)}")
-            if b.terminator is not None:
-                out.append(f"    {b.terminator.render()}")
-        out.append("")
-    return "\n".join(out)
-
-
-if __name__ == "__main__":
-    import sys
-
-    from ..ssa import SSAProgram
-    from .lift import _Lifter
-    _render = "--render" in sys.argv
-    for _src in [a for a in sys.argv[1:] if not a.startswith("-")]:
-        _lf = _Lifter(SSAProgram(_src))
-        _lf.build()
-        _nm = _src.rstrip("/").rsplit("/", 1)[-1]
-        print(render_with_taint(_lf, _nm) if _render else taint_report(_lf, _nm))

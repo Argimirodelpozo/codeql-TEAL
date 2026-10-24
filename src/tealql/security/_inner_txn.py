@@ -4,9 +4,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from tealql.tealtools.ssa import Assignment, SSAProgram, SSAVar, const_int
+from tealql.tealtools.ssa import Assignment, SSAProgram, const_int
 
-from ._program_shape import file_match, global_field_reads
+from ._program_shape import file_match, global_field_reads, ssavar_outputs
 from ._value_flow import _constant_facts_cached, _operand_flows_from_field_var
 
 
@@ -39,12 +39,7 @@ def value_is_zero_address(
         hexpart = constant.value[2:] if constant.value.startswith("0x") else constant.value
         if len(hexpart) == 64 and set(hexpart) <= {"0"}:
             return True
-    seeds = {
-        output
-        for assignment in global_field_reads(prog, "ZeroAddress", file=file)
-        for output in assignment.outputs
-        if isinstance(output, SSAVar)
-    }
+    seeds = ssavar_outputs(global_field_reads(prog, "ZeroAddress", file=file))
     return bool(seeds and _operand_flows_from_field_var(prog, value, seeds))
 
 
@@ -60,11 +55,6 @@ def inner_txn_sets_nonzero_fee(
     value = const_int(_constant_facts_cached(prog).constant(field_set.value))
     if value is not None:
         return value != 0
-    seeds = {
-        output
-        for assignment in global_field_reads(prog, "MinTxnFee")
-        for output in assignment.outputs
-        if isinstance(output, SSAVar)
-    }
+    seeds = ssavar_outputs(global_field_reads(prog, "MinTxnFee"))
     return bool(seeds and _operand_flows_from_field_var(
         prog, field_set.value, seeds))

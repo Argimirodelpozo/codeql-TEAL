@@ -11,8 +11,7 @@ import pytest
 
 from tealql.tealtools.ssa import SSAVar
 from tealql.tealtools.ssa.frame_slots import resolve_layout as resolve_sub
-from tealql.tealtools.ssa.frame_band import build_plan as legacy_build_plan
-from tealql.tealtools.ssa.frame_slots import build_plan, resolve_layout
+from tealql.tealtools.ssa.frame_slots import resolve_layout
 
 
 def _v(line: int, idx: int = 1) -> SSAVar:
@@ -35,10 +34,6 @@ class _Block:
 
 def test_legacy_pass_name_is_a_canonical_frame_layout_alias():
     assert resolve_sub is resolve_layout
-
-
-def test_legacy_frame_band_import_is_a_canonical_alias():
-    assert legacy_build_plan is build_plan
 
 
 def test_frame_dig_negative_reads_params():

@@ -33,7 +33,7 @@ from ._program_shape import (
     ssavar_outputs,
     txn_field_reads,
 )
-from ._value_flow import _operand_flows_from_field_var
+from ._value_flow import _operand_flows_from_field_var, revision_memo
 
 
 
@@ -54,9 +54,12 @@ def _collect_field_enforcement_bbs(
     scratch_fwd: Optional[dict] = None, field_vars: Optional[set] = None,
 ) -> None:
     """Record the BASIC BLOCK of every enforcement site the SSA chain from a
-    field-comparison result reaches — :func:`def_forward_reaches_enforcement`'s
-    traversal, but collecting instead of returning on the first hit, which is what
-    lets the caller demand a MUST-reach. Scratch-aware like its boolean twin."""
+    field-comparison result reaches (an ``assert``/``return`` sink, or a
+    :func:`branch_gates_rejection` branch), walking through every consuming
+    opcode that produces a def and through provably-preserving scratch
+    round-trips. Collecting every site rather than answering yes/no is what lets
+    the caller demand a MUST-reach. ``field_vars`` names the field seeds under
+    test, which is what makes a ``||`` decidable."""
     if var in seen:
         return
     seen.add(var)
@@ -68,7 +71,7 @@ def _collect_field_enforcement_bbs(
     for cons in var.uses:
         if cons.op in _FORCING_SINK_OPS:
             # `assert V`, or the approving exit `return V` — approving through
-            # that block means V held (same sink set as the boolean twin).
+            # that block means V held.
             if cons.basic_block is not None:
                 out.add(cons.basic_block)
         elif cons.op in ("bnz", "bz"):
@@ -79,7 +82,7 @@ def _collect_field_enforcement_bbs(
                 out.add(cons.basic_block)
         # A ``||`` carries enforcement to this arm only when every OTHER arm pins
         # the same field, else the other arm alone satisfies the assert and this
-        # one is unconstrained. Same rule as the boolean twin.
+        # one is unconstrained.
         if cons.op in _DISJUNCTION_OPS and not _disjunction_is_enforcing(
                 prog, cons, var, field_vars):
             continue
@@ -226,17 +229,10 @@ def _field_enforcement_bbs(
 
     ``safe`` (a :data:`SAFE_RULES` key) demands the comparison constrain the
     field to a SAFE value — see the table there."""
-    revision = getattr(prog, "revision", 0)
-    cached = getattr(prog, "_sec_field_enforcement", None)
-    if cached is None or cached[0] != revision:
-        cached = (revision, {})
-        try:
-            prog._sec_field_enforcement = cached
-        except AttributeError:  # only if SSAProgram ever gains __slots__
-            pass
+    memo = revision_memo(prog, "_sec_field_enforcement", dict)
     key = (frozenset(field_vars), file, allow_unary_cmp, trusted_other, safe)
-    if key in cached[1]:
-        return cached[1][key]
+    if key in memo:
+        return memo[key]
 
     out: set = set()
     label_lines = _label_to_bb_first_line(prog)
@@ -282,7 +278,7 @@ def _field_enforcement_bbs(
                 continue
         _collect_field_enforcement_bbs(prog, cmp.outputs[0], label_lines, out,
                                        set(), scratch_fwd, field_vars)
-    cached[1][key] = out
+    memo[key] = out
     return out
 
 
@@ -392,7 +388,7 @@ def field_validated_on_all_paths(
     reads = (_signed_txn_field_reads(prog, field, file=file) if signed_txn_only
              else txn_field_reads(prog, field, file=file)
              + gtxn_field_reads(prog, field, file=file))
-    field_vars = {out for a in reads for out in a.outputs if isinstance(out, SSAVar)}
+    field_vars = ssavar_outputs(reads)
     if not field_vars:
         return False
     gates = _field_enforcement_bbs(prog, field_vars, file=file, safe=safe)
@@ -470,21 +466,6 @@ def approval_exit_protected_for_field(
     )
 
 
-def approval_exit_protected_for_signed_txn_field(
-    prog: SSAProgram, exit_bb: BasicBlock, field: str,
-    *, file: Optional[str] = None, safe: Optional[str] = None,
-) -> bool:
-    """Protected for the SIGNED txn's own ``field`` only, per
-    :func:`_signed_txn_field_reads` — the delegated-LOGICSIG drain-field detectors."""
-    if file is None:
-        file = exit_bb.file
-    seeds = ssavar_outputs(_signed_txn_field_reads(prog, field, file=file))
-    return _approval_exit_protected_for_seeds(prog, exit_bb, seeds, file=file,
-                                              safe=safe)
-
-
-
-
 def approval_exit_protected_for_arg_reads(
     prog: SSAProgram, exit_bb: BasicBlock, immediates: str,
     *, file: Optional[str] = None,
@@ -500,10 +481,7 @@ def approval_exit_protected_for_arg_reads(
     """
     if file is None:
         file = exit_bb.file
-    seeds = {
-        out for assignment in _txna_reads(prog, immediates, file=file)
-        for out in assignment.outputs if isinstance(out, SSAVar)
-    }
+    seeds = ssavar_outputs(_txna_reads(prog, immediates, file=file))
     return _approval_exit_protected_for_seeds(
         prog, exit_bb, seeds, file=file, allow_unary_cmp=True,
         trusted_other=_non_caller_value_seeds(prog, file=file),

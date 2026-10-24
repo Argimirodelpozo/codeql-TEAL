@@ -76,12 +76,9 @@ class _NormalizedView:
         return getattr(self.violation, item)
 
 
-SECGUIDE_DETECTORS: list[Detector] = [_secguide_detector(n) for n in _SECGUIDE_NAMES]
-
-
 def _collecting(*, strict: bool = False) -> "tuple[list, list]":
-    """Fresh adapters bound to a fresh notes list — never the module-level
-    ``SECGUIDE_DETECTORS``, which would accumulate across calls."""
+    """Fresh adapters bound to a fresh notes list, so degradation notes never
+    accumulate across calls."""
     notes: list = []
     return [_secguide_detector(n, notes, strict=strict) for n in _SECGUIDE_NAMES], notes
 
@@ -94,13 +91,9 @@ def _degradation_text(notes: list) -> str:
             f"INCOMPLETE:\n{lines}")
 
 
-def run_all(prog: SSAProgram, *, strict: bool = False) -> str:
-    """tealtools core detectors + reports + the sec-guide detectors, as text."""
-    return run_all_findings(prog, strict=strict)[0]
-
-
 def run_all_findings(prog: SSAProgram, *, strict: bool = False) -> tuple[str, int]:
-    """:func:`run_all` text plus the total finding count (for exit codes).
+    """tealtools core detectors + reports + the sec-guide detectors, as text,
+    plus the total finding count (for exit codes).
 
     Degradation is appended to the TEXT but deliberately not to the COUNT: a
     detector that could not run has not found anything, and inflating the count
@@ -118,7 +111,7 @@ def run_all_result(prog: SSAProgram, *, strict: bool = False):
 
 
 def run_all_dict(prog: SSAProgram, *, strict: bool = False) -> dict:
-    """Structured-dict variant of :func:`run_all`.
+    """Structured-dict variant of :func:`run_all_findings`.
 
     ``notifications`` is always present, so a consumer can distinguish "ran and
     found nothing" from "never ran" without version-sniffing the key."""

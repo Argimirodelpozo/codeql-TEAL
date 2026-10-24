@@ -17,16 +17,8 @@ usable by both the SSA builder and lift adapters.
 """
 from __future__ import annotations
 
-from typing import Optional
-
 from .callee_effects import _Below, _CalleeParam
-
-
-def _imm_int(op) -> Optional[int]:
-    try:
-        return int(op.immediates.strip().split()[0])
-    except (ValueError, IndexError, AttributeError):
-        return None
+from .operands import first_immediate_int as _imm_int
 
 
 def _narrow(o) -> tuple:
@@ -179,10 +171,7 @@ def entry_heights(blocks, bb_to_sub, proto_io, call_pairs,
     off by ``nargs``.
     """
     def net(op):
-        if op.op == "frame_dig":
-            return 1
-        if op.op == "frame_bury":
-            return -1
+        # frame_dig / frame_bury are recorded as op_arity's (0, 1) / (1, 0).
         n_in, n_out = _narrow(op)
         return n_out - n_in
 
