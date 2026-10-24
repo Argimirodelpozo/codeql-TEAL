@@ -11,7 +11,9 @@ program's reachable exits: a program the chain always rejects with a panic must 
 - F5: more than 1000 stack values fail ("stack overflow").
 - F6: `proto` outside a subroutine fails ("proto was executed without a callsub").
 - F10: a branch to the program's END (a label after the last instruction, or a
-  conditional's fall-through when it is the last instruction) lost its edge.
+  conditional's fall-through when it is the last instruction) lost its edge; a
+  `callsub` as the last instruction exited with 0 (the callee returns into the end of
+  the program, whose stack then holds its results).
 - F11: frame access is bounds-checked (frames.go): main has no frame, and no access
   reaches at or above the stack top.
 - F12: constant blocks take effect when EXECUTED (opIntConstBlock); the lowering read
@@ -76,6 +78,9 @@ ALWAYS_PANIC = {
     "F12_intc_before_any_block": ("#pragma version 14\nintc_1\nintcblock 3", None),
     "F12_bytec_past_the_executed_block": ("#pragma version 14\nbytecblock 0x2222\nb l\n"
                                           "bytecblock 0x11 0x12\nl:\nbytec_1\nlen", None),
+    "F10_eof_callsub_leaves_two": ("#pragma version 8\nb main\nf:\nproto 1 2\nframe_dig -1\n"
+                                   "dup\nretsub\nmain:\npushint 3\ncallsub f",
+                                   "stack len is 2 instead of 1"),
 }
 
 
@@ -98,6 +103,8 @@ ACCEPTS = {
                                      "pushint 3\n<\nbnz loop"),
     "F12_dead_second_block": ("#pragma version 14\nbytecblock 0x2222\nb l\nbytecblock 0x11\n"
                               "l:\nbytec_0\nbytec_0\nconcat\nlen\npushint 4\n=="),
+    "F10_eof_callsub_returns_the_result": ("#pragma version 8\nb main\nf:\nproto 1 1\n"
+                                           "frame_dig -1\nretsub\nmain:\npushint 3\ncallsub f"),
     # controls: the depth rule does not touch an ordinary one-value exit
     "control_one_value": "#pragma version 14\nint 1",
     "control_return_from_a_deeper_stack": "#pragma version 14\nint 7\nint 1\nreturn",

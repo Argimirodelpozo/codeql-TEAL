@@ -460,10 +460,18 @@ class _Lifter:
                 # leave orphans.
                 continue
             cont, entry = cs.continuation_bb, cs.target_entry
-            if cont is None or entry is None:
+            if entry is None or (cont is None and not self._is_off_end(cs.callsub_bb)):
                 continue
             nret = self._sub_io(entry)[1]
             if nret <= 0:
+                continue
+            if cont is None:
+                # The program's LAST instruction: the callee returns into the END of
+                # the program, so its results are the exit stack's top (control()).
+                # No continuation phis to type them: _realign_call_returns pins them
+                # to the callee's returns.
+                self.call_results[cs.callsub_bb] = [self._new_reg("cr", "?")
+                                                    for _ in range(nret)]
                 continue
             by_idx = {ph.stack_index: ph for ph in cont.phis}
             outs = []
@@ -1275,10 +1283,11 @@ class _Lifter:
             if self.cur_is_main:
                 if self._is_off_end(bb):
                     # The LAST instruction is this callsub: when the callee returns,
-                    # the program ends with its stack (cfg.build records the site).
-                    # Nothing here carries the callee's results, so refuse rather
-                    # than exit with a constant: `exit 0` rejected every such run.
-                    return pre_ir.ProgramExit(pre_ir.Undefined())
+                    # the program ends with its stack (cfg.build records the site),
+                    # which the simulation left holding the call's results. The end-
+                    # of-program rule decides, as for any other exit. (`exit 0` here
+                    # rejected every such run.)
+                    return self._exit_term(self.stack_exit.get(bb, []))
                 return pre_ir.ProgramExit(pre_ir.UInt64Constant(0))
             return pre_ir.SubroutineReturn([])
         if op == "retsub":
