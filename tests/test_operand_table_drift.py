@@ -44,9 +44,11 @@ def _langspec_arg_types(op: str):
         return None
     out = []
     for a in getattr(sig, "args", []):
-        name = getattr(a, "name", None) or str(a)
-        f = avm(str(name).split(".")[-1])
-        out.append(f if f in ("u", "b") else None)
+        # The type's own AVM family, not its name: puya 5.10 types state and box
+        # keys as ``state_key``/``box_key`` (bytes underneath), which a name
+        # lookup read as unknown, so every key position silently stopped comparing.
+        family = getattr(getattr(a, "maybe_avm_type", None), "name", None)
+        out.append({"bytes": "b", "uint64": "u"}.get(family))
     return out or None
 
 

@@ -502,7 +502,10 @@ def test_pragma_below_a_header_comment_is_honoured(tmp_path):
 
 def _disjoint_arm_router(arms: int, width: int) -> str:
     """A proto-less router: ``arms`` disjoint method arms, each holding ``width``
-    values live across a diamond (so Puya keeps them on main's f-stack)."""
+    values live across a diamond, then re-read deepest-first (``dig``/``bury``)
+    before being folded. The out-of-order reads keep the values in addressed
+    stack slots: puya >= 5.10 schedules a purely LIFO arm with no stack
+    immediates at all, which would leave the depth check below nothing to see."""
     lines = ["#pragma version 10", "txna ApplicationArgs 0", "btoi",
              "switch " + " ".join(f"arm{i}" for i in range(arms)), "err"]
     for i in range(arms):
@@ -511,7 +514,9 @@ def _disjoint_arm_router(arms: int, width: int) -> str:
             lines += ["txna ApplicationArgs 1", "btoi", f"pushint {i * width + j + 1}", "+"]
         lines += ["txn Fee", f"bnz arm{i}_l", "txn Sender", "log", f"b arm{i}_use",
                   f"arm{i}_l:", "txn Note", "log", f"arm{i}_use:"]
-        lines += ["+"] * (width - 1) + ["return"]
+        for _ in range(width - 1):
+            lines += [f"dig {width - 1}", "+", f"bury {width - 1}"]
+        lines += ["return"]
     return "\n".join(lines) + "\n"
 
 
@@ -525,7 +530,9 @@ def test_disjoint_arms_share_main_f_stack_slots(tmp_path):
     values pre-allocated 300 slots and the backend died on ``bury 266`` (mainnet
     app 3690309159: ``bury 447``). Each arm needs only its own 10 slots, so the
     recompile must succeed AND stay that shallow (control: the deepest stack
-    immediate is bounded by one arm's width, not by the arm count)."""
+    immediate is bounded by one arm's width, not by the arm count). Puya 5.10
+    keeps such arms shallow even under ``root_operand``, so there this pins only
+    the bound; the coalescing regression it was written for reproduces on 5.7."""
     from tealql.tealtools.lift.backend import lift_to_teal
 
     src = tmp_path / "router.teal"
