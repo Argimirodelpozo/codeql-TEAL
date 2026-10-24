@@ -128,6 +128,7 @@ NON_PRODUCT_MODULES: dict[str, str] = {
     "language.avm": "langspec metadata consumed by represented analyses",
     "lift.__main__": "command wrapper around repr.pre_ir/repr.puya_ir",
     "lift._puya_compat": "dependency compatibility checks reported as analysis health",
+    "lift._ir_walk": "order-preserving Puya-IR op walk shared by the recovery passes; no independent product",
     "lift.cache": "revision/file-keyed cache plumbing; no independent product",
     "lift.authority": "lifted-value bridge to shared authority provenance; evidence belongs to its consumers",
     "lift.guards": "guard classification and definition-walk helpers used by lifted findings and evidence",

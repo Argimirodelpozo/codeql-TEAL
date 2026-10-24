@@ -61,10 +61,9 @@ def fingerprint(path: str) -> dict:
     rec["detections_app"] = _cli(["detections", path, "--all", "--mode", "app", "--json"])
     rec["detections_lsig"] = _cli(["detections", path, "--all", "--mode", "logicsig", "--json"])
     rec["brief"] = _cli(["brief", path, "--json"])
-    source = Path(path).read_text()
     try:
         from tealql.tealtools.lift.backend import lift_to_teal
-        rec["lift"] = lift_to_teal(source)
+        rec["lift"] = lift_to_teal(path)            # a PATH: source text is OSError'd as a filename
     except Exception as e:
         rec["lift"] = f"{type(e).__name__}: {e}"
     try:
