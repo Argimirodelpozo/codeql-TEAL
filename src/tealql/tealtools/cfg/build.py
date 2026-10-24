@@ -191,9 +191,13 @@ def _program_cfg(
     len(program)``, which TERMINATES with the stack top as the verdict. There
     is no continuation node, so no edge can carry that exit; a caller must
     record it (:attr:`SSAProgram.off_end_exits`) or the return simply
-    vanishes and the approving path with it.
+    vanishes and the approving path with it. The same holds for a conditional
+    branch (``bnz``/``bz``/``switch``/``match``) that is the last instruction: its
+    FALL-THROUGH runs off the end. ``int 0; loop: ...; bnz loop`` at EOF exits
+    when the condition fails, and dropping that arm left an exit-less loop.
     """
     cand: list[tuple[_Node, _Node, str]] = []
+    eof_falls: list[_Node] = []      # conditionals whose fall-through is EOF
     # retsub-return candidates, deferred so the fixpoint below can gate them on
     # their callsub being reachable.
     retsub_cand: list[tuple[_Node, _Node, _Node]] = []   # (retsub, cont, callsub)
@@ -303,6 +307,8 @@ def _program_cfg(
                 emit(n, t, BOOL_TRUE)
             if nxt is not None:
                 emit(n, nxt, BOOL_FALSE)
+            else:
+                eof_falls.append(n)
             continue
 
         if n.cls == _BZ:
@@ -310,11 +316,15 @@ def _program_cfg(
                 emit(n, t, BOOL_FALSE)
             if nxt is not None:
                 emit(n, nxt, BOOL_TRUE)
+            else:
+                eof_falls.append(n)
             continue
 
         if n.cls in _MULTI:
             if nxt is not None:  # arm 0 = fall-through
                 emit(n, nxt, NORMAL)
+            else:
+                eof_falls.append(n)
             for name in n.operands():
                 if (t := _target(n, name)) is not None:
                     emit(n, t, NORMAL)
@@ -374,6 +384,7 @@ def _program_cfg(
                     and id(c) not in seen_eof):
                 seen_eof.add(id(c))
                 off_end.append(c)
+        off_end.extend(n for n in eof_falls if idx_of[id(n)] in reachable)
 
     return cand, reachable, idx_of
 

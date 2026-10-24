@@ -48,6 +48,10 @@ logger = logging.getLogger("tealql.tealtools.lift")
 _FRAME_OPS = frozenset({"frame_dig", "frame_bury"})
 
 
+_CONST_LOADS = frozenset({"intc", "intc_0", "intc_1", "intc_2", "intc_3",
+                          "bytec", "bytec_0", "bytec_1", "bytec_2", "bytec_3"})
+
+
 def _ops(bb):
     """Canonical AVM instructions for ``bb`` (clones fall back to live ops)."""
     return getattr(bb, "stack_assignments", ()) or bb.assignments
@@ -338,6 +342,11 @@ class _Lifter:
         self._clones_of_group: dict = {}  # struct.Subroutine | None (main) -> [clone blocks]
         self._spliced_subs: set = set()   # subs spliced at EVERY site: no group is built
         self.doomed_edges: set = set()    # (pred, join): shallow-arm entry dies in join
+        # Exits that LEAVE the program from a branch (a target label at EOF, or a
+        # conditional's fall-through at EOF): bb -> placeholder id, and the deferred
+        # (bb, placeholder, terminator) blocks `_apply_eof_arms` materializes.
+        self._eof_arms: dict = {}
+        self._eof_specs: list = []
         self.doomed_blocks: set = set()   # blocks that fail from their OWN entry
         self._group_entries: set = set()  # every group's entry block
         self._doom_profile: dict = {}     # block -> [(dip, impure_before)] | None
@@ -392,6 +401,11 @@ class _Lifter:
         for _cb in (cb for lst in self._clones_of_group.values() for cb in lst):
             self.bid[_cb] = len(self.bid)
         self.line2block = {bb.first_line: bb for bb in all_blocks}
+        self._cblock_reach = self._constant_block_reach(all_blocks)
+        self._const_block_lines: dict = {}
+        self._cblock_sizes: dict = {}     # constant-block line -> entry count | None
+        # A label past the last instruction names the END of the program.
+        self._last_code_line = max((bb.last_line for bb in all_blocks), default=0)
         self.regs: dict = {}
         self.ctr: dict = {}
         # Non-stack aliases: legacy entry phis -> params and call-result phis ->
@@ -523,6 +537,8 @@ class _Lifter:
             "frame_position_phis": sum(map(len, self.frame_phis.values())),
             "frame_slot_refusals": len(self._frame_refusals),
         }
+        self._apply_eof_arms()
+        stats["eof_arms"] = len(self._eof_specs)
         self._apply_doomed_edges()
         transforms.prune_dead_phis(self.subs)
         # Loop: a cross-group passthrough value can itself be another passthrough.
@@ -538,8 +554,10 @@ class _Lifter:
         stats["sink_mixed_scratch"] = transforms.sink_mixed_phi_scratch_stores(self.subs)
         main = next(sub for sub in self.subs if sub.is_main)
         prog_ir = pre_ir.Program(main=main, subroutines=[s for s in self.subs if not s.is_main],
-                                 pass_stats=stats)
+                                 pass_stats=stats,
+                                 const_block_lines=dict(self._const_block_lines))
         type_recovery.finalize_types(prog_ir)
+        stats["bytes_exits"] = _fail_bytes_exits(prog_ir)
         # A sub called with conflicting result AVM types can't have one Puya return
         # type; clone it per type (after finalize, so caller result types settled).
         stats["specialize_returns"] = transforms.specialize_polymorphic_returns(prog_ir)
@@ -1255,6 +1273,12 @@ class _Lifter:
             # return, but in main there is no caller, so it must be a program exit --
             # a value-less SubroutineReturn is invalid for the main program.
             if self.cur_is_main:
+                if self._is_off_end(bb):
+                    # The LAST instruction is this callsub: when the callee returns,
+                    # the program ends with its stack (cfg.build records the site).
+                    # Nothing here carries the callee's results, so refuse rather
+                    # than exit with a constant: `exit 0` rejected every such run.
+                    return pre_ir.ProgramExit(pre_ir.Undefined())
                 return pre_ir.ProgramExit(pre_ir.UInt64Constant(0))
             return pre_ir.SubroutineReturn([])
         if op == "retsub":
@@ -1263,19 +1287,45 @@ class _Lifter:
                 return pre_ir.Goto(self.bid[sc])
             return self._control_retsub(bb)
         succ = [s for s in bb.successors if s in self.bid]
+        # `match` / `switch` first: their arms may name the END of the program, which
+        # no successor block carries, so the one-successor shortcut below would
+        # route every arm to whichever block remains (`switch l1 l2` with `l2:` at
+        # EOF lifted to `goto l1`).
+        if op == "match" and t is not None:
+            term = self._control_match(bb, t, succ)
+            if term is not None:
+                return term
+        if op == "switch" and t is not None:
+            term = self._control_switch(bb, t, succ)
+            if term is not None:
+                return term
         if not succ:
             if op == "err" or self._asserts_false(bb):
                 return pre_ir.Fail()
             if op == "return" and t is not None:
                 return pre_ir.ProgramExit(self._sel_value(t))
-            # HAZARD: `return`, and a block that falls off the end with no explicit
-            # terminator, both exit with the STACK TOP (the approval result), never a
-            # hardcoded 0 -- that would turn an approve-if-X program into an
-            # unconditional reject. Read it off the simulated stack, which is
-            # already in this lift's register space.
-            rsx = self.stack_exit.get(bb, [])
-            v = rsx[-1] if rsx else pre_ir.UInt64Constant(0)
-            return pre_ir.ProgramExit(v)
+            # HAZARD: a block that falls off the end with no explicit terminator
+            # exits with the STACK TOP (the approval result), never a hardcoded 0 --
+            # that would turn an approve-if-X program into an unconditional reject.
+            # Read it off the simulated stack, which is already in this lift's
+            # register space; `_exit_term` adds the AVM's depth rule.
+            return self._exit_term(self.stack_exit.get(bb, []))
+        if (op in COND_BRANCH_OPS and t is not None and len(succ) == 1
+                and self._is_off_end(bb)):
+            # One arm LEAVES the program: the target label is at EOF, or this branch
+            # is the last instruction and its fall-through is. The CFG has no block
+            # for that arm, and treating the branch as a `goto` to the other lost the
+            # program's exit (an exit-less loop; a `bnz` to EOF lifted to its `err`).
+            cond = self._sel_value(t)
+            label = (t.immediates or "").strip()
+            exit_id = self._eof_arm(bb)
+            if self._label_at_eof(label):
+                taken, other = exit_id, self.bid[succ[0]]
+            else:
+                taken, other = self.bid[succ[0]], exit_id
+            if op == "bnz":
+                return pre_ir.ConditionalBranch(cond, taken, other)
+            return pre_ir.ConditionalBranch(cond, other, taken)            # bz
         if len(succ) == 1:
             return pre_ir.Goto(self.bid[succ[0]])
         if len(succ) == 2 and op in COND_BRANCH_OPS and t is not None:
@@ -1289,20 +1339,182 @@ class _Lifter:
             if op == "bnz":
                 return pre_ir.ConditionalBranch(cond, self.bid[taken], self.bid[other])
             return pre_ir.ConditionalBranch(cond, self.bid[other], self.bid[taken])  # bz
-        if op == "match" and t is not None:
-            term = self._control_match(bb, t, succ)
-            if term is not None:
-                return term
-        if op == "switch" and t is not None:
-            term = self._control_switch(bb, t, succ)
-            if term is not None:
-                return term
         # `match` is KEYED, so a POSITIONAL GotoNth over CFG-successor order
         # mis-targets its arms. Reaching here means neither key recovery nor the
         # source fallback worked, so emit Undefined rather than a confident wrong
         # route.
         return pre_ir.GotoNth(pre_ir.Undefined(),
                               [self.bid[s] for s in succ[:-1]], self.bid[succ[-1]])
+
+    def _frame_access_fails(self, slot, pos: int, height: int) -> bool:
+        """Does a frame_dig/frame_bury at frame position ``pos`` certainly fail
+        (frames.go)? Main has no frame ("... with empty callstack"); a `proto` frame
+        refuses to reach below its arguments; and no access may reach at or above the
+        stack top ("... above stack", ``height`` = the depth the op checks against).
+        A NON-proto frame may reach into the caller's residual, which this group
+        cannot see, so that case is left to the existing Undefined handling."""
+        if slot is None:
+            return False
+        if self.cur_is_main:
+            return True
+        if self.cur_is_proto and pos < 0:
+            return True
+        return pos >= height
+
+    def _check_overflow(self, b, stack) -> None:
+        """More than 1000 values fail after the op that pushed them (eval.go step,
+        maxStackDepth). Main's simulated depth is exact unless a join merged
+        different depths, which a partial cell shows; a subroutine's local depth past
+        1000 overflows whatever its caller left below. (Overflow that needs the
+        caller's residual to reach 1000 is not detected here.)"""
+        if len(stack) <= 1000:
+            return
+        if self.cur_is_main and any(self._partial_cell(v) for v in stack):
+            return
+        self.doomed_blocks.add(b)
+
+    def _constant_block_reach(self, all_blocks) -> dict:
+        """``(file, line) -> frozenset`` of the constant blocks that can be in force
+        at each ``intc`` / ``bytec`` load: block LINES, or ``None`` for "no block yet".
+
+        ``intcblock`` / ``bytecblock`` are instructions (eval.go opIntConstBlock): the
+        constants a load reads are those of the last block EXECUTED, and a load before
+        any fails. The lowering used to take the last block above the load in the
+        TEXT, so a dead second block shadowed the executed one, and a load before the
+        only block became a free template variable. A forward may-dataflow over the
+        raw (interprocedural) CFG, from the program's first instruction."""
+        if not all_blocks:
+            return {}
+        entry = min(all_blocks, key=lambda b: (b.file, b.first_line))
+        start = {"intc": frozenset({None}), "bytec": frozenset({None})}
+        state_in: dict = {entry: start}
+        out: dict = {}
+        work = [entry]
+        while work:
+            bb = work.pop()
+            st = dict(state_in[bb])
+            for a in _ops(bb):
+                if a.op in ("intcblock", "bytecblock"):
+                    st[a.op[:-5]] = frozenset({a.location.line})
+                elif a.op in _CONST_LOADS:
+                    kind = "intc" if a.op.startswith("intc") else "bytec"
+                    key = (a.location.file, a.location.line)
+                    out[key] = out.get(key, frozenset()) | st[kind]
+            for nxt in bb.successors:
+                old = state_in.get(nxt)
+                new = st if old is None else {k: old[k] | st[k] for k in st}
+                if new != old:
+                    state_in[nxt] = new
+                    work.append(nxt)
+        return out
+
+    def _const_load(self, a) -> str:
+        """"ok" (one block reaches this load, recorded for the lowering), "fail" (none
+        does, or its block has no entry at the index), or "unknown" (paths differ)."""
+        reach = self._cblock_reach.get((a.location.file, a.location.line))
+        if reach is None:
+            return "ok"                        # unreachable from the entry
+        kind = "intc" if a.op.startswith("intc") else "bytec"
+        if reach == {None}:
+            return "fail"
+        if None in reach or len(reach) != 1:
+            return "unknown"
+        line = next(iter(reach))
+        idx = (int(a.op[-1]) if a.op[-1].isdigit() and "_" in a.op
+               else _imm0(a))
+        count = self._const_block_size(kind, line)
+        if idx is None or count is None:
+            return "unknown"
+        if idx >= count:
+            return "fail"
+        self._const_block_lines[(kind, a.location.line)] = line
+        return "ok"
+
+    def _const_block_size(self, kind: str, line: int):
+        """How many constants the block at source ``line`` defines (None: no single
+        source file to read it from). Read from source, as the lowering does: the
+        parser truncates these blocks."""
+        sizes = self._cblock_sizes
+        if line not in sizes:
+            src = _load_src(self.prog)
+            lines = next(iter(src.values())) if len(src) == 1 else None
+            if lines is None:
+                sizes[line] = None
+            else:
+                text = lines[line - 1].strip() if 1 <= line <= len(lines) else ""
+                parts = text.split(None, 1)
+                sizes[line] = (len(_tokenize_operands(
+                    parts[1], fold_byte_keywords=(kind == "bytec"))) if len(parts) == 2 else 0)
+        return sizes[line]
+
+    def _is_off_end(self, bb) -> bool:
+        """Does control leave the program from ``bb`` by a branch arm (cfg.build /
+        SSAProgram.off_end_exits)? A spliced clone answers for its original."""
+        keys = getattr(self.prog, "off_end_exits", ()) or ()
+        if bb._key() in keys:
+            return True
+        cmap = self._clone_map_of.get(bb)
+        if cmap:
+            return any(c is bb and o._key() in keys for o, c in cmap.items())
+        return False
+
+    def _label_at_eof(self, label: str) -> bool:
+        line = self.label2line.get(label)
+        return line is not None and line > self._last_code_line
+
+    def _eof_arm(self, bb) -> int:
+        """The block id of "the program ends here, with ``bb``'s exit stack": a
+        placeholder (negative, so it cannot collide while groups are built) that
+        `_apply_eof_arms` turns into a real exit block of ``bb``'s subroutine."""
+        if bb not in self._eof_arms:
+            pid = -(1 + len(self._eof_arms))
+            self._eof_arms[bb] = pid
+            self._eof_specs.append((bb, pid, self._exit_term(self.stack_exit.get(bb, []))))
+        return self._eof_arms[bb]
+
+    def _partial_cell(self, v) -> bool:
+        """A stack cell that does not exist on every path in (a max-window join's
+        Undefined arm), or has no known value."""
+        if isinstance(v, pre_ir.Undefined):
+            return True
+        phi = self._phi_by_register.get(id(v)) if isinstance(v, pre_ir.Register) else None
+        return phi is not None and any(isinstance(a.value, pre_ir.Undefined)
+                                       for a in phi.args)
+
+    def _exit_term(self, stack):
+        """Running off the end of the program (eval.go eval(): "stack len is N instead
+        of 1" unless exactly one value remains; the verdict is that value). Main
+        starts on an empty stack, so its simulated depth is exact unless a join
+        merged different depths; then, and inside a subroutine body (the caller's
+        residual lies below its frame), the depth is unknown here and the exit is
+        refused rather than guessed. A byteslice result fails too, once types are
+        known (`_fail_bytes_exits`). Before 2026-10-24 this exited with the top cell
+        at any depth, and with 0 on an empty stack: both PANIC on chain."""
+        if not self.cur_is_main or any(self._partial_cell(v) for v in stack):
+            return pre_ir.ProgramExit(pre_ir.Undefined())
+        if len(stack) != 1:
+            return pre_ir.Fail(f"stack len is {len(stack)} instead of 1")
+        return pre_ir.ProgramExit(stack[0])
+
+    def _apply_eof_arms(self) -> None:
+        """Materialize every placeholder `_eof_arm` handed out as an exit block in the
+        subroutine holding its branch, and point the branch at it."""
+        if not self._eof_specs:
+            return
+        blk_of: dict = {}
+        for sub in self.subs:
+            for blk in sub.body:
+                blk_of[blk.id] = (sub, blk)
+        next_id = max(blk_of, default=-1) + 1
+        for bb, pid, term in self._eof_specs:
+            if self.bid.get(bb) not in blk_of:
+                continue
+            sub, blk = blk_of[self.bid[bb]]
+            exit_blk = pre_ir.BasicBlock(id=next_id, phis=[], ops=[], terminator=term)
+            next_id += 1
+            sub.body.append(exit_blk)
+            pre_ir.map_succ_ids(blk.terminator,
+                                lambda b, _p=pid, _e=exit_blk.id: _e if b == _p else b)
 
     def _sel_value(self, t):                  # branch/switch selector value
         if t is not None and self.stack_args.get(id(t)):
@@ -1368,6 +1580,9 @@ class _Lifter:
                 key = str(ci.value)                  # uint64-keyed match
             else:
                 key = None
+            if key is not None and self._label_at_eof(lbl):
+                cases.append((key, self._eof_arm(bb)))   # this case ends the program
+                continue
             if blk is None or blk not in self.bid or key is None:
                 cases = None
                 break
@@ -1375,10 +1590,23 @@ class _Lifter:
             targets.add(blk)
         if cases is None:                 # parser dropped the case keys
             cases, targets = self._recover_match_keys(bb, labels)  # (from source)
-        default = next((s for s in succ if s not in targets), None)
-        if cases and default is not None:
+        # The default is the FALL-THROUGH -- the next instruction's block, resolved by
+        # source line as `switch` does. A set difference against the case targets
+        # (the old rule) finds nothing when the fall-through IS a case target (`match
+        # l1 l2; l1: ...`), and the whole match fell back to a `goto` of one arm.
+        sl = t.location.line if getattr(t, "location", None) else None
+        after = [fl for fl in self.line2block if sl is not None and fl > sl]
+        if after:
+            ft = self._site_target(bb, self.line2block[min(after)])
+            default_id = self.bid.get(ft) if ft is not None else None
+        elif sl is not None:
+            default_id = self._eof_arm(bb)       # no match falls off the end
+        else:
+            default = next((s for s in succ if s not in targets), None)
+            default_id = self.bid[default] if default is not None else None
+        if cases and default_id is not None:
             val = ins[0] if ins else pre_ir.Undefined()
-            return pre_ir.Switch(val, cases, self.bid[default])
+            return pre_ir.Switch(val, cases, default_id)
         return None
 
     def _control_switch(self, bb, t, succ):
@@ -1394,6 +1622,9 @@ class _Lifter:
         labels = (t.immediates or "").split()
         arms, ok = [], True
         for lbl in labels:
+            if self._label_at_eof(lbl):
+                arms.append(self._eof_arm(bb))         # this arm ends the program
+                continue
             blk = self._site_target(bb, self.line2block.get(self.label2line.get(lbl)))
             if blk is None or blk not in self.bid:
                 ok = False
@@ -1401,6 +1632,9 @@ class _Lifter:
             arms.append(self.bid[blk])
         sl = t.location.line if getattr(t, "location", None) else None
         after = [fl for fl in self.line2block if sl is not None and fl > sl]
+        if ok and not after and sl is not None:
+            # the last instruction: an out-of-range index falls off the end
+            return pre_ir.GotoNth(self._sel_value(t), arms, self._eof_arm(bb))
         ft = self._site_target(bb, self.line2block[min(after)] if after else None)
         if ok and ft is not None and ft in self.bid:
             return pre_ir.GotoNth(self._sel_value(t), arms, self.bid[ft])
@@ -1614,6 +1848,8 @@ class _Lifter:
             slot = _imm0(a)
             pos = len(params) + slot if slot is not None else -1
             key = (b.file, b.first_line, b.last_line)
+            if key not in self._height_poisoned and self._frame_access_fails(slot, pos, len(stack)):
+                self.doomed_blocks.add(b)
             if key in self._height_poisoned:
                 instruction = self._frame_reads_by_assignment.get(a)
                 if instruction is None:
@@ -1647,6 +1883,12 @@ class _Lifter:
                 slot = _imm0(a)
                 pos = len(params) + slot if slot is not None else -1
                 key = (b.file, b.first_line, b.last_line)
+                # opFrameBury fails when the target is at or above the value it buries
+                # (idx >= last): after the pop, pos >= len(stack). The old
+                # `pos == len(stack)` "vacated top cell" write is exactly that panic.
+                if key not in self._height_poisoned and self._frame_access_fails(
+                        slot, pos, len(stack)):
+                    self.doomed_blocks.add(b)
                 # A poisoned block has no usable bottom coordinate in this
                 # top-aligned list. FrameAnalysis routes later reads straight
                 # to this recorded operand, so withdraw the physical cell
@@ -1677,6 +1919,7 @@ class _Lifter:
             ins = [stack.pop() for _ in range(n_in)]            # top-first
             for v in reversed([ins[k] for k in m]):
                 stack.append(v)
+            self._check_overflow(b, stack)
             return
         if a.op == "callsub":
             if b in self._splice_entry:
@@ -1713,11 +1956,27 @@ class _Lifter:
             for r in self.call_results.get(b, []):
                 stack.append(r)
             return
+        if a.op in _CONST_LOADS:
+            verdict = self._const_load(a)
+            if verdict == "fail":
+                # No block, or too short a block, reaches this load: it fails on
+                # chain ("intc N beyond M constants"). The block fails at it.
+                self.doomed_blocks.add(b)
+            elif verdict == "unknown":
+                # Different blocks reach it on different paths: no single value.
+                for _o in a.outputs:
+                    stack.append(pre_ir.Undefined())
+                return
         if (not a.inputs and a.outputs and all(           # const push(es)
                 getattr(o, "const_value", None) is not None for o in a.outputs)):
             for o in reversed(a.outputs):                 # pushints/pushbytess
                 stack.append(_const(o.const_value))
+            self._check_overflow(b, stack)
             return
+        if a.op == "proto" and self.cur_is_main:
+            # `proto` reached without a `callsub` fails ("proto was executed without a
+            # callsub", frames.go): main never has a frame.
+            self.doomed_blocks.add(b)
         if a.op in ("intcblock", "bytecblock", "proto"):
             return
         ni, _ = op_arity(a.op, a.immediates)
@@ -1726,6 +1985,7 @@ class _Lifter:
         if a.op not in _TERMINATOR_OPS:
             for o in reversed([o for o in a.outputs if isinstance(o, SSAVar)]):
                 stack.append(self._stack_value(o))
+        self._check_overflow(b, stack)
 
     def _apply_clobber_effect(self, cs, a, stack) -> None:
         """Rewrite the caller residual through the callee's below-band effect
@@ -1875,6 +2135,22 @@ class _Lifter:
             if len(ts) == 1:
                 return next(iter(ts))
         return "?"
+
+
+def _fail_bytes_exits(prog_ir) -> int:
+    """A program exit on a byteslice fails on chain ("stack finished with bytes not
+    int", eval.go), whether reached by `return` or by running off the end. Once types
+    are final, replace such exits with Fail instead of handing Puya an exit it cannot
+    lower ("Can only exit with uint64 backed value")."""
+    n = 0
+    for sub in (prog_ir.main, *prog_ir.subroutines):
+        for blk in sub.body:
+            term = blk.terminator
+            if (isinstance(term, pre_ir.ProgramExit)
+                    and getattr(term.result, "ir_type", None) in type_recovery._BYTES_FAMILY):
+                blk.terminator = pre_ir.Fail("stack finished with bytes not int")
+                n += 1
+    return n
 
 
 def _proto_io(entry_bb):

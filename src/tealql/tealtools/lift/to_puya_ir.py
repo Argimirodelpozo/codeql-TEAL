@@ -118,8 +118,9 @@ def _is_template_push(immediates) -> bool:
 
 class _Translator:
     def __init__(self, src_map: dict | None = None, *, unknown_type=PT.any,
-                 pass_stats: dict | None = None):
+                 pass_stats: dict | None = None, const_block_lines: dict | None = None):
         self.pass_stats = pass_stats
+        self.const_block_lines = const_block_lines or {}
         self.regs: dict = {}      # id(pre-IR Register) -> M.Register
         self.blocks: dict = {}    # pre-IR block id -> M.BasicBlock
         self.subs: dict = {}      # pre-IR Subroutine.id -> M.Subroutine
@@ -187,11 +188,22 @@ class _Translator:
             return self._block_cache[key]
         op = kind + "block"
         best: list = []
-        for idx, text in enumerate(self._src_lines(), start=1):
-            t = text.strip()
-            if t.startswith(op + " ") and (not line or idx <= line):
-                best = _tokenize_operands(
-                    t[len(op):], fold_byte_keywords=(kind == "bytec"))
+        lines = self._src_lines()
+        reaching = self.const_block_lines.get(key)
+        if reaching is not None:
+            # the block the lift's reaching-definition pass found for this load
+            t = lines[reaching - 1].strip() if 1 <= reaching <= len(lines) else ""
+            if t.startswith(op + " "):
+                best = _tokenize_operands(t[len(op):], fold_byte_keywords=(kind == "bytec"))
+        else:
+            # No reaching block was recorded (the load is unreachable, or panics before
+            # resolving): the last block above it in the text. Never the answer for a
+            # reachable load -- see _Lifter._constant_block_reach.
+            for idx, text in enumerate(lines, start=1):
+                t = text.strip()
+                if t.startswith(op + " ") and (not line or idx <= line):
+                    best = _tokenize_operands(
+                        t[len(op):], fold_byte_keywords=(kind == "bytec"))
         self._block_cache[key] = best
         return best
 
@@ -500,7 +512,8 @@ def _to_puya_full(prog, *, unknown_type=PT.any):
     simplify_trivial_phis(lifted)
     _duplicate_shared_epilogues(lifted)
     t = _Translator(_load_src(prog), unknown_type=unknown_type,
-                    pass_stats=lifted.pass_stats)
+                    pass_stats=lifted.pass_stats,
+                    const_block_lines=lifted.const_block_lines)
     groups = [lifted.main, *lifted.subroutines]
 
     # Pass 1: shells, so control ops and InvokeSubroutine can reference real

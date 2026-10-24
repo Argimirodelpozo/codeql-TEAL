@@ -374,6 +374,11 @@ class Program(_Freezable):
     #: nothing raises, nothing changes shape, the fallback just takes over.
     #: `tests/test_pass_firing_ratchet.py` pins these so that stays loud.
     pass_stats: dict = field(default_factory=dict)
+    #: ``(kind, line) -> line`` of the ONE ``intcblock`` / ``bytecblock`` that reaches
+    #: the ``intc`` / ``bytec`` load at ``line`` (kind ``"intc"`` / ``"bytec"``): what the
+    #: lowering resolves a load against. Constant blocks are instructions -- the
+    #: constants are whatever the last EXECUTED block defined.
+    const_block_lines: dict = field(default_factory=dict)
     #: ``id(cloned register) -> original Register`` for representation-level
     #: clones (currently return-type-specialized subroutines).  Analyses bridge
     #: SSA annotations through this without conflating the clone's SSA identity
