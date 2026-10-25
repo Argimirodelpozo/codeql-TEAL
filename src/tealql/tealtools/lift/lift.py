@@ -1994,6 +1994,12 @@ class _Lifter:
         if a.op in ("intcblock", "bytecblock", "proto"):
             return
         ni, _ = op_arity(a.op, a.immediates)
+        if self.cur_is_main and ni > len(stack):
+            # Main's simulated stack is exact, or padded to its deepest arm at a join:
+            # fewer values than the op takes underflow on every path in (eval.go step,
+            # "stack underflow in OP"). The block fails there; truncating the operands
+            # built a narrower op instead (`==` of one value).
+            self.doomed_blocks.add(b)
         ni = min(ni, len(stack))
         self.stack_args[id(a)] = [stack.pop() for _ in range(ni)]    # top-first
         if a.op not in _TERMINATOR_OPS:

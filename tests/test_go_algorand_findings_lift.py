@@ -70,6 +70,12 @@ ALWAYS_PANIC = {
                         "stack finished with bytes not int"),
     "F5_stack_overflow": ("#pragma version 2\nint 1\nint 2\n" + "dup2\n" * 510
                           + "pop\nint 1", None),
+    # a stack underflow in main ("stack underflow in =="): straight-line (the entry
+    # block's dip check already failed it -- a control), and after a branch, which
+    # TestAppReadLocalState hit: the lift built a one-operand `==` there
+    "F4_stack_underflow": ("#pragma version 14\npushint 1\n==", None),
+    "F4_stack_underflow_after_a_branch": ("#pragma version 14\npushint 1\nbnz l\nerr\nl:\n"
+                                          "pushint 1\n==", None),
     "F6_proto_without_callsub": ("#pragma version 14\nproto 0 0\npushint 1", None),
     "F11_frame_op_in_main": ("#pragma version 14\nframe_dig 0\npushint 1", None),
     "F11_frame_bury_above_stack": ("#pragma version 14\nb main\nsub:\nproto 2 1\npushint 0\n"
