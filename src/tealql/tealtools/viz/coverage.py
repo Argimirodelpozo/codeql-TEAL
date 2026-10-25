@@ -116,6 +116,7 @@ MODULE_VIEW_COVERAGE: dict[str, tuple[str, ...]] = {
 NON_PRODUCT_MODULES: dict[str, str] = {
     "analysis.execution_trace": "bounded physical-instruction walker shared by policy and resource consumers",
     "analysis.relations": "parameterized integer proof kernel consumed by security policy obligations",
+    "analysis.stack_depth": "one stack-depth bound over repr.pyssa's heights, consumed by the verifier's overflow declaration",
     "language.spec": "pinned versioned metadata; consumed by represented analyses",
     "language.effects": "shared operand-role metadata; consumed by represented analyses",
     "diagnostics.location": "structured instruction identity and diagnostic location parsing",
