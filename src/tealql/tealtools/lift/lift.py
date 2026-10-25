@@ -1515,11 +1515,16 @@ class _Lifter:
             for blk in sub.body:
                 blk_of[blk.id] = (sub, blk)
         next_id = max(blk_of, default=-1) + 1
+        # The exit is the END of the program, past its last instruction: the line after
+        # it, which no source block starts at (a consumer mapping blocks to source,
+        # like a cost schedule, must not mistake it for line 1 -- the lowering's default).
+        eof_line = f"L{self._last_code_line + 1}"
         for bb, pid, term in self._eof_specs:
             if self.bid.get(bb) not in blk_of:
                 continue
             sub, blk = blk_of[self.bid[bb]]
-            exit_blk = pre_ir.BasicBlock(id=next_id, phis=[], ops=[], terminator=term)
+            exit_blk = pre_ir.BasicBlock(id=next_id, phis=[], ops=[], terminator=term,
+                                         comment=eof_line)
             next_id += 1
             sub.body.append(exit_blk)
             pre_ir.map_succ_ids(blk.terminator,

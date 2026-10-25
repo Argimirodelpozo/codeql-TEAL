@@ -126,6 +126,9 @@ def test_an_eof_branch_arm_is_its_own_exit(tmp_path):
     branch = next(t for t in _main_exits(pre) if isinstance(t, pre_ir.ConditionalBranch))
     assert isinstance(body[branch.non_zero].terminator, pre_ir.ProgramExit)
     assert isinstance(body[branch.zero].terminator, pre_ir.Fail)
+    # the exit sits at the END of the program: the line after the last instruction
+    # (`err`, line 5), which no source block starts at -- not the lowering's default 1
+    assert body[branch.non_zero].comment == "L6"
 
 
 def test_the_executed_constant_block_is_the_one_a_load_reads(tmp_path):
