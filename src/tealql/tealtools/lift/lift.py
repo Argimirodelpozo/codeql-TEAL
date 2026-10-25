@@ -795,9 +795,12 @@ class _Lifter:
                 continue
             bsub, _bblk = blk_of[bid_]
             if B in self._group_entries:
+                # (the line of the block that fails: synthetic blocks need one, or the
+                # lowering defaults them to line 1 -- see _apply_eof_arms)
                 fail = pre_ir.BasicBlock(
                     id=next_id, phis=[], ops=[],
-                    terminator=pre_ir.Fail("stack underflow from entry"))
+                    terminator=pre_ir.Fail("stack underflow from entry"),
+                    comment=_bblk.comment)
                 next_id += 1
                 bsub.body.insert(0, fail)
                 blk_of[fail.id] = (bsub, fail)
@@ -829,7 +832,8 @@ class _Lifter:
             jblk = blk_of[jid][1]
             fail = pre_ir.BasicBlock(
                 id=next_id, phis=[], ops=[],
-                terminator=pre_ir.Fail("stack underflow on this path"))
+                terminator=pre_ir.Fail("stack underflow on this path"),
+                comment=jblk.comment)                # the join whose entry fails
             next_id += 1
             psub.body.append(fail)
             blk_of[fail.id] = (psub, fail)

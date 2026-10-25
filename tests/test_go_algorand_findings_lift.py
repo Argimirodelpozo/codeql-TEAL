@@ -152,3 +152,17 @@ def test_a_load_whose_block_differs_by_path_is_not_resolved(tmp_path):
                             "b:\nintcblock 6\nl:\nintc_0\npushint 5\n==")
     assert not pre.const_block_lines
     assert _exit_values(pre)
+
+
+def test_every_synthetic_block_has_a_source_line(tmp_path):
+    """Blocks the lift adds (an EOF exit, the Fail a doomed edge is retargeted to) carry
+    a line: the lowering otherwise defaults them to line 1, which a consumer that maps
+    blocks onto source (avm-prover's exact budget schedule) refuses, or double-charges
+    where line 1 is an instruction. The Fail for a doomed edge takes the failing block's."""
+    pre = _lifted(tmp_path, ALWAYS_PANIC["F4_stack_underflow_after_a_branch"][0])
+    body = {b.id: b for b in pre.main.body}
+    fails = [b for b in body.values() if isinstance(b.terminator, pre_ir.Fail) and not b.ops
+             and b.terminator.error_message == "stack underflow on this path"]
+    assert fails and all(b.comment == "L5" for b in fails), [(b.id, b.comment) for b in fails]
+    assert all(b.comment for b in pre.main.body), [b.id for b in pre.main.body if not b.comment]
+
