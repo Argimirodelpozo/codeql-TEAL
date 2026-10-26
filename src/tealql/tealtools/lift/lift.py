@@ -94,6 +94,13 @@ def _infer_arities(struct, callsite, *, divergent: "set | None" = None) -> dict:
         return by_name.get(cs.target_name) if cs else None
 
     def _succs_of(b, body):
+        # A return LEAVES the sub, as in the SSA's `stacksim._isucc`: a `retsub`'s raw
+        # successors are its callers' continuations. In a recursive sub one of them is
+        # the sub's own, which the walk then entered at the depth AFTER the return
+        # rather than after the call: a factorial took two arguments for one.
+        ops = _ops(b)
+        if ops and ops[-1].op in ("retsub", "return", "err"):
+            return []
         cs = callsite.get(b)
         if cs is not None and cs.continuation_bb is not None:
             return [cs.continuation_bb] if cs.continuation_bb in body else []

@@ -35,6 +35,9 @@ program's reachable exits: a program the chain always rejects with a panic must 
 - F26 (2026-10-26): `match` arms no key can take (opMatch skips keys of the other type
   than the matched value) kept a join the lowering could not type; dead blocks are now
   pruned before lowering.
+- F27 (2026-10-26): a recursive legacy subroutine's arity walk followed its `retsub`
+  into its own call's continuation, at the depth after the return: go's factorial
+  (TestSubroutine) took two arguments for one.
 """
 from __future__ import annotations
 
@@ -419,3 +422,26 @@ def test_a_match_keeps_the_keys_that_can_match(tmp_path):
                             "l2:\npushint 2\nreturn")
     sw = pre.main.body[0].terminator
     assert isinstance(sw, pre_ir.Switch) and [k for k, _ in sw.cases] == ["0x30"], sw.render()
+
+
+RECURSIVE_LEGACY = {
+    # go: TestSubroutine -- fact(5) == 120
+    "factorial": ("#pragma version 5\nb label1\nlabel3:\ndup\npushint 2\n<\nbz label2\nretsub\n"
+                  "label2:\ndup\npushint 1\n-\ncallsub label3\n*\nretsub\nlabel1:\npushint 5\n"
+                  "callsub label3\npushint 120\n==", "label3"),
+    # the same shape with the base case falling through first: f(n) = f(n-1), f(0) = 0
+    "drops_its_saved_value": ("#pragma version 5\nint 3\ncallsub f\nint 0\n==\nreturn\nf:\n"
+                              "dup\nbnz rec\nretsub\nrec:\ndup\nint 1\n-\ncallsub f\nswap\n"
+                              "pop\nretsub", "f"),
+}
+
+
+@pytest.mark.parametrize("name", sorted(RECURSIVE_LEGACY))
+def test_a_recursive_legacy_subroutine_takes_one_argument(tmp_path, name):
+    """F27. A `retsub` leaves the subroutine: its CFG successors are its callers'
+    continuations, which the walk must not enter (as the SSA's `stacksim._isucc` does not).
+    Through its own recursive call's continuation, `*` (or `swap`) dipped two below."""
+    teal, sub = RECURSIVE_LEGACY[name]
+    pre = _lifted(tmp_path, teal)
+    s = next(s for s in pre.subroutines if s.id == sub)
+    assert (len(s.parameters), len(s.returns)) == (1, 1)
