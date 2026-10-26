@@ -18,6 +18,12 @@ program's reachable exits: a program the chain always rejects with a panic must 
   reaches at or above the stack top.
 - F12: constant blocks take effect when EXECUTED (opIntConstBlock); the lowering read
   the last block above the load in the text.
+- F21 (2026-10-25): a program may END inside a subroutine (eval.go checks the data
+  stack, never the call stack). Such exits were refused, and a `callsub` as the last
+  instruction of a subroutine RETURNED to its caller. The whole stack is the frame's
+  height (the caller's depth at the `callsub`) plus what the body holds, which also
+  decides a legacy frame's floor ("frame_dig below stack"). A `proto` frame's `retsub`
+  checks need only the frame; `retsub` in main and a `proto` short of arguments fail.
 """
 from __future__ import annotations
 
@@ -38,8 +44,13 @@ def _lifted(tmp_path, teal: str):
 
 def _main_exits(pre) -> list:
     """The terminators of main's blocks reachable from its entry block."""
-    body = {b.id: b for b in pre.main.body}
-    seen, todo, out = set(), [pre.main.body[0].id], []
+    return _exits(pre.main)
+
+
+def _exits(sub) -> list:
+    """The terminators of ``sub``'s blocks reachable from its entry block."""
+    body = {b.id: b for b in sub.body}
+    seen, todo, out = set(), [sub.body[0].id], []
     while todo:
         bid = todo.pop()
         if bid in seen or bid not in body:
@@ -165,4 +176,98 @@ def test_every_synthetic_block_has_a_source_line(tmp_path):
              and b.terminator.error_message == "stack underflow on this path"]
     assert fails and all(b.comment == "L5" for b in fails), [(b.id, b.comment) for b in fails]
     assert all(b.comment for b in pre.main.body), [b.id for b in pre.main.body if not b.comment]
+
+
+
+# --- F21: ending inside a subroutine ----------------------------------------------------
+# name -> (source, the subroutine that ends the program, what its exits must be): a Fail
+# message (the chain panics there), "exit" (a ProgramExit of a known value), or
+# "refused" (a ProgramExit of Undefined: the depth is not known, so nothing is guessed).
+# Chain verdicts: go-algorand 3490087555c5 (the first two are TestProtoChecks programs).
+
+SUB_EXITS = {
+    "ends_inside_a_subroutine": ("#pragma version 8\ncallsub label1\nlabel1:\nproto 0 0\n"
+                                 "pushint 1", "label1", "exit"),
+    "ends_inside_a_subroutine_over_a_residual": ("#pragma version 8\nint 9\ncallsub f\nf:\n"
+                                                 "proto 0 0\nint 1", "f",
+                                                 "stack len is 2 instead of 1"),
+    "ends_inside_a_subroutine_with_its_argument": ("#pragma version 8\nint 3\ncallsub f\nf:\n"
+                                                   "proto 1 0\nframe_dig -1", "f",
+                                                   "stack len is 2 instead of 1"),
+    "a_legacy_subroutine_ends_on_its_arguments": ("#pragma version 8\nint 5\nint 6\n"
+                                                  "callsub f\nf:\n+", "f", "exit"),
+    "a_branch_to_the_end_inside_a_subroutine": ("#pragma version 8\ncallsub f\nf:\nproto 0 0\n"
+                                                "int 1\nint 1\nbnz end\nerr\nend:", "f", "exit"),
+    "a_last_callsub_inside_a_subroutine": ("#pragma version 8\ncallsub outer\npushint 1\n"
+                                           "return\ninner:\nretsub\nouter:\ncallsub inner",
+                                           "outer", "stack len is 0 instead of 1"),
+    "a_nested_last_callsub_ends_on_its_result": ("#pragma version 8\ncallsub f\ng:\n"
+                                                 "proto 0 1\nint 7\nretsub\nf:\nproto 0 0\n"
+                                                 "callsub g", "f", "exit"),
+    "two_calls_at_one_depth": ("#pragma version 8\nint 1\nbnz x\ncallsub f\nx:\ncallsub f\n"
+                               "f:\nproto 0 0\nint 1", "f", "exit"),
+    # not knowable from one frame: refused, as before
+    "two_calls_at_different_depths": ("#pragma version 8\nint 1\nbnz x\nint 4\ncallsub f\n"
+                                      "x:\ncallsub f\nf:\nproto 0 0\nint 1", "f", "refused"),
+    "the_one_value_is_the_callers": ("#pragma version 8\nint 1\ncallsub f\nf:\nproto 0 0",
+                                     "f", "refused"),
+    "recursion": ("#pragma version 8\nint 2\ncallsub f\nf:\nproto 1 0\nframe_dig -1\n"
+                  "bz done\nframe_dig -1\nint 1\n-\ncallsub f\ndone:\nint 1", "f", "refused"),
+}
+
+
+@pytest.mark.parametrize("name", sorted(SUB_EXITS))
+def test_a_program_may_end_inside_a_subroutine(tmp_path, name):
+    teal, where, want = SUB_EXITS[name]
+    pre = _lifted(tmp_path, teal)
+    sub = next(s for s in pre.subroutines if s.id == where)
+    exits = [t.result for t in _exits(sub) if isinstance(t, pre_ir.ProgramExit)]
+    fails = [t.error_message for t in _exits(sub) if isinstance(t, pre_ir.Fail)]
+    if want == "refused":
+        assert exits and all(isinstance(v, pre_ir.Undefined) for v in exits), exits
+    elif want == "exit":
+        assert exits and not any(isinstance(v, pre_ir.Undefined) for v in exits), exits
+    else:
+        assert not exits and want in fails, (exits, fails)
+    assert pre.pass_stats.get("frame_exits", 0) == (0 if want == "refused" else 1)
+
+
+# Frame panics the lift now decides (they lifted to Undefined values, which the consumer
+# refused): main's every path fails, or the named subroutine's exits are all `Fail`.
+FRAME_PANICS = {
+    # go: TestFrameAccessBelowStack -- a legacy frame's floor is its caller's depth
+    "frame_dig_below_the_stack": ("#pragma version 8\npushint 1\ncallsub label1\nlabel1:\n"
+                                  "frame_dig -10", None, None),
+    "frame_bury_below_the_stack": ("#pragma version 8\npushint 1\ncallsub label1\nlabel1:\n"
+                                   "frame_bury -10", None, None),
+    # go: TestSubroutine
+    "retsub_in_main": ("#pragma version 5\npushint 1\nretsub", None,
+                       "retsub with empty callstack"),
+    # go: TestProtoChecks, TestForgetReturn -- opRetSub on a proto frame
+    "retsub_below_the_frame": ("#pragma version 8\npushint 5\npushint 10\ncallsub label1\n"
+                               "pushint 1\nreturn\nlabel1:\nproto 2 1\n+\nretsub", "label1",
+                               "retsub executed with stack below frame. Did you pop args?"),
+    "retsub_with_no_returns": ("#pragma version 8\npushint 5\npushint 10\ncallsub label1\n"
+                               "pushint 1\nreturn\nlabel1:\nproto 2 1\nretsub", "label1",
+                               "retsub executed with no return values on stack. proto declared 1"),
+    "retsub_short_of_returns": ("#pragma version 11\nb label1\nlabel2:\nproto 0 3\npushint 1\n"
+                                "pushint 2\nretsub\nlabel1:\ncallsub label2\n!", "label2",
+                                "retsub executed with 2 return values on stack. proto declared 3"),
+    # go: TestProtoChecks -- "callsub to proto that requires 10 args with stack height 0"
+    "a_call_short_of_proto_args": ("#pragma version 8\ncallsub toodeep\ntoodeep:\nproto 10 1\n"
+                                   "pushint 1\nreturn", None, None),
+}
+
+
+@pytest.mark.parametrize("name", sorted(FRAME_PANICS))
+def test_a_frame_panic_lifts_to_fail(tmp_path, name):
+    teal, where, message = FRAME_PANICS[name]
+    pre = _lifted(tmp_path, teal)
+    sub = pre.main if where is None else next(s for s in pre.subroutines if s.id == where)
+    terms = _exits(sub)
+    fails = [t.error_message for t in terms if isinstance(t, pre_ir.Fail)]
+    assert fails and not any(isinstance(t, (pre_ir.ProgramExit, pre_ir.SubroutineReturn))
+                             for t in terms), [t.render() for t in terms]
+    if message is not None:
+        assert message in fails, fails
 

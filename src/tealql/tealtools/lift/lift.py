@@ -350,6 +350,18 @@ class _Lifter:
         self.doomed_blocks: set = set()   # blocks that fail from their OWN entry
         self._group_entries: set = set()  # every group's entry block
         self._doom_profile: dict = {}     # block -> [(dip, impure_before)] | None
+        # A subroutine is simulated from its own frame, but the end-of-program rule and
+        # a legacy frame's floor count the WHOLE stack. The walks record what they see;
+        # `_resolve_frame_heights` decides once every call site's depth is known. Groups
+        # are keyed by their entry block (None: main).
+        self._cur_key = None
+        self._groups_of: dict = {}        # block -> keys of the groups simulating it
+        self._reached: dict = {}          # key -> blocks its walk reaches from the entry
+        self._below_frame: set = set()    # sub keys whose walk reached under their frame
+        self._call_depths: list = []      # (key, callsub bb, callee entry, depth, exact)
+        self._clamped_calls: list = []    # (key, callsub bb, callee entry): too few values
+        self._frame_lows: list = []       # (key, bb, slot): a legacy frame access below 0
+        self._pending_exits: list = []    # (key, bb, placeholder exit, its stack)
         self._splice_divergent_legacy(struct)
         all_blocks = sorted(self.prog.blocks.values(), key=self._key)
         main_blocks = [bb for bb in all_blocks if bb not in self.sub_of]
@@ -492,6 +504,9 @@ class _Lifter:
         for gname, s, gb in groups:
             self.cur_gname = gname
             self.cur_is_main = s is None
+            self._cur_key = None if s is None else s.entry_bb
+            for bb in gb:
+                self._groups_of.setdefault(bb, set()).add(self._cur_key)
             if s is None:
                 params, nrets = [], 0
             else:
@@ -545,6 +560,7 @@ class _Lifter:
             "frame_position_phis": sum(map(len, self.frame_phis.values())),
             "frame_slot_refusals": len(self._frame_refusals),
         }
+        stats["frame_exits"] = self._resolve_frame_heights(struct)
         self._apply_eof_arms()
         stats["eof_arms"] = len(self._eof_specs)
         self._apply_doomed_edges()
@@ -1281,23 +1297,28 @@ class _Lifter:
             cont = cs.continuation_bb if cs else None
             if cont is not None and cont in self.bid:
                 return pre_ir.Goto(self.bid[cont])
+            if self._is_off_end(bb):
+                # The LAST instruction is this callsub: when the callee returns, the
+                # program ends with its stack (cfg.build records the site), which the
+                # simulation left holding the call's results. The end-of-program rule
+                # decides, as for any other exit -- in a subroutine too, whose frame
+                # is still open then. (`exit 0` here rejected every such run, and in a
+                # subroutine this RETURNED to the caller, which the chain never does.)
+                return self._exit_term(self.stack_exit.get(bb, []), bb)
             # No continuation (a non-returning callee): in a sub that is a value-less
             # return, but in main there is no caller, so it must be a program exit --
             # a value-less SubroutineReturn is invalid for the main program.
             if self.cur_is_main:
-                if self._is_off_end(bb):
-                    # The LAST instruction is this callsub: when the callee returns,
-                    # the program ends with its stack (cfg.build records the site),
-                    # which the simulation left holding the call's results. The end-
-                    # of-program rule decides, as for any other exit. (`exit 0` here
-                    # rejected every such run.)
-                    return self._exit_term(self.stack_exit.get(bb, []))
                 return pre_ir.ProgramExit(pre_ir.UInt64Constant(0))
             return pre_ir.SubroutineReturn([])
         if op == "retsub":
             sc = self._splice_retsub.get(bb)
             if sc is not None:                     # spliced copy: direct jump
                 return pre_ir.Goto(self.bid[sc])
+            if self.cur_is_main:
+                # main's own blocks never run inside a frame: every call's region is a
+                # subroutine body, and its continuation runs after the frame is gone
+                return pre_ir.Fail("retsub with empty callstack")
             return self._control_retsub(bb)
         succ = [s for s in bb.successors if s in self.bid]
         # `match` / `switch` first: their arms may name the END of the program, which
@@ -1322,7 +1343,7 @@ class _Lifter:
             # that would turn an approve-if-X program into an unconditional reject.
             # Read it off the simulated stack, which is already in this lift's
             # register space; `_exit_term` adds the AVM's depth rule.
-            return self._exit_term(self.stack_exit.get(bb, []))
+            return self._exit_term(self.stack_exit.get(bb, []), bb)
         if (op in COND_BRANCH_OPS and t is not None and len(succ) == 1
                 and self._is_off_end(bb)):
             # One arm LEAVES the program: the target label is at EOF, or this branch
@@ -1373,6 +1394,48 @@ class _Lifter:
         if self.cur_is_proto and pos < 0:
             return True
         return pos >= height
+
+    def _only_called(self, entry) -> bool:
+        """Is ``entry`` reached only by calls to it? A jump into it, or a loop back to
+        it (the walk does not merge at an entry), runs the body in another frame."""
+        return all(self.callsite.get(p) is not None
+                   and self.callsite[p].target_entry is entry
+                   for p in entry.predecessors)
+
+    def _frame_exact(self, bb, stack) -> bool:
+        """Is ``stack``, the current subroutine's simulated stack at ``bb``, exact above
+        the caller's residual on every call that reaches ``bb``? Not after a join that
+        merged different depths (a partial cell), once the walk reached under the
+        frame, at an orphan or a block another group shares, or when the entry is
+        jumped into."""
+        key = self._cur_key
+        return (key is not None
+                and not any(self._partial_cell(v) for v in stack)
+                and key not in self._below_frame
+                and self._groups_of.get(bb) == {key}
+                and bb in self._reached.get(key, ())
+                and self._only_called(key))
+
+    def _note_frame_floor(self, b, slot) -> None:
+        """A legacy frame may reach into its caller's residual, but not below the stack
+        (frames.go: frame height + slot < 0 fails "below stack"). The height is the
+        caller's depth: `_resolve_frame_heights` decides."""
+        if slot is not None and slot < 0 and not self.cur_is_main and not self.cur_is_proto:
+            self._frame_lows.append((self._cur_key, b, slot))
+
+    def _short_call(self, b, entry) -> None:
+        """A call with fewer values than its callee's arity. Into a `proto` sub from main
+        it fails on every path in ("callsub to proto that requires N args with stack
+        height M", frames.go): main's stack is exact or padded to its deepest arm. A
+        legacy callee need not reach that deep on every path, so the call stands, but it
+        fails if the callee's entry does (`_resolve_frame_heights`). A subroutine
+        passing values from under its own frame has reached below it."""
+        if self.cur_is_main and entry in self._proto_entries:
+            self.doomed_blocks.add(b)
+            return
+        self._clamped_calls.append((self._cur_key, b, entry))
+        if not self.cur_is_main:
+            self._below_frame.add(self._cur_key)
 
     def _check_overflow(self, b, stack) -> None:
         """More than 1000 values fail after the op that pushed them (eval.go step,
@@ -1482,7 +1545,7 @@ class _Lifter:
         if bb not in self._eof_arms:
             pid = -(1 + len(self._eof_arms))
             self._eof_arms[bb] = pid
-            self._eof_specs.append((bb, pid, self._exit_term(self.stack_exit.get(bb, []))))
+            self._eof_specs.append((bb, pid, self._exit_term(self.stack_exit.get(bb, []), bb)))
         return self._eof_arms[bb]
 
     def _partial_cell(self, v) -> bool:
@@ -1494,20 +1557,124 @@ class _Lifter:
         return phi is not None and any(isinstance(a.value, pre_ir.Undefined)
                                        for a in phi.args)
 
-    def _exit_term(self, stack):
+    def _exit_term(self, stack, bb):
         """Running off the end of the program (eval.go eval(): "stack len is N instead
         of 1" unless exactly one value remains; the verdict is that value). Main
         starts on an empty stack, so its simulated depth is exact unless a join
-        merged different depths; then, and inside a subroutine body (the caller's
-        residual lies below its frame), the depth is unknown here and the exit is
-        refused rather than guessed. A byteslice result fails too, once types are
-        known (`_fail_bytes_exits`). Before 2026-10-24 this exited with the top cell
-        at any depth, and with 0 on an empty stack: both PANIC on chain."""
-        if not self.cur_is_main or any(self._partial_cell(v) for v in stack):
+        merged different depths; then the depth is unknown here and the exit is
+        refused rather than guessed. A program may end inside a subroutine (eval.go
+        checks the data stack, not the call stack), but there the caller's residual
+        lies below the frame: the exit is a placeholder `_resolve_frame_heights`
+        decides once every call site's depth is known, and stays refused if it
+        cannot. A byteslice result fails too, once types are known
+        (`_fail_bytes_exits`). Before 2026-10-24 this exited with the top cell at any
+        depth, and with 0 on an empty stack: both PANIC on chain."""
+        if any(self._partial_cell(v) for v in stack):
             return pre_ir.ProgramExit(pre_ir.Undefined())
+        if not self.cur_is_main:
+            term = pre_ir.ProgramExit(pre_ir.Undefined())
+            self._pending_exits.append((self._cur_key, bb, term, list(stack)))
+            return term
         if len(stack) != 1:
             return pre_ir.Fail(f"stack len is {len(stack)} instead of 1")
         return pre_ir.ProgramExit(stack[0])
+
+    def _resolve_frame_heights(self, struct) -> int:
+        """Decide what a subroutine's walk cannot see: the stack under its frame. The
+        end-of-program rule counts the whole stack, and a legacy frame's
+        `frame_dig`/`frame_bury` fail below it ("below stack", frames.go).
+
+        A frame's height is the absolute depth at its `callsub` (opCallSub records
+        `len(cx.Stack)`). It is known when the entry is reached only by calls and
+        every call site agrees on an exact depth there: main's, unless a join merged
+        different depths (a partial cell), or that of a caller whose own height is
+        known, whose walk reached the site, and that never reached under its own
+        frame. Recursion, an orphan or clamped site, or a jump into the entry leave
+        it unknown, and what depends on it stays refused. Only a block one group alone
+        simulates is decided: a shared block would carry one context's answer into
+        another. Returns how many exits were decided."""
+        entries = {s.entry_bb for s in struct.subroutines if s not in self._spliced_subs}
+        sites: dict = {}                      # callee entry -> the callsub blocks naming it
+        for cs in struct.call_sites:
+            if cs.target_entry in entries and cs.callsub_bb not in self._splice_entry:
+                sites.setdefault(cs.target_entry, set()).add(cs.callsub_bb)
+        recs: dict = {}
+        for key, b, entry, depth, exact in self._call_depths:
+            recs.setdefault(entry, []).append((key, b, depth, exact))
+        height: dict = {}                     # entry -> its frame's height
+        unknown = {e for e in entries
+                   if not recs.get(e) or not self._only_called(e)
+                   or not sites.get(e, set()) <= {b for _k, b, _d, _x in recs[e]}}
+
+        def bottom(key):
+            """Absolute depth under the group's simulated stack (None: not known)."""
+            if key is None:
+                return 0
+            h = height.get(key)
+            return None if h is None else h - self._sub_io(key)[0]
+
+        for _ in range(len(entries) + 1):
+            progress = False
+            for e in entries:
+                if e in height or e in unknown:
+                    continue
+                vals, waiting = set(), False
+                for key, b, depth, exact in recs[e]:
+                    if (not exact or key in unknown or key in self._below_frame
+                            or b not in self._reached.get(key, ())):
+                        vals = None
+                        break
+                    base = bottom(key)
+                    if base is None:
+                        waiting = True
+                    elif base < 0:            # its caller had fewer values than params
+                        vals = None
+                        break
+                    else:
+                        vals.add(base + depth)
+                if vals is None or len(vals) > 1:
+                    unknown.add(e)
+                    progress = True
+                elif not waiting:
+                    height[e] = vals.pop()
+                    progress = True
+            if not progress:
+                break
+
+        def alone(key, bb) -> bool:
+            return self._groups_of.get(bb) == {key} and bb in self._reached.get(key, ())
+
+        for key, bb, slot in self._frame_lows:
+            h = height.get(key)
+            if h is not None and h + slot < 0 and alone(key, bb):
+                self.doomed_blocks.add(bb)
+        # A call short of values whose callee fails at its entry anyway fails at the
+        # call (and its clamped operands never reach the lowering).
+        changed = True
+        while changed:
+            changed = False
+            for key, b, entry in self._clamped_calls:
+                if entry in self.doomed_blocks and b not in self.doomed_blocks and alone(key, b):
+                    self.doomed_blocks.add(b)
+                    changed = True
+        resolved: dict = {}                   # id(placeholder) -> the decided exit
+        for key, bb, term, stack in self._pending_exits:
+            under = bottom(key)
+            if under is None or under < 0 or key in self._below_frame or not alone(key, bb):
+                continue
+            n = under + len(stack)
+            if n != 1:
+                resolved[id(term)] = pre_ir.Fail(f"stack len is {n} instead of 1")
+            elif stack:
+                resolved[id(term)] = pre_ir.ProgramExit(stack[0])
+            # else the one value is the caller's, which this body cannot name: refused
+        for sub in self.subs:
+            for blk in sub.body:
+                new = resolved.get(id(blk.terminator))
+                if new is not None:
+                    blk.terminator = new
+        self._eof_specs = [(bb, pid, resolved.get(id(t), t)) for bb, pid, t in self._eof_specs]
+        return len(resolved)
 
     def _apply_eof_arms(self) -> None:
         """Materialize every placeholder `_eof_arm` handed out as an exit block in the
@@ -1550,9 +1717,20 @@ class _Lifter:
         the stack; applying the proto rule to a short non-proto stack reads past
         the end, yields Undefined, and DCEs the whole body."""
         rsx = self.stack_exit.get(bb, [])              # canonical simulated stack
+        np = self.cur_nargs
+        if self.cur_is_proto and len(rsx) < np + self.cur_nret and self._frame_exact(bb, rsx):
+            # opRetSub on a `proto` frame needs its R returns above the frame height,
+            # where the args end: the caller's residual does not enter into it.
+            have = len(rsx) - np
+            if have < 0:
+                return pre_ir.Fail("retsub executed with stack below frame. Did you pop args?")
+            if have == 0:
+                return pre_ir.Fail("retsub executed with no return values on stack. "
+                                   f"proto declared {self.cur_nret}")
+            return pre_ir.Fail(f"retsub executed with {have} return values on stack. "
+                               f"proto declared {self.cur_nret}")
         if not self.cur_nret:
             return pre_ir.SubroutineReturn([])
-        np = self.cur_nargs
         if self.cur_is_proto:
             term = self.term_assign(bb)
             planned = (self._frame_return_values.get(id(term))
@@ -1713,6 +1891,15 @@ class _Lifter:
                 self._simulate_op(assignment, block, stack, params)
 
         self._group_entries.add(entry_bb)
+        # What the walk reaches from the entry: the rest it simulates from the orphan
+        # stack, a depth no execution need have.
+        reached, todo = {entry_bb}, [entry_bb]
+        while todo:
+            for nxt in isucc(todo.pop()):
+                if nxt in body and nxt not in reached:
+                    reached.add(nxt)
+                    todo.append(nxt)
+        self._reached[self._cur_key] = reached
         # Main enters on an EMPTY stack — the one entry depth that is EXACT — so
         # a straight-line dip below it from the entry is a certain underflow,
         # the same reject `_mark_doomed_merge` proves for a shallow join arm
@@ -1865,6 +2052,7 @@ class _Lifter:
             output = a.outputs[0] if a.outputs else None
             slot = _imm0(a)
             pos = len(params) + slot if slot is not None else -1
+            self._note_frame_floor(b, slot)
             key = (b.file, b.first_line, b.last_line)
             if key not in self._height_poisoned and self._frame_access_fails(slot, pos, len(stack)):
                 self.doomed_blocks.add(b)
@@ -1895,6 +2083,12 @@ class _Lifter:
                     self.ssa_values[a.inputs[0]] = source
             return
         if a.op == "frame_bury":
+            self._note_frame_floor(b, _imm0(a))
+            if not stack:
+                if self.cur_is_main:
+                    self.doomed_blocks.add(b)    # "frame_bury with empty callstack"
+                else:
+                    self._below_frame.add(self._cur_key)    # it buries a caller's value
             if stack:
                 v = stack.pop()
                 self.stack_args[id(a)] = [v]
@@ -1933,6 +2127,8 @@ class _Lifter:
             if m is None:                       # frame_* / unrecognised
                 m, n_in = _shuffle_mapping(a), len(a.inputs)
             if m is None or len(stack) < n_in:
+                if not self.cur_is_main:
+                    self._below_frame.add(self._cur_key)
                 return
             ins = [stack.pop() for _ in range(n_in)]            # top-first
             for v in reversed([ins[k] for k in m]):
@@ -1947,6 +2143,12 @@ class _Lifter:
                 return
             cs = self.callsite.get(b)
             nargs = self._sub_io(cs.target_entry)[0] if (cs and cs.target_entry) else 0
+            if cs is not None and cs.target_entry is not None:
+                # the height of the frame this call opens (opCallSub: len(cx.Stack))
+                self._call_depths.append((self._cur_key, b, cs.target_entry, len(stack),
+                                          not any(self._partial_cell(v) for v in stack)))
+                if nargs > len(stack):
+                    self._short_call(b, cs.target_entry)
             nargs = min(nargs, len(stack))
             self.stack_args[id(a)] = stack[len(stack) - nargs:]      # param order
             if nargs:
@@ -1998,12 +2200,15 @@ class _Lifter:
         if a.op in ("intcblock", "bytecblock", "proto"):
             return
         ni, _ = op_arity(a.op, a.immediates)
-        if self.cur_is_main and ni > len(stack):
-            # Main's simulated stack is exact, or padded to its deepest arm at a join:
-            # fewer values than the op takes underflow on every path in (eval.go step,
-            # "stack underflow in OP"). The block fails there; truncating the operands
-            # built a narrower op instead (`==` of one value).
-            self.doomed_blocks.add(b)
+        if ni > len(stack):
+            if self.cur_is_main:
+                # Main's simulated stack is exact, or padded to its deepest arm at a
+                # join: fewer values than the op takes underflow on every path in
+                # (eval.go step, "stack underflow in OP"). The block fails there;
+                # truncating the operands built a narrower op instead (`==` of one).
+                self.doomed_blocks.add(b)
+            else:
+                self._below_frame.add(self._cur_key)    # it took its caller's values
         ni = min(ni, len(stack))
         self.stack_args[id(a)] = [stack.pop() for _ in range(ni)]    # top-first
         if a.op not in _TERMINATOR_OPS:
