@@ -2127,7 +2127,12 @@ class _Lifter:
             if m is None:                       # frame_* / unrecognised
                 m, n_in = _shuffle_mapping(a), len(a.inputs)
             if m is None or len(stack) < n_in:
-                if not self.cur_is_main:
+                if m is not None and self.cur_is_main:
+                    # Short of operands in main underflows on every path in ("stack
+                    # underflow in swap"), as for any op below; dropping the shuffle
+                    # ran the rest on a stack the chain never has.
+                    self.doomed_blocks.add(b)
+                elif not self.cur_is_main:
                     self._below_frame.add(self._cur_key)
                 return
             ins = [stack.pop() for _ in range(n_in)]            # top-first

@@ -24,6 +24,7 @@ program's reachable exits: a program the chain always rejects with a panic must 
   height (the caller's depth at the `callsub`) plus what the body holds, which also
   decides a legacy frame's floor ("frame_dig below stack"). A `proto` frame's `retsub`
   checks need only the frame; `retsub` in main and a `proto` short of arguments fail.
+- F22 (2026-10-25): a stack shuffle short of operands in main was dropped, not failed.
 """
 from __future__ import annotations
 
@@ -271,3 +272,10 @@ def test_a_frame_panic_lifts_to_fail(tmp_path, name):
     if message is not None:
         assert message in fails, fails
 
+
+def test_a_shuffle_short_of_operands_in_main_fails(tmp_path):
+    """F22. After `int 1; bnz x` the stack is empty at `x`, so `swap` underflows on chain
+    ("stack underflow in swap"); the lift dropped the shuffle and exited with the 1."""
+    pre = _lifted(tmp_path, "#pragma version 8\nint 1\nbnz x\nerr\nx:\nswap\nint 1")
+    assert not _exit_values(pre), [t.render() for t in _main_exits(pre)]
+    assert "stack underflow on this path" in _fail_messages(pre), _fail_messages(pre)
