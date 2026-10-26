@@ -729,7 +729,7 @@ def _multi_out_type(op, immediates, idx):
 # accept BOTH; `itxn_field` is field-dependent.
 _U64_CONSUME = frozenset({
     "+", "-", "*", "/", "%", "exp", "sqrt", "shl", "shr", "<", ">", "<=", ">=",
-    "itob", "bitlen", "!", "&&", "||", "assert", "&", "|", "^", "~"})
+    "itob", "!", "&&", "||", "assert", "&", "|", "^", "~"})
 _BYTES_CONSUME = frozenset({
     "concat", "len", "btoi", "log", "sha256", "sha512_256", "sha512", "keccak256",
     "sha3_256", "extract", "extract3", "substring", "substring3", "replace2",

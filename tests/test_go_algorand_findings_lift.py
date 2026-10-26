@@ -25,6 +25,16 @@ program's reachable exits: a program the chain always rejects with a panic must 
   decides a legacy frame's floor ("frame_dig below stack"). A `proto` frame's `retsub`
   checks need only the frame; `retsub` in main and a `proto` short of arguments fail.
 - F22 (2026-10-25): a stack shuffle short of operands in main was dropped, not failed.
+- F23 (2026-10-26): `bitlen` takes either type (a byteslice is a big-endian number); the
+  lift typed its operand uint64, so `byte 0x01; bitlen` lifted with an unknown operand.
+- F24 (2026-10-26): a CONSTANT of the wrong AVM type at an operand the chain checks fails
+  there (step(): "+ arg 0 wanted uint64 but got []byte"; opEq: "cannot compare"; a uint64
+  `itxn_field` setter: "... is not a uint64"). The lift made the constant an unknown.
+- F25 (2026-10-26): the grammar rejected `#pragma autosalt` (v13) and a `match` or
+  `switch` with no labels, and dropped the span.
+- F26 (2026-10-26): `match` arms no key can take (opMatch skips keys of the other type
+  than the matched value) kept a join the lowering could not type; dead blocks are now
+  pruned before lowering.
 """
 from __future__ import annotations
 
@@ -279,3 +289,133 @@ def test_a_shuffle_short_of_operands_in_main_fails(tmp_path):
     pre = _lifted(tmp_path, "#pragma version 8\nint 1\nbnz x\nerr\nx:\nswap\nint 1")
     assert not _exit_values(pre), [t.render() for t in _main_exits(pre)]
     assert "stack underflow on this path" in _fail_messages(pre), _fail_messages(pre)
+
+
+# F24: a constant the op cannot take. (TEAL, go-algorand's error).
+TYPE_PANICS = {
+    # go: TestWrongStackTypeRuntime2 -- eval.go step()
+    "plus_on_bytes": ("#pragma version 10\npushbytes 0x1234\npushint 1\n+",
+                      "+ arg 0 wanted uint64 but got []byte"),
+    # go: TestAssert (v14: the op table stops at v13; v14 changes no operand type)
+    "assert_on_bytes": ("#pragma version 14\npushbytes 0x6a6f686e\nassert\npushint 1",
+                        "assert arg 0 wanted uint64 but got []byte"),
+    # go: TestEqMismatch / TestNeqMismatch -- opEq
+    "eq_across_types": ("#pragma version 14\npushbytes 0x1234\npushint 1\n==",
+                        "cannot compare ([]byte to uint64)"),
+    "neq_across_types_from_constant_blocks": (
+        "#pragma version 1\nintcblock 1\nbytecblock 0x1234\nbytec_0\nintc_0\n!=",
+        "cannot compare ([]byte to uint64)"),
+    # go: TestWrongStackTypeRuntime -- the model dropped this panic ("type-collapse")
+    "sha256_on_uint64": ("#pragma version 12\npushint 1\nsha256\nlen",
+                         "sha256 arg 0 wanted []byte but got uint64"),
+    # go: TestCurrentInnerTypes -- stackIntoTxnField reads sv.uint()
+    "uint64_itxn_field_given_bytes": (
+        "#pragma version 14\nitxn_begin\npushbytes 0x706179\nitxn_field TypeEnum\n"
+        "itxn_submit\npushint 1", "[]byte{0x70, 0x61, 0x79} is not a uint64"),
+    "switch_on_bytes": ("#pragma version 9\npushbytes 0x01\nswitch\npushint 1",
+                        "switch arg 0 wanted uint64 but got []byte"),
+    # before v4 `balance` takes an Accounts index only
+    "v3_balance_of_an_address": ("#pragma version 3\npushbytes 0x" + "00" * 32 + "\nbalance",
+                                 "balance arg 0 wanted uint64 but got []byte"),
+    "constant_moved_by_a_shuffle": ("#pragma version 10\npushint 1\npushbytes 0x01\nswap\n"
+                                    "concat\nlen", "concat arg 1 wanted []byte but got uint64"),
+}
+
+
+@pytest.mark.parametrize("name", sorted(TYPE_PANICS))
+def test_a_constant_the_op_cannot_take_fails_there(tmp_path, name):
+    teal, message = TYPE_PANICS[name]
+    pre = _lifted(tmp_path, teal)
+    assert not _exit_values(pre), [t.render() for t in _main_exits(pre)]
+    assert message in _fail_messages(pre), _fail_messages(pre)
+    assert pre.pass_stats["type_panics"] == 1
+
+
+# Controls: the chain does not fail on a type here, or the lift cannot know it does.
+NO_TYPE_PANIC = {
+    # from v4 `balance` takes an address or an index
+    "v4_balance_of_an_address": "#pragma version 4\npushbytes 0x" + "00" * 32 + "\nbalance",
+    # a byteslice field takes a uint64's nil bytes: `Note` is then empty
+    "uint64_into_a_bytes_itxn_field": ("#pragma version 14\nitxn_begin\npushint 5\n"
+                                       "itxn_field Note\nitxn_submit\npushint 1"),
+    # a register's type is recovered, not certain: no claim
+    "register_operand": "#pragma version 10\ntxna ApplicationArgs 0\npushint 1\n+",
+    "same_type_compare": "#pragma version 10\npushbytes 0x01\npushbytes 0x01\n==",
+    "match_keys_of_another_type": ("#pragma version 8\npushbytes 0x30\npushint 1\nmatch l1\n"
+                                   "pushint 1\nreturn\nl1:\nerr"),
+}
+
+
+@pytest.mark.parametrize("name", sorted(NO_TYPE_PANIC))
+def test_no_type_panic_is_claimed_where_the_chain_does_not_fail_or_cannot_be_known(
+        tmp_path, name):
+    pre = _lifted(tmp_path, NO_TYPE_PANIC[name])
+    assert pre.pass_stats["type_panics"] == 0
+    assert not any("wanted" in m or "cannot compare" in m or "is not a uint64" in m
+                   for m in _fail_messages(pre)), _fail_messages(pre)
+
+
+def test_the_type_check_reads_no_version_past_the_one_checked():
+    """v14 is read off the v13 table (checked against go-algorand's v14 op by op); a later
+    version could widen an operand, as v4 did `balance`'s, so it makes no claim."""
+    from tealql.tealtools.lift.lift import _type_panic
+    ops = [pre_ir.BytesConstant("0x01"), pre_ir.UInt64Constant(1)]
+    assert _type_panic("+", "", ops, 14) == "+ arg 0 wanted uint64 but got []byte"
+    assert _type_panic("+", "", ops, 15) is None
+    assert _type_panic("+", "", ops, None) is None
+
+
+def test_bitlen_of_a_byteslice_keeps_its_operand(tmp_path):
+    """F23. go: TestBitLen -- `bitlen` of 0x0100 is 9 (eval.go opBitLen)."""
+    pre = _lifted(tmp_path, "#pragma version 10\npushbytes 0x0100\nbitlen\npushint 9\n==")
+    ops = [op for b in pre.main.body for op in b.ops]
+    text = " ".join(op.render() for op in ops)
+    assert "(bitlen 0x0100)" in text and "undefined" not in text, text
+    assert _exit_values(pre)
+
+
+GRAMMAR_GAPS = {
+    # F25. go: TestMatch / TestSwitchInt / every v13+ disassembly of a LogicSig
+    "zero_label_match": ("#pragma version 8\npushint 0\nmatch\npushint 1", True),
+    "zero_label_switch": ("#pragma version 9\npushint 0\nswitch \npushint 1", True),
+    "zero_label_match_short_of_its_value": ("#pragma version 11\nmatch \npushint 1", False),
+    "zero_label_switch_short_of_its_index": ("#pragma version 9\nswitch\npushint 1", False),
+    "autosalt_pragma": ("#pragma version 14\n#pragma autosalt false\npushint 1", True),
+}
+
+
+@pytest.mark.parametrize("name", sorted(GRAMMAR_GAPS))
+def test_valid_teal_the_grammar_rejected_parses(tmp_path, name):
+    from tealql.tealtools.ast.parse import parse_nodes
+    teal, approves = GRAMMAR_GAPS[name]
+    diags: list = []
+    parse_nodes({"prog.teal": teal + "\n"}, diagnostics=diags)
+    assert not diags, diags
+    pre = _lifted(tmp_path, teal)
+    if approves:
+        assert [v.value for v in _exit_values(pre)] == [1], [t.render() for t in _main_exits(pre)]
+    else:
+        assert not _exit_values(pre) and _fail_messages(pre)
+
+
+def test_match_arms_no_key_can_take_are_dead(tmp_path):
+    """F26. go: TestMatch -- an integer never matches byteslice keys, so the arms and the
+    join only they feed are dead; the lowering failed on that join ("unexpected any
+    type"). The program falls through to `return 1`."""
+    from tealql.tealtools.lift.to_puya_ir import render
+    teal = ("#pragma version 10\nintcblock 1 0\npushbytes 0x30\npushbytes 0x31\nintc_0\n"
+            "match label1 label2\nintc_0\nreturn\nlabel1:\nintc_1\nlabel2:\nintc_1\n")
+    pre = _lifted(tmp_path, teal)
+    assert [v.value for v in _exit_values(pre)] == [1]
+    assert pre.pass_stats["unreachable_blocks"] >= 2
+    p = tmp_path / "prog.teal"
+    assert "exit 1u" in render(SSAProgram(str(p)))
+
+
+def test_a_match_keeps_the_keys_that_can_match(tmp_path):
+    """A byteslice value against keys 0x30 (bytes) and 7 (uint64): only 0x30 can match."""
+    pre = _lifted(tmp_path, "#pragma version 8\npushbytes 0x30\npushint 7\npushbytes 0x30\n"
+                            "match l1 l2\npushint 1\nreturn\nl1:\npushint 0\nreturn\n"
+                            "l2:\npushint 2\nreturn")
+    sw = pre.main.body[0].terminator
+    assert isinstance(sw, pre_ir.Switch) and [k for k, _ in sw.cases] == ["0x30"], sw.render()

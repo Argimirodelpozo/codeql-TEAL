@@ -21,8 +21,8 @@ import tree_sitter_teal as _tsteal
 
 from ..cfg.build import _children, _program_cfg
 from .ast import (
-    AstNode, Label, Location, SingleNumericArgumentOpcode, Source,
-    ZeroArgumentOpcode, node_class_for_mnemonic,
+    AstNode, Label, Location, MatchOpcode, SingleNumericArgumentOpcode, Source,
+    SwitchOpcode, ZeroArgumentOpcode, node_class_for_mnemonic,
 )
 from .literals import NAMED_INT_CONSTANTS, is_template_variable, scan_line
 
@@ -182,6 +182,41 @@ def _spell_immediateless_extract(src: bytes) -> bytes:
     import re as _re
     return _re.sub(rb"(?m)(?:[ \t]|^)extract([ \t]*(?://[^\n]*)?(?:\r?\n|$))",
                    lambda m: b"extract3" + m.group(1), src)
+
+
+def _grammar_gap_lines(src: bytes, file: str):
+    """Blank the lines tree-sitter-teal cannot parse although they are valid TEAL, and
+    return ``(src, nodes)``: the instructions among them as their own nodes. Blanked
+    with spaces, as :func:`protocol_nodes` blanks newer opcodes, so every offset and
+    line stays put.
+
+    * ``#pragma autosalt <bool>`` (v13 assembler): whether the assembler may append
+      a salt ``intcblock`` to an on-curve LogicSig. It is an assembly directive, not
+      an instruction; the disassembler writes ``#pragma autosalt false`` so that
+      reassembly reproduces the bytes, and any salt is in the listing already. The
+      grammar knows only the version and typetrack pragmas, and made it an ERROR.
+    * ``match`` / ``switch`` with NO labels: valid (``switch`` pops its index,
+      ``match`` its value, and both fall through), but the grammar's rule wants a
+      label and took the next line's opcode for one (``match\\npushint`` and an
+      unparsed ``1``)."""
+    if b"autosalt" not in src and b"match" not in src and b"switch" not in src:
+        return src, []
+    out, nodes = [], []
+    for row, raw in enumerate(src.splitlines(keepends=True), 1):
+        code = raw.split(b"//", 1)[0].strip()
+        words = code.split()
+        if len(words) == 3 and words[:2] == [b"#pragma", b"autosalt"]:
+            out.append(bytes(c if c in (10, 13) else 32 for c in raw))
+            continue
+        if code in (b"match", b"switch"):
+            column = len(raw) - len(raw.lstrip())
+            cls = MatchOpcode if code == b"match" else SwitchOpcode
+            nodes.append(cls(Location(file, row, column, row, column + len(code)),
+                             code.decode()))
+            out.append(bytes(c if c in (10, 13) else 32 for c in raw))
+            continue
+        out.append(raw)
+    return b"".join(out), nodes
 
 
 def _starts_identifier_char(buf, k: int, lo: int, hi: int) -> bool:
@@ -734,6 +769,8 @@ def parse_nodes(
         src = _spell_immediateless_extract(src)
         from .protocol import protocol_nodes
         grammar_src, protocol_ops, protocol_diagnostics = protocol_nodes(src, file)
+        grammar_src, gap_ops = _grammar_gap_lines(grammar_src, file)
+        protocol_ops = [*protocol_ops, *gap_ops]
         if diagnostics is not None:
             diagnostics.extend(protocol_diagnostics)
         root = _parser().parse(grammar_src).root_node

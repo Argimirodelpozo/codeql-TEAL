@@ -248,7 +248,8 @@ def test_live_cross_family_constant_is_never_coerced(tmp_path, backend):
     sites still itob/btoi-coerced it and the recompiled program approved with a
     fabricated value (finding 1.9). Every site now goes through ONE helper:
     `int 5` merged with a bytes value -> explicit unknown (never 0x…05); `byte
-    "abc"` under `+` -> unknown (never 6382179u); `byte "abc"; bnz` -> `fail`.
+    "abc"` under `+` -> `fail` (never 6382179u: the constant is certain, so the
+    block fails at the op, as the chain does); `byte "abc"; bnz` -> `fail`.
     Control: the dead placeholders (`int 0` into a bytes web, `0x` into a uint64
     slot) still coerce silently, as the lift's typed-zero seeds require."""
     if backend:
@@ -270,7 +271,8 @@ def test_live_cross_family_constant_is_never_coerced(tmp_path, backend):
     prog, ir = _lifted('#pragma version 10\nbyte "abc"\nint 1\n+\nreturn\n',
                        tmp_path, "plus.teal")
     text = ir.render() + render(prog)
-    assert "6382179" not in text and "undefined" in text, text
+    assert "6382179" not in text and _main_fails_outright(ir), text
+    assert "+ arg 0 wanted uint64 but got []byte" in ir.render(), ir.render()
 
     prog, ir = _lifted('#pragma version 10\nbyte "abc"\nbnz yes\nint 0\nreturn\nyes:\n'
                        'int 1\nreturn\n', tmp_path, "bnz.teal")

@@ -9,8 +9,10 @@ simulates the canonical stream, so analysis order cannot change semantics.
 from __future__ import annotations
 
 import logging
+import re
 
 from ..language.avm import _STACK_SHUFFLE_OPS, _TERMINATOR_OPS, op_arity
+from ..language.spec import SPEC_VERSION, opcode_spec
 from ..ssa import (
     Const,
     Phi,
@@ -132,6 +134,70 @@ def _const(cv: Const):
 
 
 _UINT64_MAX = (1 << 64) - 1
+
+
+def _arg_family(t: str) -> "str | None":
+    """The AVM type a langspec operand type demands at step()'s check (eval.go,
+    ``opCompat(argType.AVMType, ...)``): every named byteslice type is avmBytes and
+    ``bool`` is avmUint64. ``any``, or a name this table does not know, makes no claim."""
+    if t in ("uint64", "bool"):
+        return "u"
+    if (t in ("[]byte", "address", "bigint", "boxName", "stateKey", "method")
+            or re.fullmatch(r"\[\d+\]byte", t)):
+        return "b"
+    return None
+
+
+def _const_family(v) -> "str | None":
+    """A constant's AVM type. Nothing else on the simulated stack has a CERTAIN type:
+    a register's is recovered later, and may be a guess."""
+    if isinstance(v, pre_ir.UInt64Constant):
+        return "u"
+    if isinstance(v, pre_ir.BytesConstant):
+        return "b"
+    return None
+
+
+_TYPE_NAMES = {"u": "uint64", "b": "[]byte"}         # stackValue.typeName()
+
+#: The newest AVM version `_type_panic` reads operand types for. The spec table stops
+#: at SPEC_VERSION (13); go-algorand's v14 (LogicVersion 14 at 3490087555c5) adds
+#: `sumhash512` and changes no operand type of any other op, checked op by op against
+#: its OpSpecs at every version. Raise this only after the same check on a newer tree.
+_TYPE_CHECKED_THROUGH = 14
+
+
+def _type_panic(op, immediates, operands, version) -> "str | None":
+    """go-algorand's error when a CONSTANT operand has the wrong AVM type for ``op`` at
+    ``version``, else None; ``operands`` are deepest first, as step() indexes them.
+    Three checks fail on a type, and only these are claimed: step()'s operand check
+    (``+ arg 0 wanted uint64 but got []byte``), ``==``/``!=`` across types (opEq,
+    ``cannot compare``), and a uint64 or bool ``itxn_field`` given a byteslice (its
+    setter reads ``sv.uint()``). A byteslice field is not claimed: ``Note`` and the
+    program fields take a uint64's nil bytes without failing."""
+    if version is None or version > _TYPE_CHECKED_THROUGH:
+        return None
+    spec = opcode_spec(op, min(version, SPEC_VERSION))
+    if spec is None or len(spec.args) != len(operands):
+        return None
+    for i, (t, v) in enumerate(zip(spec.args, operands)):
+        want, got = _arg_family(t), _const_family(v)
+        if want and got and want != got:
+            return f"{op} arg {i} wanted {t} but got {_TYPE_NAMES[got]}"
+    if op in ("==", "!="):
+        fams = [_const_family(v) for v in operands]
+        if None not in fams and fams[0] != fams[1]:
+            return f"cannot compare ({_TYPE_NAMES[fams[0]]} to {_TYPE_NAMES[fams[1]]})"
+    if op == "itxn_field" and (immediates or "").split():
+        detail = spec.fields.get(immediates.split()[0])
+        if detail and detail[0] in ("uint64", "bool") and _const_family(operands[0]) == "b":
+            try:
+                raw, _ = _const_bytes(operands[0].value)
+                shown = "[]byte{" + ", ".join(f"0x{x:x}" for x in raw) + "}"
+            except Exception:
+                shown = "a byteslice"
+            return f"{shown} is not a uint64"
+    return None
 
 
 def _range_note(local_id: str, rng) -> str | None:
@@ -362,6 +428,11 @@ class _Lifter:
         self._clamped_calls: list = []    # (key, callsub bb, callee entry): too few values
         self._frame_lows: list = []       # (key, bb, slot): a legacy frame access below 0
         self._pending_exits: list = []    # (key, bb, placeholder exit, its stack)
+        self._type_panics: list = []      # (key, bb, error): a constant its op cannot take
+        self._entry_ids: set = set()      # pre-IR id of every group's entry block
+        self._doom_reason: dict = {}      # doomed block -> the chain's error, if not underflow
+        from ..budget.context import infer_avm_version
+        self._avm_version = infer_avm_version(self.prog)
         self._splice_divergent_legacy(struct)
         all_blocks = sorted(self.prog.blocks.values(), key=self._key)
         main_blocks = [bb for bb in all_blocks if bb not in self.sub_of]
@@ -534,6 +605,7 @@ class _Lifter:
             entry = (s.entry_bb if s is not None
                      else min(gb, key=lambda b: (b.file, b.first_line)))
             self._current_group = set(gb)
+            self._entry_ids.add(self.bid[entry])
             self._simulate_group(gb, entry, params)
             self._prepare_frame_returns(gb)
             self._finish_frame_phis()
@@ -560,10 +632,12 @@ class _Lifter:
             "frame_position_phis": sum(map(len, self.frame_phis.values())),
             "frame_slot_refusals": len(self._frame_refusals),
         }
+        stats["type_panics"] = self._resolve_type_panics()
         stats["frame_exits"] = self._resolve_frame_heights(struct)
         self._apply_eof_arms()
         stats["eof_arms"] = len(self._eof_specs)
         self._apply_doomed_edges()
+        stats["unreachable_blocks"] = self._prune_unreachable()
         transforms.prune_dead_phis(self.subs)
         # Loop: a cross-group passthrough value can itself be another passthrough.
         while transforms.isolate_cross_group_phis(self.subs):
@@ -799,6 +873,7 @@ class _Lifter:
         edges = sorted({(self.bid.get(P), self.bid.get(J)) for P, J in self.doomed_edges},
                        key=lambda e: (e[0] if e[0] is not None else -1,
                                       e[1] if e[1] is not None else -1))
+        reason_of: dict = {}               # doomed block id -> its Fail's error
         # A block that fails from its OWN first instruction — `bury 0`, or
         # main's entry dipping below the empty stack it starts on — rejects on
         # EVERY path in, so every incoming edge is doomed. An ENTRY has no edge
@@ -815,11 +890,13 @@ class _Lifter:
                 # lowering defaults them to line 1 -- see _apply_eof_arms)
                 fail = pre_ir.BasicBlock(
                     id=next_id, phis=[], ops=[],
-                    terminator=pre_ir.Fail("stack underflow from entry"),
+                    terminator=pre_ir.Fail(self._doom_reason.get(
+                        B, "stack underflow from entry")),
                     comment=_bblk.comment)
                 next_id += 1
                 bsub.body.insert(0, fail)
                 blk_of[fail.id] = (bsub, fail)
+                self._entry_ids.add(fail.id)
                 # Everything the old entry alone reached is dead now; keeping
                 # it would hand Puya the very op that underflowed (clamped to
                 # fewer operands — an arity-invalid intrinsic). Prune what the
@@ -838,6 +915,8 @@ class _Lifter:
                 for did in dead:
                     blk_of.pop(did, None)
                 continue
+            if B in self._doom_reason:
+                reason_of[bid_] = self._doom_reason[B]
             for pid, (psub, pblk) in blk_of.items():
                 if psub is bsub and bid_ in pre_ir.succ_ids(pblk.terminator):
                     edges.append((pid, bid_))
@@ -848,7 +927,7 @@ class _Lifter:
             jblk = blk_of[jid][1]
             fail = pre_ir.BasicBlock(
                 id=next_id, phis=[], ops=[],
-                terminator=pre_ir.Fail("stack underflow on this path"),
+                terminator=pre_ir.Fail(reason_of.get(jid, "stack underflow on this path")),
                 comment=jblk.comment)                # the join whose entry fails
             next_id += 1
             psub.body.append(fail)
@@ -857,6 +936,36 @@ class _Lifter:
                                 lambda b, _j=jid, _f=fail.id: _f if b == _j else b)
             for ph in jblk.phis:
                 ph.args = [a for a in ph.args if a.through != pid]
+
+    def _prune_unreachable(self) -> int:
+        """Drop the pre-IR blocks no entry reaches, and the phi arms through them;
+        returns how many. Dead code has no semantics, and Puya's optimizer drops it
+        anyway, but only AFTER lowering, which can fail on it first: a dead arm's
+        exit can carry an unknown value (`match` cases no key can take, a join only
+        those arms feed). Reachability is global, as edges may cross subroutines;
+        every group entry and every body's first block are roots."""
+        blk_of = {blk.id: blk for sub in self.subs for blk in sub.body}
+        roots = set(self._entry_ids) | {sub.body[0].id for sub in self.subs if sub.body}
+        seen, todo = set(), [r for r in roots if r in blk_of]
+        while todo:
+            x = todo.pop()
+            if x in seen:
+                continue
+            seen.add(x)
+            todo.extend(t for t in pre_ir.succ_ids(blk_of[x].terminator) if t in blk_of)
+        dead = set(blk_of) - seen
+        if not dead:
+            return 0
+        for sub in self.subs:
+            sub.body[:] = [blk for blk in sub.body if blk.id not in dead]
+            for blk in sub.body:
+                for ph in blk.phis:
+                    ph.args = [a for a in ph.args if a.through not in dead]
+                if isinstance(blk.terminator, pre_ir.Switch):
+                    # only a case shadowed by an earlier duplicate key can name one
+                    blk.terminator.cases = [(k, t) for k, t in blk.terminator.cases
+                                            if t not in dead]
+        return len(dead)
 
     def _site_target(self, bb, blk):
         """A label-resolved block as seen from ``bb``: label targets resolve via
@@ -1416,6 +1525,27 @@ class _Lifter:
                 and bb in self._reached.get(key, ())
                 and self._only_called(key))
 
+    def _alone(self, key, bb) -> bool:
+        """Does group ``key`` alone simulate ``bb``, and does its walk reach it from the
+        entry? A block another group shares has another context's stack too."""
+        return self._groups_of.get(bb) == {key} and bb in self._reached.get(key, ())
+
+    def _resolve_type_panics(self) -> int:
+        """Fail each block where a constant reaches an op that cannot take its type
+        (`_type_panic`). The constant is in that cell on every path in, and the op runs
+        whenever the block does, so the block fails from its entry: what ran before
+        is discarded with the failed transaction. Before this the constant became an
+        explicit unknown (`cross_family_const`) and the model refused the program.
+        Returns how many blocks were failed."""
+        n = 0
+        for key, bb, error in self._type_panics:
+            if bb in self.doomed_blocks or not self._alone(key, bb):
+                continue
+            self.doomed_blocks.add(bb)
+            self._doom_reason[bb] = error
+            n += 1
+        return n
+
     def _note_frame_floor(self, b, slot) -> None:
         """A legacy frame may reach into its caller's residual, but not below the stack
         (frames.go: frame height + slot < 0 fails "below stack"). The height is the
@@ -1641,9 +1771,7 @@ class _Lifter:
             if not progress:
                 break
 
-        def alone(key, bb) -> bool:
-            return self._groups_of.get(bb) == {key} and bb in self._reached.get(key, ())
-
+        alone = self._alone
         for key, bb, slot in self._frame_lows:
             h = height.get(key)
             if h is not None and h + slot < 0 and alone(key, bb):
@@ -1766,10 +1894,18 @@ class _Lifter:
                else [self.value(x) for x in t.inputs])
         order = list(range(n))[::-1]           # label[i] -> ins[n - i]
         cases, targets = [], set()
+        # opMatch compares only keys of the matched value's AVM type and skips the
+        # rest, so with a constant value a key of the other type never matches: its arm
+        # is dead from here. Keeping it put a mixed-type case in the Switch.
+        vfam = _const_family(ins[0]) if ins else None
+        dead = 0
         for i, lbl in enumerate(labels):
             blk = self._site_target(bb, self.line2block.get(self.label2line.get(lbl)))
             ki = 1 + order[i]
             ci = ins[ki] if 0 <= ki < len(ins) else None
+            if vfam is not None and _const_family(ci) not in (None, vfam):
+                dead += 1
+                continue
             if isinstance(ci, pre_ir.BytesConstant):
                 key = ci.value                       # bytes-keyed match
             elif isinstance(ci, pre_ir.UInt64Constant):
@@ -1803,6 +1939,8 @@ class _Lifter:
         if cases and default_id is not None:
             val = ins[0] if ins else pre_ir.Undefined()
             return pre_ir.Switch(val, cases, default_id)
+        if cases == [] and dead and default_id is not None:
+            return pre_ir.Goto(default_id)       # no key can match: the fall-through
         return None
 
     def _control_switch(self, bb, t, succ):
@@ -2214,6 +2352,11 @@ class _Lifter:
                 self.doomed_blocks.add(b)
             else:
                 self._below_frame.add(self._cur_key)    # it took its caller's values
+        else:
+            panic = _type_panic(a.op, a.immediates, stack[len(stack) - ni:],
+                                self._avm_version)
+            if panic is not None:
+                self._type_panics.append((self._cur_key, b, panic))
         ni = min(ni, len(stack))
         self.stack_args[id(a)] = [stack.pop() for _ in range(ni)]    # top-first
         if a.op not in _TERMINATOR_OPS:

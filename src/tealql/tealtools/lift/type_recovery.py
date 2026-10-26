@@ -139,7 +139,7 @@ def _avm_join(types) -> str | None:
 # Ops whose stack inputs are all uint64 / all bytes.
 _U64_IN_ALL = frozenset({
     "+", "-", "*", "/", "%", "exp", "expw", "addw", "mulw", "divw", "divmodw",
-    "sqrt", "shl", "shr", "bitlen", "<", ">", "<=", ">=", "!", "&&", "||",
+    "sqrt", "shl", "shr", "<", ">", "<=", ">=", "!", "&&", "||",
     "itob", "assert",
     # INDEX-operand ops: every stack input is a uint64 index (group index,
     # scratch slot, array index). Their absence was not a missing refinement but
@@ -174,6 +174,9 @@ _POS_IN = {
     # `bytes` mis-types a uint64 BITMAP and clashes with the u64 store of the same
     # scratch slot. Leave A unknown so the VALUE FLOW types it; index B is uint64.
     "getbit": ("uint64", None),
+    # `bitlen` takes either type (langspec `any`): a byteslice is a big-endian
+    # number. Typing it uint64 turned `byte 0x01; bitlen` into an unknown operand.
+    "bitlen": (None,),
     # `setbit A B C` is polymorphic in its VALUE operand (A) — see
     # _infer_setbit_types, which unifies it with the result — but the bit index
     # and bit value are always uint64.
